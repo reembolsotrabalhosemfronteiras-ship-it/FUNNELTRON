@@ -47,12 +47,23 @@ function LiveViewport({
   const { fitView } = useReactFlow();
   const { dark } = useTheme();
 
-  // Mapa stepId → online, recalculado só quando o polling muda.
+  // Mapa stepId → online. Memoizado pelos VALORES, não pelo array: o polling
+  // devolve um array novo a cada 5s, quase sempre com os mesmos números, e
+  // recriar o mapa refaria as arestas (e reiniciaria as bolinhas de luz) à toa.
+  const onlineKey = useMemo(
+    () =>
+      liveFlow
+        .map((l) => `${l.stepId}:${l.online}`)
+        .sort()
+        .join("|"),
+    [liveFlow]
+  );
   const onlineMap = useMemo(() => {
     const map: Record<string, number> = {};
     for (const l of liveFlow) map[l.stepId] = l.online;
     return map;
-  }, [liveFlow]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onlineKey]);
 
   const goalId = resolveGoalStep(funnel, steps)?.id;
 
@@ -120,13 +131,44 @@ function LiveViewport({
   const [nodes, setNodes, onNodesChange] = useNodesState(layoutNodes);
   const [rfEdges, setEdges, onEdgesChange] = useEdgesState(flowEdges);
 
-  // Encaixa o funil centralizado quando o DESENHO muda (monta + resize de
-  // layout). Não dispara a cada tick de polling — só quando steps/edges mudam.
+  // Assinatura do desenho: o que de fato muda a aparência e a posição dos nós.
+  // O polling pode devolver as MESMAS etapas em objetos novos; comparar por
+  // identidade acharia que o funil mudou.
+  const layoutKey = useMemo(
+    () =>
+      steps
+        .map((s) => {
+          const p = positions[s.id] ?? { x: s.positionX, y: s.positionY };
+          return [
+            s.id,
+            s.label,
+            s.type,
+            s.url ?? "",
+            s.screenshotUrl ?? "",
+            p.x,
+            p.y,
+            badgeSides[s.id] ?? "bottom",
+            goalId === s.id ? "goal" : "",
+          ].join("~");
+        })
+        .join("|"),
+    [steps, positions, badgeSides, goalId]
+  );
+
+  // Encaixa o funil centralizado quando o DESENHO muda (monta + edição no
+  // ateliê). Trocar os nós zera as medidas que o React Flow tinha de cada card,
+  // e o fitView seguinte enquadra caixas de tamanho zero — o painel escurecia a
+  // cada ciclo de polling. Com a assinatura, só refaz quando algo mudou mesmo.
+  const lastLayoutKey = useRef<string | null>(null);
   useEffect(() => {
+    if (lastLayoutKey.current === layoutKey) return;
+    lastLayoutKey.current = layoutKey;
     setNodes(layoutNodes);
     const t = setTimeout(() => fitView({ padding: 0.25, duration: 300 }), 60);
     return () => clearTimeout(t);
-  }, [layoutNodes, setNodes, fitView]);
+    // layoutNodes acompanha layoutKey; a chave é quem decide se roda.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutKey, setNodes, fitView]);
 
   // Arestas: atualiza conversão/page→page quando o online muda.
   useEffect(() => {

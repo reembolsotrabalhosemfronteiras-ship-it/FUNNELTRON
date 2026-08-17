@@ -367,6 +367,8 @@ isso, rodar o import duas vezes no mesmo dia dobra o número.
 
 | 85 | **Requisições simultâneas serializavam.** 38 rotas eram `async def` fazendo I/O bloqueante (todo o `supabase-py` é síncrono): rodando no event loop, cada uma travava as outras enquanto esperava o Supabase. Como o Ao Vivo dispara 3 × N chamadas de uma vez, elas entravam em fila. Declaradas `def`, o FastAPI as executa num pool de threads. Mesma mudança em `get_current_user`/`get_optional_user`. **Medido: 12 requisições simultâneas 4434 ms → 382 ms** (uma sozinha: 193 ms — ou seja, agora andam de verdade em paralelo) | `core/auth.py`, todos os `routers/` |
 
+| 86 | **O painel do Ao Vivo piscava preto a cada atualização.** A aba de UM funil (`useLiveFunnel`) continuava rebuscando `getFunnel`/`listSteps`/`listEdges` dentro do polling — o item 84 só tinha tirado isso da vista Geral. A resposta era sempre igual, mas em objetos novos: o canvas recalculava `spreadSteps`, trocava todos os nós e chamava `fitView` antes do React Flow remedir os cards, enquadrando caixas de tamanho zero — o fundo `bg-slate-950` aparecia sozinho por um instante. Estrutura e números viraram estados separados, e o canvas passou a comparar o desenho por **assinatura** (id/label/tipo/print/posição/lado do badge), não por identidade de objeto: array novo com o mesmo desenho não remonta nem refaz o fit. `onlineMap` também virou memo por valor, para as arestas não reiniciarem as bolinhas de luz a cada ciclo | `LivePage.tsx`, `LiveFunnelCanvas.tsx` |
+
 ### ✅ O rastreador ao vivo estava quebrado em silêncio — RESOLVIDO
 
 `POST /api/live/track` respondia **204 como se tivesse gravado**, sem gravar:

@@ -64,23 +64,70 @@ interface LiveFunnelData {
   stepLabels: Record<string, string>;
 }
 
+/** Parte que só muda quando alguém edita o funil no ateliê. */
+interface FunnelStructure {
+  funnel: Funnel;
+  steps: FunnelStep[];
+  edges: FunnelEdge[];
+  stepLabels: Record<string, string>;
+}
+
+/** Parte que muda a cada ciclo de polling. */
+interface LiveSnapshot {
+  liveVsl: LiveVslData[];
+  liveFlow: LiveStepData[];
+  conversion: LiveConversion | null;
+  dayConversion: LiveConversion | null;
+  sales: LiveSale[];
+  entries: LivePageEntry[];
+}
+
 function useLiveFunnel(
   funnelId: string,
   vslWindow: number,
   convWindow: number,
   salesWindow: number
 ) {
-  const [data, setData] = useState<LiveFunnelData | null>(null);
+  // Desenho e números vivem em estados separados de propósito. Rebuscar o
+  // desenho a cada 5s devolvia sempre a mesma coisa, mas em objetos novos: o
+  // canvas via "steps mudaram", remontava os nós e refazia o fitView antes de
+  // medi-los — a cada atualização o painel piscava preto.
+  const [structure, setStructure] = useState<FunnelStructure | null>(null);
+  const [snapshot, setSnapshot] = useState<LiveSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
+  const [structureLoading, setStructureLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isPolling, setIsPolling] = useState(true);
 
+  useEffect(() => {
+    let cancelled = false;
+    setStructure(null);
+    setStructureLoading(true);
+    (async () => {
+      try {
+        const [f, s, e] = await Promise.all([
+          getFunnel(funnelId),
+          listSteps(funnelId),
+          listEdges(funnelId),
+        ]);
+        if (cancelled) return;
+        const stepLabels: Record<string, string> = {};
+        s.forEach((st) => (stepLabels[st.id] = st.label));
+        setStructure({ funnel: f, steps: s, edges: e, stepLabels });
+      } catch (err) {
+        console.error("Erro ao carregar o funil:", err);
+      } finally {
+        if (!cancelled) setStructureLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [funnelId]);
+
   const refresh = useCallback(async () => {
     try {
-      const [f, s, e, vsl, flow, conv, sls, ents, day] = await Promise.all([
-        getFunnel(funnelId),
-        listSteps(funnelId),
-        listEdges(funnelId),
+      const [vsl, flow, conv, sls, ents, day] = await Promise.all([
         getLiveVsl(funnelId, vslWindow),
         getLiveFlow(funnelId),
         getLiveConversion(funnelId, convWindow),
@@ -91,19 +138,13 @@ function useLiveFunnel(
         getLivePageEntries(funnelId, salesWindow),
         getDayConversion(funnelId),
       ]);
-      const stepLabels: Record<string, string> = {};
-      s.forEach((st) => (stepLabels[st.id] = st.label));
-      setData({
-        funnel: f,
-        steps: s,
-        edges: e,
+      setSnapshot({
         liveVsl: vsl,
         liveFlow: flow,
         conversion: conv,
         dayConversion: day,
         sales: sls,
         entries: ents,
-        stepLabels,
       });
       setLastUpdated(new Date());
     } catch (err) {
@@ -112,6 +153,11 @@ function useLiveFunnel(
       setLoading(false);
     }
   }, [funnelId, vslWindow, convWindow, salesWindow]);
+
+  const data = useMemo<LiveFunnelData | null>(
+    () => (structure && snapshot ? { ...structure, ...snapshot } : null),
+    [structure, snapshot]
+  );
 
   useEffect(() => {
     setLoading(true);
@@ -130,7 +176,13 @@ function useLiveFunnel(
     return () => document.removeEventListener("visibilitychange", h);
   }, []);
 
-  return { data, loading, lastUpdated, refresh, isPolling };
+  return {
+    data,
+    loading: loading || structureLoading,
+    lastUpdated,
+    refresh,
+    isPolling,
+  };
 }
 
 // ---------------------------------------------------------------------------
