@@ -389,6 +389,30 @@ grandes, verde/vermelho no lucro.
 
 ---
 
+## 3.1 Como colocar no ar
+
+**Local (funciona hoje):** dois processos — `uvicorn` na 8000 e `npm run dev` na
+5173. Serve para usar e desenvolver, mas **não** para o rastreador: o snippet
+nas páginas reais do funil precisa alcançar um endereço público.
+
+**Deploy — o que decide é o Chromium.** A captura de print roda um navegador de
+verdade, e função serverless não roda navegador.
+
+| Alvo | Serve? | Observação |
+|---|---|---|
+| **Container** (Railway, Render, Fly.io, VPS) | ✅ recomendado | `Dockerfile` na raiz: constrói o frontend e serve tudo num alvo só. Print funciona. |
+| **Vercel** | ⚠️ com ressalva | `vercel.json` corrigido (antes só construía o backend — a interface dava 404). Mas Chromium não roda lá: a captura só funciona com `SCREENSHOT_API_KEY` de um serviço externo. |
+
+Em qualquer alvo, defina `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_SERVICE_KEY`
+e `ENVIRONMENT=production`. Sem as chaves em produção o app **se recusa a
+subir** (de propósito: em servidor efêmero o SQLite local aceitaria cadastro e
+perderia tudo no deploy seguinte).
+
+O mesmo servidor entrega a interface quando `frontend/dist` existe — uma porta,
+uma origem, sem CORS.
+
+---
+
 ## 4. Riscos e dívidas conhecidas
 
 1. ~~**Token do Clarity exposto**~~ — resolvido: o JWT saiu de `api/client.ts` e
