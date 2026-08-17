@@ -19,8 +19,9 @@ class Settings(BaseSettings):
     # APIs externas (defaults - tokens reais ficam no banco)
     clarity_token: str = ""
     vturb_token: str = ""
-    # Token de exportação da Clarity (Data.Export). Fica NO BACKEND — nunca
-    # embutido no frontend. Se vazio, usa o Client Secret do usuário (OAuth).
+    # Token da Data Export API do Clarity, gerado no painel do projeto. Fica NO
+    # BACKEND — nunca embutido no frontend. Se vazio, usa o token que o próprio
+    # usuário salvou em Configurações. Não há OAuth do Azure envolvido.
     clarity_export_token: str = ""
 
     # Screenshot

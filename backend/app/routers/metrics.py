@@ -31,6 +31,26 @@ def parse_period(period: Optional[str], from_date: Optional[str], to_date: Optio
     return str(start_date), str(end_date)
 
 
+def period_to_days(period: Optional[str]) -> int:
+    """
+    Quantos dias o período pedido representa, para a janela do Clarity.
+
+    A Data Export API só serve os últimos 3 dias por chamada, então "30d" e
+    "90d" viram 3. O corte não é escondido: o endpoint devolve `days` com o que
+    de fato veio, e a tela rotula o número com esse valor em vez de com o
+    período que o usuário pediu.
+    """
+    if not period:
+        return clarity_service.MAX_DAYS
+
+    digitos = "".join(c for c in period if c.isdigit())
+    if not digitos:
+        # "all" e afins: o máximo que o Clarity entrega.
+        return clarity_service.MAX_DAYS
+
+    return max(1, int(digitos))
+
+
 @router.get("/clarity")
 async def get_clarity_metrics(
     period: str = "30d",
@@ -39,8 +59,10 @@ async def get_clarity_metrics(
     supabase: Client = Depends(get_db)
 ):
     """
-    Proxy para Microsoft Clarity Data Export API.
-    O token de exportação fica no backend (env CLARITY_EXPORT_TOKEN).
+    Proxy para a Data Export API do Microsoft Clarity.
+
+    Credencial única: o token de API do projeto, salvo pelo usuário ou vindo do
+    env CLARITY_EXPORT_TOKEN. Fica no backend — o frontend nunca o recebe.
 
     Toda consulta bem-sucedida vira snapshot salvo, e a resposta sempre carrega
     quando o dado é (`asOf`). Se a API do Clarity falhar, devolve o último
@@ -61,54 +83,32 @@ async def get_clarity_metrics(
         }
 
     try:
-        # Resolve o project_id das credenciais do usuário
+        dias_pedidos = period_to_days(period)
+        resultado = await clarity_service.get_live_insights(
+            current_user.id, dias_pedidos
+        )
+
+        if resultado.get("error"):
+            return _falha(
+                resultado.get("message", "Erro na API do Clarity"),
+                status.HTTP_502_BAD_GATEWAY,
+            )
+
+        metricas = resultado["metrics"]
+        dias_cobertos = resultado["days"]
+
+        # O project_id não vai mais na chamada (o token já é do projeto), mas
+        # continua sendo a chave de deduplicação do snapshot. Quem informou um
+        # no cadastro mantém o dele; quem não informou usa o próprio id de
+        # usuário, que é igualmente estável e único.
         creds = supabase.table("api_credentials").select("extra_config").eq(
             "user_id", current_user.id
         ).eq("provider", "clarity").execute()
 
-        if not creds.data or not creds.data[0].get("extra_config"):
-            return _falha(
-                "Project ID do Clarity não configurado",
-                status.HTTP_400_BAD_REQUEST,
-            )
+        extra = (creds.data[0].get("extra_config") if creds.data else None) or {}
+        project_id = extra.get("project_id") or current_user.id
 
-        project_id = creds.data[0]["extra_config"].get("project_id")
-        if not project_id:
-            return _falha(
-                "Project ID do Clarity não encontrado",
-                status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Calcula datas
-        start_date, end_date = parse_period(period, None, None)
-
-        # Chama o serviço
-        result = await clarity_service.get_sessions_export(
-            current_user.id,
-            project_id,
-            start_date,
-            end_date
-        )
-
-        if isinstance(result, dict) and result.get("error"):
-            return _falha(
-                result.get("message", "Erro na API do Clarity"),
-                status.HTTP_502_BAD_GATEWAY,
-            )
-
-        # Processa sessões brutas em métricas resumidas
-        sessions = result or []
-        total_sessions = len(sessions)
-        total_page_views = sum(s.get("pagesCount", 0) or 0 for s in sessions)
-        total_time = sum(s.get("totalTime", 0) or 0 for s in sessions)
-        bounces = sum(1 for s in sessions if (s.get("pagesCount", 0) or 0) == 1)
-
-        metricas = {
-            "sessions": total_sessions,
-            "pageViews": total_page_views,
-            "avgTime": total_time / total_sessions / 1000 if total_sessions else 0,
-            "bounceRate": (bounces / total_sessions) * 100 if total_sessions else 0,
-        }
+        _, end_date = parse_period(period, None, None)
 
         # Salva o snapshot do dia. Reimportar o mesmo dia substitui a linha —
         # o Clarity reentrega o mesmo período a cada consulta, e acumular
@@ -122,11 +122,20 @@ async def get_clarity_metrics(
             ref_date=end_date,
         )
 
-        return {
+        resposta = {
             **metricas,
             **snapshots.as_of_envelope(salvo),
             "fromCache": False,
+            "days": dias_cobertos,
         }
+
+        if dias_pedidos > dias_cobertos:
+            resposta["warning"] = (
+                f"O Clarity só exporta os últimos {dias_cobertos} dias. "
+                f"Este número cobre {dias_cobertos} dias, não o período pedido."
+            )
+
+        return resposta
 
     except HTTPException:
         raise

@@ -624,9 +624,12 @@ export async function deleteImport(id: string): Promise<void> {
 export interface IntegrationCredentials {
   vturbToken: string;
   vturbTier: "basic" | "pro" | "scale" | "enterprise";
-  clarityClientId: string;
-  clarityClientSecret: string;
-  clarityProjectId: string;
+  /**
+   * Token de API do Clarity (painel → Configurações → Configurações do projeto
+   * → API). É a credencial ÚNICA: o token já é do projeto, então não há Client
+   * ID, Client Secret nem OAuth do Azure envolvidos.
+   */
+  clarityToken: string;
   /** Segredo do webhook de venda (PerfectPay dispara). */
   webhookSecret: string;
   /** URL pública do endpoint de webhook deste app. */
@@ -639,9 +642,7 @@ export async function getCredentials(): Promise<IntegrationCredentials> {
   return delay({
     vturbToken: "",
     vturbTier: "pro",
-    clarityClientId: "",
-    clarityClientSecret: "",
-    clarityProjectId: "",
+    clarityToken: "",
     webhookSecret: "",
     webhookUrl: "",
   });
@@ -652,17 +653,23 @@ export async function saveCredentials(
 ): Promise<void> {
   if (!USE_MOCK) {
     // Cada provider é salvo numa linha própria de api_credentials.
-    await apiSend(`/api/integrations/credentials`, "POST", {
-      provider: "vturb",
-      api_token: payload.vturbToken,
-      rate_limit_tier: payload.vturbTier,
-    }).then();
-    await apiSend(`/api/integrations/credentials`, "POST", {
-      provider: "clarity",
-      api_token: payload.clarityClientSecret,
-      account_id: payload.clarityClientId,
-      extra_config: { project_id: payload.clarityProjectId },
-    }).then();
+    //
+    // Campo vazio NÃO é enviado. O backend nunca devolve token salvo (só a
+    // marca de "configurado"), então o formulário abre em branco toda vez —
+    // salvar sem essa guarda apagaria o token já gravado a cada visita.
+    if (payload.vturbToken) {
+      await apiSend(`/api/integrations/credentials`, "POST", {
+        provider: "vturb",
+        api_token: payload.vturbToken,
+        rate_limit_tier: payload.vturbTier,
+      }).then();
+    }
+    if (payload.clarityToken) {
+      await apiSend(`/api/integrations/credentials`, "POST", {
+        provider: "clarity",
+        api_token: payload.clarityToken,
+      }).then();
+    }
     if (payload.webhookSecret) {
       await apiSend(`/api/integrations/credentials`, "POST", {
         provider: "webhook",
@@ -726,6 +733,39 @@ function periodQuery(period: PeriodInput): string {
 // --- Clarity API (real, via backend proxy) ---
 // O token de exportação (Data.Export) fica no BACKEND (env CLARITY_EXPORT_TOKEN).
 // O frontend NUNCA recebe esse token — violação de segurança.
+/** Métricas de exemplo no mesmo formato que o backend devolve. */
+function mockClarityMetrics(sessoes: number): ClarityMetrics {
+  const sessions = Math.round(sessoes);
+  return {
+    sessions,
+    botSessions: Math.round(sessions * 0.04),
+    distinctUsers: Math.round(sessions * 0.82),
+    pageViews: Math.round(sessions * 3.2),
+    pagesPerSession: 3.2,
+    avgTime: 145.2,
+    avgScrollDepth: 61.4,
+    bounceRate: null,
+  };
+}
+
+/**
+ * Métricas zeradas — o formato existe, os números ainda não.
+ *
+ * A tela Ao Vivo usa isto quando nunca houve importação: some o número, não a
+ * página. Quem abre precisa ver a estrutura e o carimbo dizendo que está vazio,
+ * não um bloco de texto no lugar onde os cards deveriam estar.
+ */
+export const CLARITY_METRICS_ZERO: ClarityMetrics = {
+  sessions: 0,
+  botSessions: 0,
+  distinctUsers: 0,
+  pageViews: 0,
+  pagesPerSession: 0,
+  avgTime: 0,
+  avgScrollDepth: 0,
+  bounceRate: null,
+};
+
 export async function getClarityMetrics(
   funnelId: string,
   period: PeriodInput
@@ -735,10 +775,8 @@ export async function getClarityMetrics(
     // tela de exemplo mostraria número sem data — exatamente o que a fonte real
     // não pode fazer.
     return delay({
-      sessions: Math.round(periodScale(period, 15000)),
-      pageViews: Math.round(periodScale(period, 48000)),
-      avgTime: 145.2,
-      bounceRate: 42.3,
+      ...mockClarityMetrics(periodScale(period, 15000)),
+      days: 3,
       asOf: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
       ageMinutes: 300,
       stale: false,
@@ -789,12 +827,28 @@ export interface ClaritySnapshot extends AsOf {
   source: "clarity";
   funnelId: string | null;
   period: string | null;
-  metrics: {
-    sessions: number;
-    pageViews: number;
-    avgTime: number;
-    bounceRate: number;
-  } | null;
+  metrics: ClarityMetrics | null;
+}
+
+/**
+ * O que a Data Export API do Clarity realmente entrega.
+ *
+ * `bounceRate` é `null` sempre: o Clarity não publica taxa de rejeição nesse
+ * endpoint. Derivar uma a partir da média de páginas por sessão daria um número
+ * plausível e errado, então a tela mostra "—".
+ */
+export interface ClarityMetrics {
+  sessions: number;
+  /** Sessões que o Clarity classificou como robô. */
+  botSessions: number;
+  distinctUsers: number;
+  pageViews: number;
+  pagesPerSession: number;
+  /** Segundos por sessão. */
+  avgTime: number;
+  /** Rolagem média da página, em %. */
+  avgScrollDepth: number;
+  bounceRate: number | null;
 }
 
 export interface TrackerSnapshot {
@@ -864,7 +918,7 @@ export async function getLatestClarity(
       source: "clarity" as const,
       funnelId: funnelId ?? null,
       period: "30d",
-      metrics: { sessions: 15000, pageViews: 48000, avgTime: 145.2, bounceRate: 42.3 },
+      metrics: mockClarityMetrics(15000),
       asOf,
       ageMinutes: 300,
       stale: false,

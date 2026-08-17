@@ -122,19 +122,10 @@ async def test_connection(
             }
 
         elif request.provider == "clarity":
-            # Testa requisição básica
-            creds = await clarity_service.get_credentials(current_user.id)
-
-            if not creds:
-                return {
-                    "ok": False,
-                    "message": "Credenciais do Clarity não encontradas"
-                }
-
-            return {
-                "ok": True,
-                "message": "Credenciais do Clarity configuradas!"
-            }
+            # Chama a API de verdade. Confirmar que existe uma linha no banco
+            # não prova nada: token errado ou expirado passaria no teste e só
+            # falharia depois, na tela de Métricas.
+            return await clarity_service.test_token(current_user.id)
 
         else:
             raise HTTPException(

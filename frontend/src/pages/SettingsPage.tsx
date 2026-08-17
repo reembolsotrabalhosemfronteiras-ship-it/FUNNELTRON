@@ -22,9 +22,7 @@ export function SettingsPage() {
   const [form, setForm] = useState<IntegrationCredentials>({
     vturbToken: "",
     vturbTier: "pro",
-    clarityClientId: "",
-    clarityClientSecret: "",
-    clarityProjectId: "",
+    clarityToken: "",
     webhookSecret: "",
     webhookUrl: "/api/live/webhook",
   });
@@ -37,8 +35,20 @@ export function SettingsPage() {
 
   const handleTest = async (provider: "vturb" | "clarity") => {
     setTesting(provider);
-    const result = await testConnection(provider);
-    setTestResult({ provider, ...result });
+    // Salva ANTES de testar. O teste roda no backend, que lê o token do banco —
+    // testar sem salvar respondia "credenciais não configuradas" mesmo com o
+    // token correto digitado na tela, que é o erro mais confuso possível.
+    try {
+      await saveCredentials(form);
+      const result = await testConnection(provider);
+      setTestResult({ provider, ...result });
+    } catch {
+      setTestResult({
+        provider,
+        ok: false,
+        message: "Não foi possível salvar o token antes de testar.",
+      });
+    }
     setTesting(null);
   };
 
@@ -144,33 +154,23 @@ export function SettingsPage() {
                   Microsoft Clarity
                 </CardTitle>
                 <CardDescription>
-                  Integração para conversão real por página. Requer OAuth Azure AD.
+                  Sessões e engajamento por página. Uma credencial só: o token de
+                  API do projeto.
                 </CardDescription>
               </div>
               <Badge variant="info">Conversão Real</Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-4">
               <div>
-                <Label>Client ID (Azure AD)</Label>
-                <Input
-                  type="text"
-                  value={form.clarityClientId}
-                  onChange={(e) => setForm({ ...form, clarityClientId: e.target.value })}
-                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                  className="mt-1"
-                />
-              </div>
-
-              <div>
-                <Label>Client Secret</Label>
+                <Label>Token de API</Label>
                 <div className="relative mt-1">
                   <Input
                     type={showClarity ? "text" : "password"}
-                    value={form.clarityClientSecret}
-                    onChange={(e) => setForm({ ...form, clarityClientSecret: e.target.value })}
-                    placeholder="Segredo do aplicativo Azure"
+                    value={form.clarityToken}
+                    onChange={(e) => setForm({ ...form, clarityToken: e.target.value })}
+                    placeholder="eyJhbGciOiJSUzI1NiIsImtpZCI6..."
                     className="pr-10"
                   />
                   <button
@@ -181,31 +181,24 @@ export function SettingsPage() {
                     {showClarity ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  O token já é do projeto — não existe Client ID, Client Secret
+                  nem Project ID para preencher aqui.
+                </p>
               </div>
 
-              <div className="md:col-span-2">
-                <Label>Project ID (Clarity)</Label>
-                <Input
-                  type="text"
-                  value={form.clarityProjectId}
-                  onChange={(e) => setForm({ ...form, clarityProjectId: e.target.value })}
-                  placeholder="ID do projeto no Microsoft Clarity"
-                  className="mt-1"
-                />
-              </div>
-
-              <div className="md:col-span-2 flex items-end gap-2">
+              <div className="flex items-end gap-2">
                 <Button
                   variant="outline"
                   onClick={() => handleTest("clarity")}
-                  disabled={testing === "clarity" || !form.clarityClientId || !form.clarityClientSecret}
+                  disabled={testing === "clarity" || !form.clarityToken}
                 >
                   {testing === "clarity" ? (
                     <Loader2 size={14} className="animate-spin" />
                   ) : (
                     <CheckCircle2 size={14} />
                   )}
-                  Testar
+                  Salvar e testar
                 </Button>
               </div>
             </div>
@@ -227,11 +220,16 @@ export function SettingsPage() {
             <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
               <strong>Como configurar:</strong>
               <ol className="list-decimal list-inside mt-2 space-y-1">
-                <li>Crie um aplicativo no Azure AD (App Registrations)</li>
-                <li>Adicione permissão para Microsoft Clarity API</li>
-                <li>Gere um Client Secret</li>
-                <li>Copie o Client ID, Secret e Project ID do Clarity</li>
+                <li>No painel do Clarity, abra Configurações → Configurações do projeto → API</li>
+                <li>Clique em "Gerar novo token de API"</li>
+                <li>Copie o token na hora — o Clarity não mostra ele de novo</li>
+                <li>Cole aqui e clique em "Salvar e testar"</li>
               </ol>
+              <p className="mt-2">
+                O Clarity permite <strong>10 consultas por dia</strong> e exporta
+                no máximo os <strong>últimos 3 dias</strong> por consulta. Cada
+                teste gasta uma dessas consultas.
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -324,9 +322,7 @@ export function SettingsPage() {
           <Button variant="ghost" onClick={() => setForm({
             vturbToken: "",
             vturbTier: "pro",
-            clarityClientId: "",
-            clarityClientSecret: "",
-            clarityProjectId: "",
+            clarityToken: "",
             webhookSecret: "",
             webhookUrl: "/api/live/webhook",
           })}>

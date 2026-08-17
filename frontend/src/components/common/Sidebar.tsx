@@ -17,8 +17,8 @@ const navItems = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/funnels", label: "Funis", icon: GitBranch },
   { to: "/metrics", label: "Métricas", icon: BarChart3 },
-  { to: "/imports", label: "Importações", icon: Upload },
   { to: "/live", label: "Ao Vivo", icon: Zap },
+  { to: "/imports", label: "Importações", icon: Upload },
   { to: "/settings", label: "Configurações", icon: Settings },
 ] as const;
 

@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
-import { Cloud, Users, Eye, Timer, LogOut } from "lucide-react";
+import { Cloud, Users, Eye, Timer, UserCheck } from "lucide-react";
 import { Card, CardContent } from "@/components/common/Card";
 import { Spinner } from "@/components/common/Spinner";
 import { AsOfBadge, ClarityDelayNotice } from "@/components/common/AsOfBadge";
-import { getLatestClarity, type ClaritySnapshot } from "@/api/client";
+import {
+  getLatestClarity,
+  CLARITY_METRICS_ZERO,
+  type ClaritySnapshot,
+} from "@/api/client";
 
 /**
  * O Clarity na página Ao Vivo.
@@ -45,7 +49,11 @@ export function ClarityLiveView({ funnelId }: { funnelId?: string }) {
     );
   }
 
-  const metrics = snap?.metrics;
+  // Sem importação, a página aparece zerada em vez de sumir. O carimbo no topo
+  // e em cada card já diz que não há dado — trocar os cards por um bloco de
+  // texto esconderia a estrutura de quem está configurando pela primeira vez.
+  const metrics = snap?.metrics ?? CLARITY_METRICS_ZERO;
+  const semDados = !snap?.metrics;
 
   return (
     <div className="space-y-4">
@@ -62,40 +70,38 @@ export function ClarityLiveView({ funnelId }: { funnelId?: string }) {
         <ClarityDelayNotice />
       </section>
 
-      {!metrics ? (
-        <div className="rounded-lg border border-dashed py-12 text-center text-sm text-muted-foreground">
-          Nenhum dado do Clarity importado ainda.
-          <br />
-          Configure o token em Configurações e abra a página de Métricas para
-          fazer a primeira importação.
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-          <ClarityCard
-            label="Sessões"
-            value={metrics.sessions.toLocaleString("pt-BR")}
-            icon={<Users size={16} className="text-blue-500" />}
-            snap={snap}
-          />
-          <ClarityCard
-            label="Páginas vistas"
-            value={metrics.pageViews.toLocaleString("pt-BR")}
-            icon={<Eye size={16} className="text-blue-500" />}
-            snap={snap}
-          />
-          <ClarityCard
-            label="Tempo médio"
-            value={`${metrics.avgTime.toFixed(1)}s`}
-            icon={<Timer size={16} className="text-blue-500" />}
-            snap={snap}
-          />
-          <ClarityCard
-            label="Taxa de rejeição"
-            value={`${metrics.bounceRate.toFixed(1)}%`}
-            icon={<LogOut size={16} className="text-blue-500" />}
-            snap={snap}
-          />
-        </div>
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <ClarityCard
+          label="Sessões"
+          value={metrics.sessions.toLocaleString("pt-BR")}
+          icon={<Users size={16} className="text-blue-500" />}
+          snap={snap}
+        />
+        <ClarityCard
+          label="Visitantes únicos"
+          value={metrics.distinctUsers.toLocaleString("pt-BR")}
+          icon={<UserCheck size={16} className="text-blue-500" />}
+          snap={snap}
+        />
+        <ClarityCard
+          label="Páginas vistas"
+          value={metrics.pageViews.toLocaleString("pt-BR")}
+          icon={<Eye size={16} className="text-blue-500" />}
+          snap={snap}
+        />
+        <ClarityCard
+          label="Tempo médio"
+          value={`${metrics.avgTime.toFixed(1)}s`}
+          icon={<Timer size={16} className="text-blue-500" />}
+          snap={snap}
+        />
+      </div>
+
+      {semDados && (
+        <p className="rounded-lg border border-dashed px-4 py-3 text-center text-sm text-muted-foreground">
+          Ainda não houve importação do Clarity. Salve o token em Configurações e
+          abra a página de Métricas para trazer o primeiro dado.
+        </p>
       )}
     </div>
   );
