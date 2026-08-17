@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .core.config import get_settings
@@ -66,6 +66,45 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# --- CORS do rastreador ----------------------------------------------------
+# A lista de origens acima existe para proteger a API autenticada, e por isso
+# não pode conter "*". Mas o heartbeat é colado no <head> de sites de terceiros:
+# a origem é o domínio de vendas do cliente, que ninguém tem como cadastrar de
+# antemão. Sem esta exceção o navegador recebia "400 Disallowed CORS origin" no
+# preflight e o rastreador ficava mudo — sem erro visível, porque o snippet
+# engole a falha de rede.
+#
+# Registrado DEPOIS do CORSMiddleware de propósito: em Starlette o último
+# middleware adicionado é o mais externo, então este responde ao preflight
+# antes de o outro ter chance de rejeitá-lo.
+#
+# Abrir só esta rota é seguro: ela não lê nada, não aceita credencial
+# (`allow-credentials` fica de fora) e só grava heartbeat de um funnel_id.
+TRACK_PATH = "/api/live/track"
+
+_TRACK_CORS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "content-type",
+    "Access-Control-Max-Age": "86400",
+}
+
+
+@app.middleware("http")
+async def cors_aberto_no_rastreador(request, call_next):
+    if request.url.path.rstrip("/") != TRACK_PATH:
+        return await call_next(request)
+
+    if request.method == "OPTIONS":
+        return Response(status_code=204, headers=_TRACK_CORS)
+
+    response = await call_next(request)
+    for chave, valor in _TRACK_CORS.items():
+        response.headers[chave] = valor
+    return response
+
 
 # Routers
 app.include_router(auth.router, prefix="/api")

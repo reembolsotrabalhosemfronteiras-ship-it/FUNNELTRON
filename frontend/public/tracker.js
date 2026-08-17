@@ -11,17 +11,50 @@
  * Configuração opcional:
  *   window.Funneltron = {
  *     funnelId: "uuid",
- *     endpoint: "https://sua-api.vercel.app", // default = mesma origem
- *     interval: 15000,                          // ms entre heartbeats
+ *     endpoint: "https://seu-app.up.railway.app", // default = origem deste .js
+ *     interval: 15000,                            // ms entre heartbeats
+ *     debug: true,                                // loga falhas no console
  *   };
+ *
+ * Para conferir se está batendo, abra o console da página do funil:
+ *   Funneltron.lastStatus   // 204 = heartbeat aceito
+ *   Funneltron.beat()       // dispara um agora
  */
 (function () {
   "use strict";
 
   var cfg = window.Funneltron || {};
   var FUNNEL_ID = cfg.funnelId || "";
-  var ENDPOINT = (cfg.endpoint || "").replace(/\/$/, "");
   var INTERVAL = cfg.interval || 15000;
+
+  /**
+   * Endereço do app. Sem `endpoint` configurado, deduz da própria tag <script>
+   * que carregou este arquivo — quem cola
+   * `<script src="https://app.exemplo/tracker.js">` já disse onde o app mora, e
+   * repetir isso no objeto de config é só mais um lugar para errar.
+   *
+   * Cair em caminho relativo (comportamento antigo) era o pior padrão possível:
+   * o heartbeat ia para o domínio DO FUNIL, que não tem essa rota, e o
+   * rastreador ficava mudo sem nenhum aviso.
+   */
+  function origemDoScript() {
+    try {
+      var script = document.currentScript;
+      if (!script) {
+        var todos = document.getElementsByTagName("script");
+        for (var i = todos.length - 1; i >= 0; i--) {
+          if ((todos[i].src || "").indexOf("tracker.js") !== -1) {
+            script = todos[i];
+            break;
+          }
+        }
+      }
+      if (script && script.src) return new URL(script.src).origin;
+    } catch (e) {}
+    return "";
+  }
+
+  var ENDPOINT = (cfg.endpoint || origemDoScript() || "").replace(/\/$/, "");
 
   if (!FUNNEL_ID) {
     if (window.console) console.warn("[Funneltron] funnelId ausente — rastreador desativado.");
@@ -85,11 +118,25 @@
       if (window.fetch) {
         fetch(url, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          // text/plain, e não application/json: com JSON o navegador dispara um
+          // preflight OPTIONS antes do POST, e o preflight vinha do domínio do
+          // funil — origem que a API não tem como ter cadastrado. text/plain faz
+          // o POST virar "requisição simples" e ir direto. O backend lê o corpo
+          // cru e faz o parse do JSON na mão.
+          headers: { "Content-Type": "text/plain;charset=UTF-8" },
           body: JSON.stringify(payload),
           keepalive: true,
           credentials: "omit",
-        }).catch(function () {});
+        })
+          .then(function (r) {
+            window.Funneltron.lastStatus = r.status;
+          })
+          .catch(function (e) {
+            // Silencioso por padrão, mas deixa rastro: sem isto, um heartbeat
+            // bloqueado é indistinguível de um funil sem visitante.
+            window.Funneltron.lastStatus = "erro: " + e;
+            if (cfg.debug && window.console) console.warn("[Funneltron]", e);
+          });
       } else {
         // Fallback beacon p/ navegadores antigos
         try {

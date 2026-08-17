@@ -50,17 +50,24 @@ export function TrackerCard({ apiOrigin = "" }: TrackerCardProps) {
 
   const selectedFunnel = funnels.find((f) => f.id === selectedFunnelId);
 
-  // Gera o snippet personalizado
+  // Endereço absoluto do app. O snippet roda no domínio do FUNIL, não neste —
+  // sem origem explícita, `/tracker.js` e `/api/live/track` seriam procurados
+  // no site de vendas, que não os tem.
+  const origem = (apiOrigin || "").replace(/\/$/, "");
+
   const snippet = selectedFunnel
     ? `<script>
   window.Funneltron = {
     funnelId: "${selectedFunnel.id}",
-    ${apiOrigin ? `endpoint: "${apiOrigin}",` : ""}
+    endpoint: "${origem}",
     interval: 15000
   };
 <\/script>
-<script src="${apiOrigin || ""}/tracker.js"><\/script>`
+<script src="${origem}/tracker.js"><\/script>`
     : "";
+
+  // Colado em produção, um endereço local não alcança ninguém.
+  const origemLocal = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(origem);
 
   const handleCopy = async () => {
     if (!snippet) return;
@@ -182,6 +189,16 @@ export function TrackerCard({ apiOrigin = "" }: TrackerCardProps) {
               <code>{snippet}</code>
             </pre>
           </div>
+          {origemLocal && (
+            <p className="flex items-start gap-1.5 text-xs text-danger">
+              <AlertTriangle size={14} className="mt-px shrink-0" />
+              <span>
+                Este snippet aponta para <code className="font-mono">{origem}</code>, que só existe
+                na sua máquina. Copie o código a partir do endereço público do app — colado no
+                funil, este aqui não alcança nada.
+              </span>
+            </p>
+          )}
         </div>
 
         {/* Link direto do arquivo tracker.js */}

@@ -306,6 +306,7 @@ backend vira mensagem explícita, nunca falha muda.
 | 72 | Rotas de métricas mapeadas: `/overview` devolvia `averageConversionRate` e o ranking `funnelId`/`funnelName` — a Home quebrava em `r.name.split()` e ficava **em branco** | `api/mappers.ts`, `DashboardPage.tsx` |
 | 73 | Tendência (`trend`) virou `number \| null` e mostra "—": o backend não compara com o período anterior, e "▲ 0,0%" afirmaria estabilidade não medida (decisão 2.4) | `types/`, `DashboardPage.tsx` |
 | 74 | README reescrito com o passo a passo real de subida (banco, backend, frontend, conta, teste de fumaça) | `README.md` |
+| 75 | **Rastreador em produção não batia** (Railway). Três causas somadas: (a) o preflight CORS vinha do domínio do funil e a API respondia `400 Disallowed CORS origin` — agora `/api/live/track` tem CORS aberto por middleware próprio, e só ela; (b) o heartbeat mandava `application/json`, que obriga preflight — virou `text/plain` (requisição simples) e o endpoint lê o corpo cru; (c) o snippet saía sem `endpoint`, então o POST ia para o domínio do funil — o card passa a usar `window.location.origin` e o `tracker.js` deduz a origem da própria tag `<script>`. `Funneltron.lastStatus` no console diz se está batendo | `backend/app/main.py`, `backend/app/routers/live.py`, `frontend/public/tracker.js`, `TrackerCard.tsx`, `SettingsPage.tsx` |
 
 ### 🔒 Bugs de segurança/correção encontrados ao ligar o banco
 

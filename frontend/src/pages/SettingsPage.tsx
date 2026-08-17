@@ -310,7 +310,14 @@ export function SettingsPage() {
         </Card>
 
         {/* Rastreador */}
-        <TrackerCard apiOrigin={import.meta.env.VITE_API_ORIGIN || ""} />
+        {/* O endereço tem que ser ABSOLUTO: o snippet é colado nas páginas do
+            funil, em outro domínio. Relativo ("/tracker.js"), o navegador
+            procuraria o arquivo no site de vendas e não acharia nada — o
+            rastreador ficaria mudo sem nenhum erro visível.
+            `VITE_API_ORIGIN` só é necessário se a API morar fora daqui. */}
+        <TrackerCard
+          apiOrigin={import.meta.env.VITE_API_ORIGIN || window.location.origin}
+        />
 
         {/* Salvar */}
         <div className="flex justify-end gap-3">

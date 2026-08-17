@@ -27,13 +27,27 @@ class LiveBeatRequest(BaseModel):
 
 @router.post("/track", status_code=status.HTTP_204_NO_CONTENT)
 async def track_heartbeat(
-    beat: LiveBeatRequest,
+    request: Request,
     supabase: Client = Depends(get_supabase_admin)
 ):
     """
     Endpoint público para heartbeat do rastreador (snippet nas páginas).
     Aceita requisições anônimas (CORS aberto).
+
+    O corpo é lido cru em vez de declarado como modelo no parâmetro porque o
+    rastreador manda `Content-Type: text/plain` de propósito: é o que faz o
+    navegador tratar o POST como requisição simples e PULAR o preflight
+    (`OPTIONS`) — que vinha sendo barrado pelo CORS no domínio do cliente. Com
+    o modelo no parâmetro, o FastAPI só faz o parse quando o tipo é
+    `application/json` e devolveria 422 nesse corpo.
     """
+    try:
+        corpo = await request.body()
+        beat = LiveBeatRequest.model_validate_json(corpo)
+    except Exception as e:
+        print(f"Erro no track (corpo inválido): {e}")
+        return None
+
     try:
         # Página mudou (ou é a primeira)? Registra no log de entradas ANTES do
         # upsert — depois do upsert a URL anterior já foi sobrescrita e não dá
