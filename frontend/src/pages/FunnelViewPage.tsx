@@ -9,6 +9,8 @@ import { FunnelCanvas } from "@/components/funnel";
 import { getFunnel, listSteps, listEdges, getStepMetrics, syncMetrics } from "@/api/client";
 import type { Funnel, FunnelStep, FunnelEdge, StepMetric } from "@/types";
 import { cn } from "@/lib/cn";
+import { SourceSelector, useDataSource } from "@/components/common/SourceSelector";
+import { ClarityLiveView } from "@/components/live/ClarityLiveView";
 
 export function FunnelViewPage() {
   const { id } = useParams<{ id: string }>();
@@ -18,6 +20,7 @@ export function FunnelViewPage() {
   const [metrics, setMetrics] = useState<StepMetric[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const { source, setSource } = useDataSource();
 
   useEffect(() => {
     if (!id) return;
@@ -68,7 +71,8 @@ export function FunnelViewPage() {
         title={funnel.name}
         subtitle={`Slug: ${funnel.slug} · ${steps.length} etapas`}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <SourceSelector value={source} onChange={setSource} />
             <Link to={`/funnel/${funnel.id}/metrics`}>
               <Button variant="outline" size="sm">
                 <BarChart3 size={14} />
@@ -94,20 +98,27 @@ export function FunnelViewPage() {
         }
       />
 
-      <main className="p-4">
-        <Card className="h-full">
-          <CardContent className="p-0">
-            <FunnelCanvas
-              funnel={funnel}
-              steps={steps}
-              edges={edges}
-              metrics={metrics}
-              readOnly
-              onSync={handleSync}
-              onEdit={() => window.location.href = `/funnel/${funnel.id}/edit`}
-            />
-          </CardContent>
-        </Card>
+      <main className="space-y-4 p-4">
+        {/* O canvas é desenhado com os números do nosso rastreador. Em "Clarity"
+            ele sai de cena em vez de ficar exibindo métrica de outra fonte com
+            a legenda desta. */}
+        {source !== "clarity" && (
+          <Card className="h-full">
+            <CardContent className="p-0">
+              <FunnelCanvas
+                funnel={funnel}
+                steps={steps}
+                edges={edges}
+                metrics={metrics}
+                readOnly
+                onSync={handleSync}
+                onEdit={() => window.location.href = `/funnel/${funnel.id}/edit`}
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        {source !== "tracker" && <ClarityLiveView funnelId={funnel.id} />}
       </main>
     </div>
   );

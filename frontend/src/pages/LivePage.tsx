@@ -38,6 +38,8 @@ import type {
 import { LiveFunnelCanvas } from "@/components/funnel/LiveFunnelCanvas";
 import { LiveTabs, type LiveTab } from "@/components/live/LiveTabs";
 import { TimeWindowPicker } from "@/components/live/TimeWindowPicker";
+import { ClarityLiveView } from "@/components/live/ClarityLiveView";
+import { SourceSelector, useDataSource } from "@/components/common/SourceSelector";
 import { ConversionBar } from "@/components/live/ConversionBar";
 import { SalesFeed } from "@/components/live/SalesFeed";
 import { PageEntriesFeed } from "@/components/live/PageEntriesFeed";
@@ -531,6 +533,12 @@ export function LivePage() {
   const [vslWindow, setVslWindow] = useState(5);
   const [convWindow, setConvWindow] = useState(30);
   const [salesWindow, setSalesWindow] = useState(60);
+  const { source, setSource } = useDataSource();
+
+  // Os seletores de janela (5m/30m/1h) são do NOSSO rastreador. O Clarity
+  // agrega por dia: oferecer "últimos 5 minutos" para ele prometeria um recorte
+  // que a fonte não sabe entregar.
+  const showWindowPickers = source !== "clarity";
 
   useEffect(() => {
     let cancelled = false;
@@ -606,24 +614,29 @@ export function LivePage() {
         subtitle="Monitoramento em tempo real de visitantes e vendas"
         actions={
           <div className="flex items-center gap-3 flex-wrap justify-end">
-            <TimeWindowPicker
-              label="VSL"
-              icon={<Zap size={14} className="text-purple-500" />}
-              value={vslWindow}
-              onChange={setVslWindow}
-            />
-            <TimeWindowPicker
-              label="Conversão"
-              icon={<LayoutGrid size={14} className="text-emerald-500" />}
-              value={convWindow}
-              onChange={setConvWindow}
-            />
-            <TimeWindowPicker
-              label="Vendas"
-              icon={<Zap size={14} className="text-blue-500" />}
-              value={salesWindow}
-              onChange={setSalesWindow}
-            />
+            <SourceSelector value={source} onChange={setSource} />
+            {showWindowPickers && (
+              <>
+                <TimeWindowPicker
+                  label="VSL"
+                  icon={<Zap size={14} className="text-purple-500" />}
+                  value={vslWindow}
+                  onChange={setVslWindow}
+                />
+                <TimeWindowPicker
+                  label="Conversão"
+                  icon={<LayoutGrid size={14} className="text-emerald-500" />}
+                  value={convWindow}
+                  onChange={setConvWindow}
+                />
+                <TimeWindowPicker
+                  label="Vendas"
+                  icon={<Zap size={14} className="text-blue-500" />}
+                  value={salesWindow}
+                  onChange={setSalesWindow}
+                />
+              </>
+            )}
           </div>
         }
       />
@@ -631,29 +644,40 @@ export function LivePage() {
       <main className="p-4 space-y-6">
         <LiveTabs tabs={tabs} active={activeTab} onChange={setActiveTab} />
 
-        {activeTab === "geral" ? (
-          activeFunnels.length > 0 ? (
-            <GeneralLiveView
-              funnels={activeFunnels}
+        {/* Uma fonte de cada vez. Em "Comparar" as duas aparecem empilhadas e
+            rotuladas — nunca somadas: o Clarity e o nosso rastreador contam
+            sessão de formas diferentes, e a soma conta a mesma pessoa duas
+            vezes. */}
+        {source !== "clarity" &&
+          (activeTab === "geral" ? (
+            activeFunnels.length > 0 ? (
+              <GeneralLiveView
+                funnels={activeFunnels}
+                convWindow={convWindow}
+                salesWindow={salesWindow}
+              />
+            ) : (
+              <div className="py-16 text-center text-muted-foreground">
+                Nenhum funil recebendo tráfego ao vivo no momento.
+              </div>
+            )
+          ) : selectedFunnel ? (
+            <FunnelLiveView
+              funnel={selectedFunnel}
+              vslWindow={vslWindow}
               convWindow={convWindow}
               salesWindow={salesWindow}
             />
           ) : (
             <div className="py-16 text-center text-muted-foreground">
-              Nenhum funil recebendo tráfego ao vivo no momento.
+              Funil não encontrado.
             </div>
-          )
-        ) : selectedFunnel ? (
-          <FunnelLiveView
-            funnel={selectedFunnel}
-            vslWindow={vslWindow}
-            convWindow={convWindow}
-            salesWindow={salesWindow}
+          ))}
+
+        {source !== "tracker" && (
+          <ClarityLiveView
+            funnelId={activeTab === "geral" ? undefined : activeTab}
           />
-        ) : (
-          <div className="py-16 text-center text-muted-foreground">
-            Funil não encontrado.
-          </div>
         )}
       </main>
     </div>

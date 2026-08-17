@@ -731,17 +731,198 @@ export async function getClarityMetrics(
   period: PeriodInput
 ): Promise<any> {
   if (USE_MOCK) {
+    // O mock carrega o carimbo de tempo junto, como o backend faz. Sem isso a
+    // tela de exemplo mostraria número sem data — exatamente o que a fonte real
+    // não pode fazer.
     return delay({
       sessions: Math.round(periodScale(period, 15000)),
       pageViews: Math.round(periodScale(period, 48000)),
       avgTime: 145.2,
       bounceRate: 42.3,
+      asOf: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+      ageMinutes: 300,
+      stale: false,
+      empty: false,
+      refDate: new Date(Date.now() - 864e5).toISOString().slice(0, 10),
     });
   }
 
   return apiGet(`/api/metrics/clarity?${periodQuery(period)}&funnel_id=${funnelId}`).then(
     (r) => r.json()
   );
+}
+
+// ---------------------------------------------------------------------------
+// FONTES DE DADOS
+// ---------------------------------------------------------------------------
+// Duas fontes, nunca somadas. O rastreador mede agora, por sessão nossa; o
+// Clarity mede por dia, agregado, com atraso de publicação. Cada uma responde
+// no seu formato e com o seu carimbo de tempo.
+
+export type DataSource = "tracker" | "clarity" | "compare";
+
+export const DATA_SOURCE_LABELS: Record<DataSource, string> = {
+  tracker: "Nosso rastreador",
+  clarity: "Clarity",
+  compare: "Comparar",
+};
+
+/**
+ * Metadados de tempo que acompanham TODO número vindo do Clarity.
+ * Nenhuma tela mostra um valor do Clarity sem isto: sem o carimbo, um dado de
+ * ontem lido na página "Ao Vivo" passa por "agora".
+ */
+export interface AsOf {
+  /** ISO de quando o dado foi buscado do Clarity. */
+  asOf: string | null;
+  /** Minutos desde a busca. */
+  ageMinutes: number | null;
+  /** Mais de 24h sem atualizar. */
+  stale: boolean;
+  /** Nunca houve importação — diferente de "deu zero". */
+  empty: boolean;
+  /** Dia de referência do dado (não é o dia de hoje). */
+  refDate: string | null;
+}
+
+export interface ClaritySnapshot extends AsOf {
+  source: "clarity";
+  funnelId: string | null;
+  period: string | null;
+  metrics: {
+    sessions: number;
+    pageViews: number;
+    avgTime: number;
+    bounceRate: number;
+  } | null;
+}
+
+export interface TrackerSnapshot {
+  funnelId: string;
+  bucket: "hour" | "day";
+  periodStart: string;
+  capturedAt: string;
+  visitors: number;
+  pageEntries: number;
+  byStep?: Record<string, number>;
+}
+
+const SOURCE_PREF_KEY = "funneltron:data-source";
+
+/**
+ * Fonte escolhida. Lê do localStorage primeiro para a tela abrir já no estado
+ * certo (sem piscar na fonte errada) e confirma com o servidor em seguida.
+ */
+export function readLocalDataSource(): DataSource {
+  try {
+    const v = localStorage.getItem(SOURCE_PREF_KEY);
+    if (v === "tracker" || v === "clarity" || v === "compare") return v;
+  } catch {
+    /* localStorage bloqueado — cai no padrão */
+  }
+  return "tracker";
+}
+
+export async function getDataSourcePreference(): Promise<DataSource> {
+  if (USE_MOCK) return delay(readLocalDataSource(), 0);
+
+  try {
+    const r = await apiGet("/api/sources/preference");
+    if (!r.ok) return readLocalDataSource();
+    const data = await r.json();
+    return (data.dataSource as DataSource) ?? "tracker";
+  } catch {
+    // Preferência é conforto, não dado. Se o servidor não responde, a tela
+    // abre na última escolha conhecida em vez de travar.
+    return readLocalDataSource();
+  }
+}
+
+export async function setDataSourcePreference(source: DataSource): Promise<void> {
+  try {
+    localStorage.setItem(SOURCE_PREF_KEY, source);
+  } catch {
+    /* segue mesmo sem persistir localmente */
+  }
+
+  if (USE_MOCK) return;
+
+  try {
+    await apiSend("/api/sources/preference", "PUT", { data_source: source });
+  } catch {
+    /* já salvou local; sincroniza na próxima */
+  }
+}
+
+/** Último dado do Clarity que existe — é o que a página Ao Vivo mostra. */
+export async function getLatestClarity(
+  funnelId?: string
+): Promise<ClaritySnapshot> {
+  if (USE_MOCK) {
+    const asOf = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+    return delay({
+      source: "clarity" as const,
+      funnelId: funnelId ?? null,
+      period: "30d",
+      metrics: { sessions: 15000, pageViews: 48000, avgTime: 145.2, bounceRate: 42.3 },
+      asOf,
+      ageMinutes: 300,
+      stale: false,
+      empty: false,
+      refDate: new Date(Date.now() - 864e5).toISOString().slice(0, 10),
+    });
+  }
+
+  const q = funnelId ? `?funnel_id=${funnelId}` : "";
+  return apiGet(`/api/sources/clarity/latest${q}`).then((r) => r.json());
+}
+
+/** Períodos já fechados do nosso rastreador (histórico consultável). */
+export async function getTrackerHistory(
+  funnelId: string,
+  bucket: "hour" | "day" = "hour",
+  limit = 48
+): Promise<TrackerSnapshot[]> {
+  if (USE_MOCK) {
+    const now = Date.now();
+    return delay(
+      Array.from({ length: 12 }, (_, i) => ({
+        funnelId,
+        bucket,
+        periodStart: new Date(now - (i + 1) * 3600e3).toISOString(),
+        capturedAt: new Date(now - i * 3600e3).toISOString(),
+        visitors: Math.round(120 + Math.sin(i) * 40),
+        pageEntries: Math.round(300 + Math.cos(i) * 90),
+      }))
+    );
+  }
+
+  return apiGet(
+    `/api/sources/tracker/history?funnel_id=${funnelId}&bucket=${bucket}&limit=${limit}`
+  ).then((r) => r.json());
+}
+
+/** Fecha o período corrente num snapshot agora, sem esperar o cron. */
+export async function captureTrackerSnapshot(
+  funnelId: string,
+  bucket: "hour" | "day" = "hour"
+): Promise<TrackerSnapshot> {
+  if (USE_MOCK) {
+    return delay({
+      funnelId,
+      bucket,
+      periodStart: new Date().toISOString(),
+      capturedAt: new Date().toISOString(),
+      visitors: 137,
+      pageEntries: 402,
+    });
+  }
+
+  return apiSend(
+    `/api/sources/tracker/snapshot?funnel_id=${funnelId}&bucket=${bucket}`,
+    "POST",
+    {}
+  ).then((r) => r.json());
 }
 
 // --- VTurb API (mock por enquanto, substituir quando tiver token real) ---

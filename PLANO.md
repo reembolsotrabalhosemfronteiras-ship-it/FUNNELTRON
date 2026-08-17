@@ -217,6 +217,53 @@ Enquanto não existe: `captureScreenshot()` devolve placeholder no mock; a UI
 sempre aceita **colar (Ctrl+V), arrastar ou escolher** print manual; erro do
 backend vira mensagem explícita, nunca falha muda.
 
+### 2.15 Duas fontes de dados, nunca somadas
+
+O nosso rastreador e o Microsoft Clarity **não medem a mesma coisa**. O Clarity
+entrega agregado por dia, com atraso de publicação; o rastreador entrega evento
+por sessão, agora. Cada um define "sessão" à sua maneira.
+
+Por isso:
+
+- **Tabelas separadas** (`tracker_snapshots`, `clarity_snapshots`). Nunca uma
+  tabela comum de eventos — ela convidaria a somar, e a soma conta a mesma
+  pessoa duas vezes.
+- **Uma fonte de verdade por métrica.** Clique, rage click, heatmap → Clarity.
+  Presença ao vivo, entrada em etapa, conversão do funil → nosso.
+- **A interface mostra uma fonte de cada vez** (seletor em Ao Vivo, Métricas e
+  Funil). "Comparar" empilha as duas rotuladas, lado a lado — nunca agregadas.
+- **Junção entre as duas**: só por URL normalizada + dia
+  (`snapshots.normalize_url`). Não se tenta casar sessão do Clarity com o nosso
+  `session_id` — os IDs dele não são expostos por evento.
+
+### 2.16 Todo número do Clarity vem carimbado
+
+Numa página chamada "Ao Vivo", um dado de ontem sem rótulo passa por "agora" —
+e a pessoa decide em cima disso. Então nenhum valor do Clarity aparece na tela
+sem `AsOfBadge` ao lado: badge no topo do painel, carimbo em cada card, e a
+palavra "agora" some dos rótulos quando a fonte é Clarity. Os seletores de
+janela (5m/30m/1h) somem também: são recorte que essa fonte não sabe entregar.
+
+Snapshot com mais de 24h é marcado como **defasado**; sem nenhum snapshot, a
+tela diz "nenhuma importação ainda" em vez de mostrar zero — zero e
+"não importei" são coisas diferentes.
+
+### 2.17 Dedupe é por chave de evento, com índice total
+
+O navegador reenvia o mesmo heartbeat sozinho (retry de rede, `sendBeacon` no
+fechamento da aba). O `tracker.js` gera um `event_id` por visualização de
+página — igual em todos os beats da mesma página, novo quando a URL muda — e o
+backend faz `upsert(on_conflict="event_id")`.
+
+O índice é **total, não parcial**: índice parcial não serve de alvo para
+`ON CONFLICT` (erro 42P10, o tropeço que já derrubou o webhook de vendas). Não
+precisa ser parcial porque NULLs nunca colidem entre si — beats de snippets
+antigos, sem `event_id`, continuam entrando.
+
+No Clarity o dedupe é por **snapshot**, não por evento: chave
+`(project_id, page_url, period, date)` e reimportar **substitui** a linha. Sem
+isso, rodar o import duas vezes no mesmo dia dobra o número.
+
 ---
 
 ## 3. Estado atual
@@ -323,6 +370,7 @@ backend vira mensagem explícita, nunca falha muda.
 
 | Tarefa | Falta |
 |---|---|
+| **Seletor de fonte + histórico salvo** | Código pronto e verificado (seletor nas 3 páginas, carimbo de tempo, snapshots das duas fontes, dedupe por `event_id`). Falta **rodar `backend/supabase/migrations/002_fontes_de_dados.sql`** no SQL Editor do Supabase — sem isso as rotas novas respondem erro de tabela inexistente. Depois: reinstalar o `tracker.js` atualizado nas páginas do funil, para o `event_id` começar a chegar. |
 | **Aba "Ao Vivo" em produção** | Funciona ponta a ponta contra o banco (heartbeat → pessoas online → log de entradas → webhook → feed de vendas), verificado com tráfego simulado. Falta **instalar o snippet nas páginas reais** do funil para entrar tráfego de verdade. |
 | **Métricas de Clarity e VTurb** | As rotas existem e respondem, mas devolvem vazio: nenhuma credencial real foi configurada e o `step_metrics` nunca foi populado. O botão "Sincronizar" é o gatilho — falta exercitar com token real. |
 | **Políticas de RLS do `live_page_entries`** | Foram adicionadas ao `schema.sql` **depois** de você já ter rodado o script, então não existem no seu banco. A leitura funciona porque a rota usa a chave de serviço. Para deixar a defesa em profundidade igual às outras tabelas, rode só esse trecho do schema. |

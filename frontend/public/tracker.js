@@ -101,17 +101,51 @@
   var utm = getUtm();
   var pendingUrl = null;
 
+  /**
+   * Identidade da visualização de página atual.
+   *
+   * Um MESMO event_id vale para todos os heartbeats da mesma página. É o que
+   * permite ao backend gravar a entrada em página uma vez só: o navegador
+   * reenvia o mesmo beat sozinho (retry de rede, sendBeacon no fechamento da
+   * aba, volta de aba em segundo plano), e sem chave de evento cada reenvio
+   * virava uma entrada nova — inflando o topo do funil com gente que nunca
+   * existiu.
+   *
+   * Troca só quando a URL troca, que é exatamente quando existe entrada nova.
+   */
+  var eventId = null;
+  var eventUrl = null;
+
+  function eventIdAtual(url) {
+    if (url !== eventUrl) {
+      eventUrl = url;
+      eventId =
+        "evt_" +
+        Date.now().toString(36) +
+        "_" +
+        Math.random().toString(36).slice(2, 10);
+    }
+    return eventId;
+  }
+
+  /** Corpo do heartbeat. Um lugar só — o beforeunload manda o mesmo formato. */
+  function montarPayload(comReferrer) {
+    var url = window.location.href;
+    return {
+      funnel_id: FUNNEL_ID,
+      session_id: sessionId,
+      device_id: deviceId,
+      event_id: eventIdAtual(url),
+      url: url,
+      referrer: comReferrer ? document.referrer || null : null,
+      utm: utm,
+    };
+  }
+
   /** Envia um heartbeat agora. */
   function beat() {
     try {
-      var payload = {
-        funnel_id: FUNNEL_ID,
-        session_id: sessionId,
-        device_id: deviceId,
-        url: window.location.href,
-        referrer: document.referrer || null,
-        utm: utm,
-      };
+      var payload = montarPayload(true);
       pendingUrl = payload.url;
 
       var url = ENDPOINT ? ENDPOINT + "/api/live/track" : "/api/live/track";
@@ -161,14 +195,7 @@
       navigator.sendBeacon &&
         navigator.sendBeacon(
           ENDPOINT ? ENDPOINT + "/api/live/track" : "/api/live/track",
-          JSON.stringify({
-            funnel_id: FUNNEL_ID,
-            session_id: sessionId,
-            device_id: deviceId,
-            url: window.location.href,
-            referrer: null,
-            utm: utm,
-          })
+          JSON.stringify(montarPayload(false))
         );
     } catch (e) {}
   });

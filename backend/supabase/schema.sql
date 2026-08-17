@@ -528,6 +528,14 @@ create trigger update_credentials_updated_at
   for each row execute function update_updated_at_column();
 
 -- ============================================================================
+-- MIGRAÇÕES POSTERIORES
+-- ============================================================================
+-- Instalação nova: rode também os arquivos de `supabase/migrations/` em ordem.
+-- Eles são idempotentes e trazem o que veio depois deste schema base:
+--   002_fontes_de_dados.sql — histórico salvo do rastreador e do Clarity,
+--                             dedupe por event_id, preferência de fonte.
+
+-- ============================================================================
 -- STORAGE (executar separadamente no dashboard do Supabase)
 -- ============================================================================
 

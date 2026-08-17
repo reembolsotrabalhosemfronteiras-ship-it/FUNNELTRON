@@ -8,7 +8,9 @@ from fastapi.staticfiles import StaticFiles
 
 from .core.config import get_settings
 from .core.supabase_client import is_local_mode, LOCAL_DATA_DIR
-from .routers import auth, funnels, layout, screenshots, metrics, integrations, imports, live
+from .routers import (
+    auth, funnels, layout, screenshots, metrics, integrations, imports, live, sources
+)
 
 # Configurações
 settings = get_settings()
@@ -115,6 +117,7 @@ app.include_router(metrics.router, prefix="/api")
 app.include_router(integrations.router, prefix="/api")
 app.include_router(imports.router, prefix="/api")
 app.include_router(live.router, prefix="/api")
+app.include_router(sources.router, prefix="/api")
 
 
 # Prints capturados no modo local são servidos daqui. No Supabase o Storage

@@ -35,6 +35,9 @@ import { Badge } from "@/components/common/Badge";
 import { Button } from "@/components/common/Button";
 import { Spinner } from "@/components/common/Spinner";
 import { PeriodPicker, periodLabel } from "@/components/common/PeriodPicker";
+import { SourceSelector, useDataSource } from "@/components/common/SourceSelector";
+import { AsOfBadge } from "@/components/common/AsOfBadge";
+import type { DataSource } from "@/api/client";
 import { cn } from "@/lib/cn";
 import { conversionBar, conversionColor } from "@/lib/conversion";
 import { MetricLabel } from "@/components/common/MetricLabel";
@@ -134,6 +137,7 @@ export function MetricsPage() {
   const [period, setPeriod] = useState<PeriodInput>("30d");
   const [bundles, setBundles] = useState<FunnelBundle[]>([]);
   const [loading, setLoading] = useState(true);
+  const { source, setSource } = useDataSource();
 
   const isGlobal = selectedIds.length === 0;
 
@@ -173,7 +177,8 @@ export function MetricsPage() {
             : `Análise detalhada · ${periodLabel(period)}`
         }
         actions={
-          <div className="flex items-start gap-2">
+          <div className="flex flex-wrap items-start justify-end gap-2">
+            <SourceSelector value={source} onChange={setSource} />
             <PeriodPicker value={period} onChange={setPeriod} />
             {routeId && (
               <Link to={`/funnel/${routeId}`}>
@@ -207,7 +212,7 @@ export function MetricsPage() {
       ) : comparing ? (
         <ComparisonView bundles={bundles} />
       ) : (
-        <SingleFunnelView bundle={bundles[0]} period={period} />
+        <SingleFunnelView bundle={bundles[0]} period={period} source={source} />
       )}
     </div>
   );
@@ -854,9 +859,11 @@ function ComparisonView({ bundles }: { bundles: FunnelBundle[] }) {
 function SingleFunnelView({
   bundle,
   period,
+  source,
 }: {
   bundle: FunnelBundle;
   period: PeriodInput;
+  source: DataSource;
 }) {
   const { funnel, steps, edges, metrics } = bundle;
   const [selectedStep, setSelectedStep] = useState<string | null>(null);
@@ -1162,20 +1169,27 @@ function SingleFunnelView({
       <VslSection bundle={bundle} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <SourceCard
-          title="Métricas Clarity"
-          emoji="📊"
-          description="Conversão real por página"
-          badge="Clarity"
-          data={clarity}
-          fields={[
-            ["Sessões", clarity?.sessions?.toLocaleString("pt-BR")],
-            ["Páginas vistas", clarity?.pageViews?.toLocaleString("pt-BR")],
-            ["Tempo médio (seg)", clarity?.avgTime?.toFixed(1)],
-            ["Taxa de rejeição", `${clarity?.bounceRate?.toFixed(1) ?? 0}%`],
-          ]}
-          empty="Configure o token Clarity em Configurações"
-        />
+        {source !== "tracker" && (
+          <SourceCard
+            title="Métricas Clarity"
+            emoji="📊"
+            description="Conversão real por página"
+            badge="Clarity"
+            data={clarity}
+            fields={[
+              ["Sessões", clarity?.sessions?.toLocaleString("pt-BR")],
+              ["Páginas vistas", clarity?.pageViews?.toLocaleString("pt-BR")],
+              ["Tempo médio (seg)", clarity?.avgTime?.toFixed(1)],
+              ["Taxa de rejeição", `${clarity?.bounceRate?.toFixed(1) ?? 0}%`],
+            ]}
+            empty="Configure o token Clarity em Configurações"
+            // O período pedido não é o período que o Clarity entregou: ele
+            // publica com atraso e o dado pode ser de ontem. O rodapé diz de
+            // quando é — sem isso o card herda o rótulo do PeriodPicker e
+            // promete um recorte que não é o do número.
+            footer={<AsOfBadge {...(clarity ?? { empty: true })} />}
+          />
+        )}
         <SourceCard
           title="Métricas VTurb"
           emoji="🎬"
@@ -1444,6 +1458,7 @@ function SourceCard({
   fields,
   empty,
   accent,
+  footer,
 }: {
   title: string;
   emoji: string;
@@ -1453,6 +1468,8 @@ function SourceCard({
   fields: [string, string | undefined][];
   empty: string;
   accent?: boolean;
+  /** Carimbo de tempo, quando a fonte não entrega dado do período pedido. */
+  footer?: React.ReactNode;
 }) {
   return (
     <Card>
@@ -1496,6 +1513,7 @@ function SourceCard({
             <p>{empty}</p>
           </div>
         )}
+        {footer && <div className="mt-3">{footer}</div>}
       </CardContent>
     </Card>
   );

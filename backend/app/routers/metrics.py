@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from ..core.auth import get_current_user, get_db
 from ..core.supabase_client import get_supabase_client
 from ..services.clarity import clarity_service
+from ..services import snapshots
 from supabase import Client
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
@@ -40,7 +41,25 @@ async def get_clarity_metrics(
     """
     Proxy para Microsoft Clarity Data Export API.
     O token de exportação fica no backend (env CLARITY_EXPORT_TOKEN).
+
+    Toda consulta bem-sucedida vira snapshot salvo, e a resposta sempre carrega
+    quando o dado é (`asOf`). Se a API do Clarity falhar, devolve o último
+    snapshot em vez de erro: um dado de ontem rotulado como de ontem serve; uma
+    tela vazia não.
     """
+    def _falha(mensagem: str, http_status: int):
+        """Último snapshot salvo como plano B — ou o erro, se não houver nenhum."""
+        snap = snapshots.latest_clarity_snapshot(current_user.id, funnel_id, period)
+        if not snap:
+            raise HTTPException(status_code=http_status, detail=mensagem)
+
+        return {
+            **snap["payload"],
+            **snapshots.as_of_envelope(snap),
+            "fromCache": True,
+            "warning": mensagem,
+        }
+
     try:
         # Resolve o project_id das credenciais do usuário
         creds = supabase.table("api_credentials").select("extra_config").eq(
@@ -48,16 +67,16 @@ async def get_clarity_metrics(
         ).eq("provider", "clarity").execute()
 
         if not creds.data or not creds.data[0].get("extra_config"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Project ID do Clarity não configurado"
+            return _falha(
+                "Project ID do Clarity não configurado",
+                status.HTTP_400_BAD_REQUEST,
             )
 
         project_id = creds.data[0]["extra_config"].get("project_id")
         if not project_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Project ID do Clarity não encontrado"
+            return _falha(
+                "Project ID do Clarity não encontrado",
+                status.HTTP_400_BAD_REQUEST,
             )
 
         # Calcula datas
@@ -71,10 +90,10 @@ async def get_clarity_metrics(
             end_date
         )
 
-        if result.get("error"):
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=result.get("message", "Erro na API do Clarity")
+        if isinstance(result, dict) and result.get("error"):
+            return _falha(
+                result.get("message", "Erro na API do Clarity"),
+                status.HTTP_502_BAD_GATEWAY,
             )
 
         # Processa sessões brutas em métricas resumidas
@@ -84,11 +103,29 @@ async def get_clarity_metrics(
         total_time = sum(s.get("totalTime", 0) or 0 for s in sessions)
         bounces = sum(1 for s in sessions if (s.get("pagesCount", 0) or 0) == 1)
 
-        return {
+        metricas = {
             "sessions": total_sessions,
             "pageViews": total_page_views,
             "avgTime": total_time / total_sessions / 1000 if total_sessions else 0,
             "bounceRate": (bounces / total_sessions) * 100 if total_sessions else 0,
+        }
+
+        # Salva o snapshot do dia. Reimportar o mesmo dia substitui a linha —
+        # o Clarity reentrega o mesmo período a cada consulta, e acumular
+        # linhas dobraria o número na leitura.
+        salvo = snapshots.save_clarity_snapshot(
+            user_id=current_user.id,
+            project_id=project_id,
+            period=period,
+            payload=metricas,
+            funnel_id=funnel_id,
+            ref_date=end_date,
+        )
+
+        return {
+            **metricas,
+            **snapshots.as_of_envelope(salvo),
+            "fromCache": False,
         }
 
     except HTTPException:

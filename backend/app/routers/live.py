@@ -20,6 +20,10 @@ class LiveBeatRequest(BaseModel):
     funnel_id: str
     session_id: str
     device_id: Optional[str] = None
+    # Identidade da visualização de página: igual em todos os heartbeats da
+    # mesma página, diferente quando a pessoa navega. É a chave de dedupe.
+    # Opcional para não quebrar snippets antigos já colados em produção.
+    event_id: Optional[str] = None
     url: str
     referrer: Optional[str] = None
     utm: Optional[dict] = None
@@ -58,13 +62,32 @@ async def track_heartbeat(
         previous_url = previous.data[0]["url"] if previous.data else None
 
         if previous_url != beat.url:
-            supabase.table("live_page_entries").insert({
+            entry = {
                 "funnel_id": beat.funnel_id,
                 "session_id": beat.session_id,
                 "url": beat.url,
                 "referrer": beat.referrer,
                 "utm": beat.utm,
-            }).execute()
+                "event_id": beat.event_id,
+            }
+
+            if beat.event_id:
+                # Upsert em vez de insert: dois heartbeats da mesma página podem
+                # chegar juntos (retry de rede, sendBeacon do fechamento da aba
+                # correndo com o beat do intervalo). Os dois passam pelo teste de
+                # URL acima antes de qualquer um gravar, e o insert simples criava
+                # duas entradas para uma visita só.
+                #
+                # O índice de event_id é TOTAL, não parcial — índice parcial não
+                # serve de alvo para ON CONFLICT (42P10, o mesmo tropeço do
+                # webhook de vendas). Não precisa ser parcial porque NULLs nunca
+                # colidem entre si: os beats de snippets antigos, sem event_id,
+                # continuam entrando normalmente.
+                supabase.table("live_page_entries").upsert(
+                    entry, on_conflict="event_id"
+                ).execute()
+            else:
+                supabase.table("live_page_entries").insert(entry).execute()
 
         # Upsert: se session_id já existe, atualiza last_seen
         result = supabase.table("live_beats").upsert({
