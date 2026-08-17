@@ -237,6 +237,14 @@ export function TrackerCard({ apiOrigin = "" }: TrackerCardProps) {
             <li>Heartbeats são enviados a cada 15s (configurável em <code className="font-mono">interval</code>).</li>
             <li>Dados aparecem em <strong>Ao Vivo</strong> segundos depois da primeira visita.</li>
           </ol>
+          {/* Sem isto, rastreador mudo e funil sem visitante são a mesma tela.
+              O snippet não pode gritar na página de vendas do cliente, então o
+              jeito de saber é perguntar. */}
+          <p className="pt-1">
+            <strong>Não aparece ninguém?</strong> Abra o console na página do funil e digite{" "}
+            <code className="font-mono">Funneltron.lastStatus</code> — <code className="font-mono">204</code>{" "}
+            é heartbeat aceito. Se der erro de rede, confira se o endereço acima abre no navegador.
+          </p>
         </div>
       </CardContent>
     </Card>
