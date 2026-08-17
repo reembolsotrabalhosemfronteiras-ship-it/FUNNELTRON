@@ -1,0 +1,616 @@
+"""Router de rastreamento ao vivo"""
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.security import APIKeyHeader
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime, timedelta, timezone
+from ..core.auth import get_current_user, get_optional_user, get_db
+from ..core.supabase_client import get_supabase_client, get_supabase_admin
+from ..core.config import get_settings
+from ..services.vturb import vturb_service
+from supabase import Client
+
+router = APIRouter(prefix="/live", tags=["live"])
+
+# Header opcional para validar webhooks de venda (PerfectPay, etc.)
+WEBHOOK_HEADER = APIKeyHeader(name="X-Webhook-Secret", auto_error=False)
+
+
+class LiveBeatRequest(BaseModel):
+    funnel_id: str
+    session_id: str
+    device_id: Optional[str] = None
+    url: str
+    referrer: Optional[str] = None
+    utm: Optional[dict] = None
+
+
+@router.post("/track", status_code=status.HTTP_204_NO_CONTENT)
+async def track_heartbeat(
+    beat: LiveBeatRequest,
+    supabase: Client = Depends(get_supabase_admin)
+):
+    """
+    Endpoint público para heartbeat do rastreador (snippet nas páginas).
+    Aceita requisições anônimas (CORS aberto).
+    """
+    try:
+        # Página mudou (ou é a primeira)? Registra no log de entradas ANTES do
+        # upsert — depois do upsert a URL anterior já foi sobrescrita e não dá
+        # mais para saber se houve troca de página.
+        previous = supabase.table("live_beats").select("url").eq(
+            "session_id", beat.session_id
+        ).execute()
+        previous_url = previous.data[0]["url"] if previous.data else None
+
+        if previous_url != beat.url:
+            supabase.table("live_page_entries").insert({
+                "funnel_id": beat.funnel_id,
+                "session_id": beat.session_id,
+                "url": beat.url,
+                "referrer": beat.referrer,
+                "utm": beat.utm,
+            }).execute()
+
+        # Upsert: se session_id já existe, atualiza last_seen
+        result = supabase.table("live_beats").upsert({
+            "session_id": beat.session_id,
+            "funnel_id": beat.funnel_id,
+            "device_id": beat.device_id,
+            "url": beat.url,
+            "referrer": beat.referrer,
+            "utm": beat.utm,
+            "last_seen": "now()"
+        }, on_conflict="session_id").execute()
+
+        return None
+
+    except Exception as e:
+        # Não expõe erros internos para o snippet
+        print(f"Erro no track: {e}")
+        return None
+
+
+@router.get("")
+async def get_live_data(
+    funnel_id: str,
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_db)
+):
+    """
+    Busca pessoas online no funil agora (últimos 90s).
+
+    Returns:
+        [
+            {
+                "stepId": str,
+                "online": int,
+                "unmapped": int  # URLs não mapeadas
+            }
+        ]
+    """
+    try:
+        # Verifica se o funil pertence ao usuário
+        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
+            "user_id", current_user.id
+        ).execute()
+
+        if not funnel.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Funil não encontrado"
+            )
+
+        # Busca beats ativos (últimos 90s)
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=90)).isoformat()
+
+        beats = supabase.table("live_beats").select(
+            "step_id, url"
+        ).eq("funnel_id", funnel_id).gte("last_seen", cutoff).execute()
+
+        # Agrupa por step_id
+        by_step = {}
+        unmapped_count = 0
+
+        for beat in beats.data:
+            step_id = beat.get("step_id")
+
+            if step_id:
+                if step_id not in by_step:
+                    by_step[step_id] = 0
+                by_step[step_id] += 1
+            else:
+                unmapped_count += 1
+
+        result = [
+            {"stepId": step_id, "online": count}
+            for step_id, count in by_step.items()
+        ]
+
+        if unmapped_count > 0:
+            result.append({"stepId": None, "online": unmapped_count})
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar dados ao vivo: {str(e)}"
+        )
+
+
+@router.get("/entries")
+async def get_page_entries(
+    funnel_id: str,
+    window: int = 30,
+    limit: int = 40,
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_db)
+):
+    """
+    Log de entradas em página: quem entrou, em qual etapa, quando.
+    Mais recente primeiro.
+
+    Returns:
+        [
+            {
+                "id": str,
+                "funnelId": str,
+                "stepId": str | None,
+                "timestamp": str,   # ISO
+                "visitor": str,     # hash curto da sessão (anônimo)
+                "device": "mobile" | "desktop" | None,
+                "source": str,      # utm_source, domínio do referrer ou "direto"
+                "url": str
+            }
+        ]
+    """
+    try:
+        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
+            "user_id", current_user.id
+        ).execute()
+
+        if not funnel.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Funil não encontrado"
+            )
+
+        # UTC explícito. `datetime.now()` devolve hora local ingênua e o
+        # Postgres a interpreta no fuso da sessão (UTC): numa máquina em
+        # UTC-3 a janela de 30 min virava uma de 3h30.
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=window)).isoformat()
+
+        # Leitura com a service_role, e não com a chave anon: a tabela tem RLS
+        # e o cliente anônimo não carrega o JWT do usuário — a consulta voltava
+        # vazia em silêncio, como se ninguém tivesse entrado em página nenhuma.
+        # A permissão já foi checada acima (o funil é deste usuário).
+        rows = get_supabase_admin().table("live_page_entries").select(
+            "id, step_id, url, referrer, utm, device, entered_at, session_id"
+        ).eq("funnel_id", funnel_id).gte(
+            "entered_at", cutoff
+        ).order("entered_at", desc=True).limit(limit).execute()
+
+        result = []
+
+        for row in rows.data:
+            utm = row.get("utm") or {}
+            referrer = row.get("referrer") or ""
+
+            # Origem: utm_source manda; senão o domínio do referrer; senão direto.
+            if utm.get("source"):
+                source = utm["source"]
+            elif referrer:
+                source = referrer.split("/")[2] if "//" in referrer else referrer
+            else:
+                source = "direto"
+
+            result.append({
+                "id": row["id"],
+                "funnelId": funnel_id,
+                "stepId": row.get("step_id"),
+                "timestamp": row["entered_at"],
+                # Nunca expõe o session_id inteiro: o log é para reconhecer
+                # "é a mesma pessoa de novo", não para identificar alguém.
+                "visitor": row["session_id"][-5:],
+                "device": row.get("device"),
+                "source": source,
+                "url": row["url"],
+            })
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar entradas de página: {str(e)}"
+        )
+
+
+@router.get("/vsl")
+async def get_live_vsl_data(
+    funnel_id: str,
+    minutes: int = 5,
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_db)
+):
+    """
+    Busca usuários que entraram nas VSLs nos últimos N minutos (via VTurb).
+
+    Returns:
+        [
+            {
+                "stepId": str,
+                "playerId": str,
+                "label": str,
+                "liveUsers": int,
+                "domain": str,
+                "windowMinutes": int
+            }
+        ]
+    """
+    try:
+        # Verifica se o funil pertence ao usuário
+        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
+            "user_id", current_user.id
+        ).execute()
+
+        if not funnel.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Funil não encontrado"
+            )
+
+        # Busca steps do tipo VSL
+        steps = supabase.table("funnel_steps").select("*").eq(
+            "funnel_id", funnel_id
+        ).eq("type", "vsl").execute()
+
+        if not steps.data:
+            return []
+
+        # Para cada VSL, busca live_users do VTurb
+        result = []
+
+        for step in steps.data:
+            # TODO: extrair player_id do step (precisa estar armazenado em extra_config ou similar)
+            # Por enquanto, retorna placeholder
+            result.append({
+                "stepId": step["id"],
+                "playerId": "",
+                "label": step["label"],
+                "liveUsers": 0,
+                "domain": "",
+                "windowMinutes": minutes
+            })
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar VSL live data: {str(e)}"
+        )
+
+
+@router.get("/active-funnels")
+async def get_active_funnels(
+    minutes: int = 5,
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_db)
+):
+    """
+    IDs dos funis que tiveram tráfego (heartbeat) nos últimos N minutos.
+    Usado para montar as abas "Geral + por funil" da página Ao Vivo.
+    """
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+
+        beats = supabase.table("live_beats").select(
+            "funnel_id"
+        ).gte("last_seen", cutoff).execute()
+
+        # Mantém só os funis que pertencem ao usuário.
+        funnel_ids = {b["funnel_id"] for b in beats.data if b.get("funnel_id")}
+
+        if not funnel_ids:
+            return []
+
+        funnels = supabase.table("funnels").select("id").in_(
+            "id", list(funnel_ids)
+        ).eq("user_id", current_user.id).execute()
+
+        return [f["id"] for f in funnels.data]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar funis ativos: {str(e)}"
+        )
+
+
+@router.get("/sales")
+async def get_live_sales(
+    funnel_id: str,
+    window: int = 60,
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_db)
+):
+    """
+    Vendas notificadas por webhook (PerfectPay/Hotmart/Kiwify) numa janela.
+    Janelas suportadas: 5, 30, 60 (minutos). Status: pending | paid.
+    """
+    try:
+        # Verifica se o funil pertence ao usuário
+        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
+            "user_id", current_user.id
+        ).execute()
+
+        if not funnel.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Funil não encontrado"
+            )
+
+        # Normaliza a janela para os baldes conhecidos.
+        if window <= 5:
+            bucket = "5m"
+        elif window <= 30:
+            bucket = "30m"
+        else:
+            bucket = "60m"
+
+        since = (datetime.now(timezone.utc) - timedelta(minutes=window)).isoformat()
+
+        sales = supabase.table("live_sales").select("*").eq(
+            "funnel_id", funnel_id
+        ).gte("created_at", since).order("created_at", desc=True).execute()
+
+        result = [
+            {
+                "id": s["id"],
+                "funnelId": s["funnel_id"],
+                "stepId": s.get("step_id"),
+                "status": s["status"],
+                "amount": float(s["amount"]),
+                "timestamp": s["created_at"],
+                "customer": s.get("customer"),
+            }
+            for s in sales.data
+        ]
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar vendas: {str(e)}"
+        )
+
+
+@router.get("/conversion")
+async def get_live_conversion(
+    funnel_id: str,
+    window: int = 30,
+    scope: str = "window",
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_db)
+):
+    """
+    Conversão de compra do funil (entrada -> página-meta), derivada dos
+    heartbeats + vendas. Retorna total e conversão de funil por etapa.
+
+    `scope=today` ignora `window` e mede desde a meia-noite: a janela curta diz
+    como está agora, o dia diz se isso é normal.
+    """
+    try:
+        # Verifica se o funil pertence ao usuário
+        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
+            "user_id", current_user.id
+        ).execute()
+
+        if not funnel.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Funil não encontrado"
+            )
+
+        now = datetime.now(timezone.utc)
+
+        if scope == "today":
+            # "Hoje" é meia-noite UTC. Não é o "hoje" do relógio do usuário —
+            # para isso o frontend precisaria mandar o fuso dele, e a conta
+            # passaria a mudar conforme quem olha. Fica registrado como
+            # limitação conhecida, não como detalhe esquecido.
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            effective_window = max(1, int((now - start).total_seconds() // 60))
+        else:
+            start = now - timedelta(minutes=window)
+            effective_window = window
+
+        since = start.isoformat()
+
+        # Etapas do funil (na ordem do desenho).
+        steps = supabase.table("funnel_steps").select(
+            "*"
+        ).eq("funnel_id", funnel_id).order("order_index").execute()
+
+        # Visitantes únicos por etapa = primeiros heartbeats na janela.
+        beats = supabase.table("live_beats").select(
+            "step_id, session_id"
+        ).eq("funnel_id", funnel_id).gte("first_seen", since).execute()
+
+        # Conta sessões distintas por etapa.
+        by_step: dict = {}
+        for b in beats.data:
+            sid = b.get("session_id")
+            st = b.get("step_id")
+            if not st or not sid:
+                continue
+            by_step.setdefault(st, set()).add(sid)
+
+        step_visitors = {st: len(s) for st, s in by_step.items()}
+
+        # Vendas pagas na janela = conversões de compra.
+        sales = supabase.table("live_sales").select("*").eq(
+            "funnel_id", funnel_id
+        ).eq("status", "paid").gte("created_at", since).execute()
+
+        conversions = len(sales.data)
+
+        # "Entraram" = quem chegou na PRIMEIRA etapa, não a soma de todas.
+        # Somar as etapas conta a mesma pessoa uma vez por página visitada e
+        # infla o denominador — a conversão de compra sairia sempre menor do
+        # que é, e pioraria justamente nos funis com mais páginas.
+        entry_step = steps.data[0] if steps.data else None
+        total_visitors = step_visitors.get(entry_step["id"], 0) if entry_step else 0
+
+        # Taxa por etapa (entrada relativa à etapa anterior).
+        step_rates = []
+        prev = None
+        for s in steps.data:
+            v = step_visitors.get(s["id"], 0)
+            rate = 100.0 if prev in (None, 0) else round((v / prev) * 100, 1)
+            step_rates.append({
+                "stepId": s["id"],
+                "label": s["label"],
+                "visitors": v,
+                "rate": rate,
+            })
+            prev = v if v > 0 else prev
+
+        rate = round((conversions / total_visitors) * 100, 1) if total_visitors else 0.0
+
+        return {
+            "funnelId": funnel_id,
+            "windowMinutes": effective_window,
+            "scope": scope,
+            "visitors": total_visitors,
+            "conversions": conversions,
+            "rate": rate,
+            "stepRates": step_rates,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar conversão: {str(e)}"
+        )
+
+
+@router.post("/webhook", status_code=status.HTTP_202_ACCEPTED)
+async def receive_sale_webhook(
+    payload: dict,
+    request: Request,
+    secret: Optional[str] = Depends(WEBHOOK_HEADER)
+):
+    """
+    Webhook de venda (PerfectPay, Hotmart, Kiwify...).
+    Espera um corpo com: funnel_id, step_id?, status (pending|paid),
+    amount, customer?, external_id?. Se WEBHOOK_SECRET estiver configurado,
+    valida o header X-Webhook-Secret.
+
+    Salva na tabela live_sales (não requer autenticação — é chamado pelo
+    gateway de pagamento, não pelo frontend).
+    """
+    try:
+        settings = get_settings()
+
+        # Segredo esperado: global (env) OU o configurado pelo dono do funil
+        # em Configurações -> Webhook. Se algum estiver definido e não bater,
+        # rejeita.
+        expected = settings.webhook_secret or ""
+        if not expected and payload.get("funnel_id"):
+            owner = (
+                get_supabase_admin()
+                .table("funnels")
+                .select("user_id")
+                .eq("id", payload["funnel_id"])
+                .execute()
+            )
+            if owner.data:
+                cred = (
+                    get_supabase_admin()
+                    .table("api_credentials")
+                    .select("api_token")
+                    .eq("user_id", owner.data[0]["user_id"])
+                    .eq("provider", "webhook")
+                    .execute()
+                )
+                if cred.data and cred.data[0].get("api_token"):
+                    expected = cred.data[0]["api_token"]
+
+        if expected and secret != expected:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Segredo de webhook inválido"
+            )
+
+        funnel_id = payload.get("funnel_id")
+        if not funnel_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="funnel_id é obrigatório"
+            )
+
+        status_value = str(payload.get("status", "pending")).lower()
+        if status_value not in ("pending", "paid"):
+            status_value = "pending"
+
+        amount = float(payload.get("amount") or 0)
+        external_id = payload.get("external_id") or payload.get("id")
+
+        row = {
+            "funnel_id": funnel_id,
+            "step_id": payload.get("step_id"),
+            "status": status_value,
+            "amount": amount,
+            "customer": payload.get("customer"),
+            "external_id": external_id,
+        }
+
+        supabase = get_supabase_admin()
+
+        # Deduplicação feita à mão, e não com `upsert(on_conflict=...)`: o
+        # índice único de `external_id` é PARCIAL (`where external_id is not
+        # null`), e o Postgres não aceita índice parcial como alvo de ON
+        # CONFLICT — dava 42P10 e o webhook inteiro respondia 500.
+        #
+        # Gateway reenvia webhook (retentativa, mudança de status pendente →
+        # pago), então dedupe não é luxo: sem ele a mesma venda entraria duas
+        # vezes e o faturamento do dia sairia inflado.
+        existing = None
+        if external_id:
+            found = supabase.table("live_sales").select("id").eq(
+                "external_id", external_id
+            ).execute()
+            existing = found.data[0] if found.data else None
+
+        if existing:
+            result = supabase.table("live_sales").update(row).eq(
+                "id", existing["id"]
+            ).execute()
+        else:
+            result = supabase.table("live_sales").insert(row).execute()
+
+        return {"ok": True, "saved": len(result.data) > 0}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao processar webhook: {str(e)}"
+        )

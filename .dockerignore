@@ -1,0 +1,12 @@
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.pyc
+frontend/dist
+backend/data
+backend/*.log
+.git
+.claude
+docs
+*.md
+!README.md

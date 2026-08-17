@@ -1,0 +1,415 @@
+"""Router de métricas"""
+from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional
+from datetime import datetime, timedelta
+from ..core.auth import get_current_user, get_db
+from ..core.supabase_client import get_supabase_client
+from ..services.clarity import clarity_service
+from supabase import Client
+
+router = APIRouter(prefix="/metrics", tags=["metrics"])
+
+
+def parse_period(period: Optional[str], from_date: Optional[str], to_date: Optional[str]):
+    """Converte period ou from/to para datas"""
+    if from_date and to_date:
+        return from_date, to_date
+
+    end_date = datetime.now().date()
+
+    if period == "7d":
+        start_date = end_date - timedelta(days=7)
+    elif period == "30d":
+        start_date = end_date - timedelta(days=30)
+    elif period == "90d":
+        start_date = end_date - timedelta(days=90)
+    else:
+        # "all" ou não especificado
+        start_date = datetime(2020, 1, 1).date()
+
+    return str(start_date), str(end_date)
+
+
+@router.get("/clarity")
+async def get_clarity_metrics(
+    period: str = "30d",
+    funnel_id: Optional[str] = None,
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_db)
+):
+    """
+    Proxy para Microsoft Clarity Data Export API.
+    O token de exportação fica no backend (env CLARITY_EXPORT_TOKEN).
+    """
+    try:
+        # Resolve o project_id das credenciais do usuário
+        creds = supabase.table("api_credentials").select("extra_config").eq(
+            "user_id", current_user.id
+        ).eq("provider", "clarity").execute()
+
+        if not creds.data or not creds.data[0].get("extra_config"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Project ID do Clarity não configurado"
+            )
+
+        project_id = creds.data[0]["extra_config"].get("project_id")
+        if not project_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Project ID do Clarity não encontrado"
+            )
+
+        # Calcula datas
+        start_date, end_date = parse_period(period, None, None)
+
+        # Chama o serviço
+        result = await clarity_service.get_sessions_export(
+            current_user.id,
+            project_id,
+            start_date,
+            end_date
+        )
+
+        if result.get("error"):
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=result.get("message", "Erro na API do Clarity")
+            )
+
+        # Processa sessões brutas em métricas resumidas
+        sessions = result or []
+        total_sessions = len(sessions)
+        total_page_views = sum(s.get("pagesCount", 0) or 0 for s in sessions)
+        total_time = sum(s.get("totalTime", 0) or 0 for s in sessions)
+        bounces = sum(1 for s in sessions if (s.get("pagesCount", 0) or 0) == 1)
+
+        return {
+            "sessions": total_sessions,
+            "pageViews": total_page_views,
+            "avgTime": total_time / total_sessions / 1000 if total_sessions else 0,
+            "bounceRate": (bounces / total_sessions) * 100 if total_sessions else 0,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar métricas Clarity: {str(e)}"
+        )
+
+
+@router.get("/overview")
+async def get_overview_metrics(
+    period: Optional[str] = "30d",
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    status_filter: Optional[str] = None,
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_db)
+):
+    """
+    Métricas agregadas de todos os funis (visão executiva).
+
+    Returns:
+        {
+            "totalFunnels": int,
+            "activeFunnels": int,
+            "totalVisitors": int,
+            "totalConversions": int,
+            "averageConversionRate": float
+        }
+    """
+    try:
+        start_date, end_date = parse_period(period, from_date, to_date)
+
+        # Busca funis do usuário
+        funnels_query = supabase.table("funnels").select("id, status").eq(
+            "user_id", current_user.id
+        )
+
+        if status_filter:
+            funnels_query = funnels_query.eq("status", status_filter)
+
+        funnels = funnels_query.execute()
+        funnel_ids = [f["id"] for f in funnels.data]
+
+        if not funnel_ids:
+            return {
+                "totalFunnels": 0,
+                "activeFunnels": 0,
+                "totalVisitors": 0,
+                "totalConversions": 0,
+                "averageConversionRate": None
+            }
+
+        # Busca métricas agregadas
+        metrics = supabase.table("step_metrics").select(
+            "visitors, conversions"
+        ).in_("funnel_id", funnel_ids).gte(
+            "date", start_date
+        ).lte("date", end_date).execute()
+
+        total_visitors = sum(m["visitors"] for m in metrics.data)
+        total_conversions = sum(m["conversions"] for m in metrics.data)
+
+        avg_rate = None
+        if total_visitors > 0:
+            avg_rate = round((total_conversions / total_visitors) * 100, 2)
+
+        active_count = len([f for f in funnels.data if f["status"] == "active"])
+
+        return {
+            "totalFunnels": len(funnels.data),
+            "activeFunnels": active_count,
+            "totalVisitors": total_visitors,
+            "totalConversions": total_conversions,
+            "averageConversionRate": avg_rate
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar métricas: {str(e)}"
+        )
+
+
+@router.get("/funnels/ranking")
+async def get_funnels_ranking(
+    period: Optional[str] = "30d",
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_db)
+):
+    """
+    Ranking de funis por taxa de conversão.
+
+    Returns:
+        [
+            {
+                "funnelId": str,
+                "funnelName": str,
+                "status": str,
+                "visitors": int,
+                "conversions": int,
+                "conversionRate": float
+            }
+        ]
+    """
+    try:
+        start_date, end_date = parse_period(period, from_date, to_date)
+
+        # Busca funis
+        funnels = supabase.table("funnels").select("*").eq(
+            "user_id", current_user.id
+        ).execute()
+
+        result = []
+
+        for funnel in funnels.data:
+            # Busca métricas do funil
+            metrics = supabase.table("step_metrics").select(
+                "visitors, conversions"
+            ).eq("funnel_id", funnel["id"]).gte(
+                "date", start_date
+            ).lte("date", end_date).execute()
+
+            total_visitors = sum(m["visitors"] for m in metrics.data)
+            total_conversions = sum(m["conversions"] for m in metrics.data)
+
+            conv_rate = None
+            if total_visitors > 0:
+                conv_rate = round((total_conversions / total_visitors) * 100, 2)
+
+            result.append({
+                "funnelId": funnel["id"],
+                "funnelName": funnel["name"],
+                "status": funnel["status"],
+                "visitors": total_visitors,
+                "conversions": total_conversions,
+                "conversionRate": conv_rate
+            })
+
+        # Ordena por conversionRate (None vai pro fim)
+        result.sort(key=lambda x: x["conversionRate"] or -1, reverse=True)
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar ranking: {str(e)}"
+        )
+
+
+@router.get("/vsl")
+async def get_vsl_metrics(
+    period: Optional[str] = "30d",
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_db)
+):
+    """
+    Insights de VSL (top VSLs por engajamento e conversão).
+
+    Returns:
+        [
+            {
+                "id": str,
+                "name": str,
+                "funnelId": str,
+                "funnelName": str,
+                "stepId": str,
+                "engagementRate": float,
+                "conversionRate": float,
+                "views": int,
+                "completions": int,
+                "source": "vturb"
+            }
+        ]
+    """
+    try:
+        start_date, end_date = parse_period(period, from_date, to_date)
+
+        # Busca funis do usuário
+        funnels = supabase.table("funnels").select("id, name").eq(
+            "user_id", current_user.id
+        ).execute()
+
+        funnel_ids = [f["id"] for f in funnels.data]
+
+        if not funnel_ids:
+            return []
+
+        # Busca VSL insights
+        vsl_data = supabase.table("vsl_insights").select("*").in_(
+            "funnel_id", funnel_ids
+        ).gte("date", start_date).lte("date", end_date).execute()
+
+        # Agrupa por step_id (soma views e completions)
+        vsl_by_step = {}
+
+        for vsl in vsl_data.data:
+            step_id = vsl["step_id"]
+
+            if step_id not in vsl_by_step:
+                vsl_by_step[step_id] = {
+                    "id": vsl["id"],
+                    "name": vsl["name"],
+                    "funnelId": vsl["funnel_id"],
+                    "stepId": step_id,
+                    "views": 0,
+                    "completions": 0,
+                    "source": vsl["source"]
+                }
+
+            vsl_by_step[step_id]["views"] += vsl.get("views", 0)
+            vsl_by_step[step_id]["completions"] += vsl.get("completions", 0)
+
+        # Calcula rates
+        result = []
+        for vsl in vsl_by_step.values():
+            engagement_rate = None
+            conversion_rate = None
+
+            if vsl["views"] > 0:
+                engagement_rate = round((vsl["completions"] / vsl["views"]) * 100, 2)
+                conversion_rate = engagement_rate  # Simplificado
+
+            # Adiciona nome do funil
+            funnel_name = next((f["name"] for f in funnels.data if f["id"] == vsl["funnelId"]), "")
+
+            result.append({
+                **vsl,
+                "funnelName": funnel_name,
+                "engagementRate": engagement_rate,
+                "conversionRate": conversion_rate
+            })
+
+        # Ordena por views (mais populares primeiro)
+        result.sort(key=lambda x: x["views"], reverse=True)
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar VSL metrics: {str(e)}"
+        )
+
+
+@router.get("/funnels/{funnel_id}")
+async def get_funnel_metrics(
+    funnel_id: str,
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_db)
+):
+    """Busca todas as métricas de um funil específico"""
+    try:
+        # Verifica se o funil pertence ao usuário
+        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
+            "user_id", current_user.id
+        ).execute()
+
+        if not funnel.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Funil não encontrado"
+            )
+
+        # Busca métricas
+        metrics = supabase.table("step_metrics").select("*").eq(
+            "funnel_id", funnel_id
+        ).order("date", desc=True).execute()
+
+        return metrics.data
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar métricas: {str(e)}"
+        )
+
+
+@router.post("/funnels/{funnel_id}/sync", status_code=status.HTTP_204_NO_CONTENT)
+async def sync_funnel_metrics(
+    funnel_id: str,
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_db)
+):
+    """
+    Sincroniza métricas do funil com VTurb e Clarity.
+    TODO: Implementar lógica real de sincronização.
+    """
+    try:
+        # Verifica se o funil pertence ao usuário
+        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
+            "user_id", current_user.id
+        ).execute()
+
+        if not funnel.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Funil não encontrado"
+            )
+
+        # TODO: Implementar sincronização real
+        # 1. Buscar steps do funil
+        # 2. Para cada step do tipo VSL, buscar dados do VTurb
+        # 3. Para outros steps, buscar do Clarity
+        # 4. Inserir/atualizar step_metrics e vsl_insights
+
+        return None
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao sincronizar métricas: {str(e)}"
+        )

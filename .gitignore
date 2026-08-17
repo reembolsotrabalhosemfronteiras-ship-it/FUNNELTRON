@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.development
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Banco local do modo sem Supabase — contém dados reais e o segredo de
+# assinatura dos tokens (.local-secret). Nunca vai para o repositório.
+backend/data/
+
+# Screenshots
+backend/data/screenshots/
+
+# IDE / ferramentas locais
+# `.claude/launch.json` guarda o caminho absoluto da máquina — não serve para
+# mais ninguém e expõe a estrutura de pastas de quem desenvolveu.
+.claude/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Local storage
+.cache/

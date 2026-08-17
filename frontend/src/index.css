@@ -1,0 +1,155 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Paleta em CSS variables. O tailwind.config referencia estas variáveis, então
+   trocar a classe `dark` no <html> repinta o app inteiro — sem isso o
+   darkMode: "class" não tem efeito nenhum.
+   Os valores são HSL sem a função: `210 40% 98%`, para caber em
+   hsl(var(--x) / <alpha>) e permitir opacidade nas classes do Tailwind. */
+:root {
+  --background: 0 0% 100%;
+  --foreground: 222 47% 11%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 47%;
+
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --ring: 221 83% 53%;
+
+  --primary: 221 83% 53%;
+  --primary-foreground: 210 40% 98%;
+
+  /* Escurecidos em relação ao verde/amarelo "puros": no fundo claro eles
+     ficam em ~2:1 de contraste e o número vira quase ilegível. Nos chips
+     (bg-success/15) a diferença é imperceptível. */
+  --success: 142 76% 32%;
+  --warning: 32 90% 38%;
+  --danger: 0 74% 44%;
+
+  /* Fundo da área de conteúdo, um tom abaixo dos cards. */
+  --canvas: 210 40% 98%;
+}
+
+.dark {
+  --background: 222 47% 7%;
+  --foreground: 210 40% 96%;
+
+  --card: 222 44% 12%;
+  --card-foreground: 210 40% 96%;
+
+  --muted: 217 33% 18%;
+  --muted-foreground: 215 20% 65%;
+
+  --border: 217 33% 22%;
+  --input: 217 33% 22%;
+  --ring: 217 91% 60%;
+
+  /* Azul mais claro no escuro: o azul do tema claro perde contraste no fundo
+     escuro e falha no critério de legibilidade. */
+  --primary: 217 91% 62%;
+  --primary-foreground: 222 47% 11%;
+
+  --success: 142 69% 52%;
+  --warning: 38 92% 58%;
+  --danger: 0 84% 65%;
+
+  --canvas: 222 47% 7%;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: "Inter", system-ui, sans-serif;
+  background-color: hsl(var(--canvas));
+  color: hsl(var(--foreground));
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.4);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.6);
+}
+
+/* Os campos de data nascem com o ícone preto, invisível no tema escuro. */
+.dark input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}
+
+/* --- Live page animations --- */
+
+/* Partículas flutuantes dentro dos nós (pessoas ao vivo) */
+@keyframes float {
+  0%, 100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  25% {
+    transform: translate(var(--fx1, 4px), var(--fy1, -6px)) rotate(var(--fr1, 8deg));
+  }
+  50% {
+    transform: translate(var(--fx2, -5px), var(--fy2, 4px)) rotate(var(--fr2, -10deg));
+  }
+  75% {
+    transform: translate(var(--fx3, 6px), var(--fy3, 5px)) rotate(var(--fr3, 12deg));
+  }
+}
+
+.animate-float {
+  animation: float var(--fd, 6s) ease-in-out infinite;
+  animation-delay: var(--fdelay, 0s);
+}
+
+/* Reduz motion para acessibilidade */
+@media (prefers-reduced-motion: reduce) {
+  .animate-float {
+    animation: none;
+  }
+}
+
+/* Bolinha de luz viajando pela aresta (SMIL via offset-path fallback) */
+@keyframes light-travel {
+  from {
+    offset-distance: 0%;
+    opacity: 1;
+  }
+  to {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+
+.animate-light-travel {
+  animation: light-travel var(--ltd, 1000ms) cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* Pulsar suave para badges online */
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
