@@ -367,26 +367,27 @@ isso, rodar o import duas vezes no mesmo dia dobra o número.
 
 | 85 | **Requisições simultâneas serializavam.** 38 rotas eram `async def` fazendo I/O bloqueante (todo o `supabase-py` é síncrono): rodando no event loop, cada uma travava as outras enquanto esperava o Supabase. Como o Ao Vivo dispara 3 × N chamadas de uma vez, elas entravam em fila. Declaradas `def`, o FastAPI as executa num pool de threads. Mesma mudança em `get_current_user`/`get_optional_user`. **Medido: 12 requisições simultâneas 4434 ms → 382 ms** (uma sozinha: 193 ms — ou seja, agora andam de verdade em paralelo) | `core/auth.py`, todos os `routers/` |
 
-### 🔴 O rastreador ao vivo está quebrado em silêncio (achado, NÃO corrigido)
+### ✅ O rastreador ao vivo estava quebrado em silêncio — RESOLVIDO
 
-`POST /api/live/track` responde **204 como se tivesse gravado**, mas não grava:
+`POST /api/live/track` respondia **204 como se tivesse gravado**, sem gravar:
 
 ```
 Could not find the 'event_id' column of 'live_page_entries' in the schema cache
 ```
 
-É a migration **`backend/supabase/migrations/002_fontes_de_dados.sql`, que nunca
-foi rodada** — já estava na seção "Em andamento", mas o efeito não estava claro:
-não é só "as rotas novas respondem erro", é que **nenhum heartbeat entra no
-banco**. Por isso o Ao Vivo não mostra ninguém.
+Causa: a migration `backend/supabase/migrations/002_fontes_de_dados.sql` nunca
+tinha sido rodada. Já constava como pendência, mas o efeito não estava claro —
+não era só "as rotas novas respondem erro", era que **nenhum heartbeat entrava
+no banco**, e por isso o Ao Vivo não mostrava ninguém.
 
-Correção: rodar o SQL no SQL Editor do Supabase. É ação no banco, fora do código.
+Rodada no SQL Editor do Supabase em 2026-08-17. Verificado depois: as duas
+checagens que falhavam voltaram (`online=1`, `2 entrada(s)`), e o
+`smoke_test.py` fechou **44 passaram, 0 falharam**.
 
-Confirmado como **anterior** a estas mudanças: o `smoke_test.py` dá as mesmas
-duas falhas no commit `664e7c6`, sem nada deste turno aplicado (41/44 nos dois).
-
-Fica registrado que `track_heartbeat` engolir o erro e devolver 204 é o que
-escondeu isso — vale decidir se um erro de gravação deve mesmo virar sucesso.
+Fica registrado como dívida que `track_heartbeat` engole o erro e devolve 204: é
+o que escondeu a falha por tanto tempo. Vale decidir se erro de gravação deve
+mesmo virar sucesso — o rastreador ficaria quebrado de novo, calado, na próxima
+mudança de schema.
 
 ### 🔒 Isolamento entre contas continua garantido (item 82)
 
@@ -411,7 +412,7 @@ As três verificações de isolamento do `smoke_test.py` passam (44/44 no total)
 
 | Tarefa | Falta |
 |---|---|
-| **Seletor de fonte + histórico salvo** | Código pronto e verificado (seletor nas 3 páginas, carimbo de tempo, snapshots das duas fontes, dedupe por `event_id`). Falta **rodar `backend/supabase/migrations/002_fontes_de_dados.sql`** no SQL Editor do Supabase — sem isso as rotas novas respondem erro de tabela inexistente. Depois: reinstalar o `tracker.js` atualizado nas páginas do funil, para o `event_id` começar a chegar. |
+| **Seletor de fonte + histórico salvo** | Migration `002` **rodada em 2026-08-17** — `event_id`, `tracker_snapshots`, `clarity_snapshots` e `user_preferences` existem no banco, e o `smoke_test.py` fecha 44/44. Falta só **reinstalar o `tracker.js` atualizado nas páginas reais do funil**, para o `event_id` começar a chegar e o dedupe valer. |
 | **Aba "Ao Vivo" em produção** | Funciona ponta a ponta contra o banco (heartbeat → pessoas online → log de entradas → webhook → feed de vendas), verificado com tráfego simulado. Falta **instalar o snippet nas páginas reais** do funil para entrar tráfego de verdade. |
 | **Métricas de Clarity e VTurb** | O caminho do Clarity foi reescrito para a credencial e o endpoint corretos (itens 76–78), mas **ainda não foi exercitado com token real** — a verificação parou no typecheck e nas telas em modo de exemplo. Falta colar o token em Configurações, clicar em "Salvar e testar" e abrir Métricas para a primeira importação. O `step_metrics` continua sem ser populado; o botão "Sincronizar" é o gatilho. |
 | **Políticas de RLS do `live_page_entries`** | Foram adicionadas ao `schema.sql` **depois** de você já ter rodado o script, então não existem no seu banco. A leitura funciona porque a rota usa a chave de serviço. Para deixar a defesa em profundidade igual às outras tabelas, rode só esse trecho do schema. |
