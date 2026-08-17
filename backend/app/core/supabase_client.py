@@ -4,6 +4,7 @@ from pathlib import Path
 
 from supabase import create_client, Client
 
+from .cache import TTLCache
 from .config import get_settings
 from .local_db import LocalClient
 
@@ -52,23 +53,40 @@ def get_supabase_client():
     return create_client(settings.supabase_url, settings.supabase_key)
 
 
+# Um cliente por token, reaproveitado enquanto o token vale.
+#
+# A chave é o próprio JWT, e é isso que preserva a correção do S1: dois
+# usuários têm tokens diferentes, logo clientes diferentes, logo nunca
+# compartilham sessão. O que sai daqui é só a reconstrução repetida do MESMO
+# cliente para o MESMO usuário, que custava ~860 ms por requisição.
+#
+# 15 minutos porque o token do Supabase dura cerca de uma hora e é renovado
+# antes disso; token renovado entra como chave nova e o antigo cai sozinho.
+# Token vencido que porventura sobre no cache não vira brecha: quem valida o
+# JWT é o PostgREST, do outro lado, e ele recusa.
+_user_clients = TTLCache(maxsize=64, ttl_seconds=900.0)
+
+
 def make_user_client(access_token: str):
     """
-    Cliente NOVO, amarrado ao token de quem fez a requisição.
+    Cliente amarrado ao token de quem fez a requisição.
 
-    Uma instância por requisição, de propósito: é o que garante que o RLS
-    enxergue o usuário certo e que uma requisição não herde a identidade da
-    anterior.
+    Garante que o RLS enxergue o usuário certo e que uma requisição não herde a
+    identidade da anterior — ver `_user_clients` para por que cachear por token
+    mantém essa garantia.
     """
     if is_local_mode():
         return get_local_client()
 
-    settings = get_settings()
-    client = create_client(settings.supabase_url, settings.supabase_key)
-    # Manda o JWT do usuário nas chamadas ao PostgREST, para o `auth.uid()`
-    # das políticas de RLS resolver para ele.
-    client.postgrest.auth(access_token)
-    return client
+    def construir():
+        settings = get_settings()
+        client = create_client(settings.supabase_url, settings.supabase_key)
+        # Manda o JWT do usuário nas chamadas ao PostgREST, para o `auth.uid()`
+        # das políticas de RLS resolver para ele.
+        client.postgrest.auth(access_token)
+        return client
+
+    return _user_clients.get_or_create(access_token, construir)
 
 
 @lru_cache()

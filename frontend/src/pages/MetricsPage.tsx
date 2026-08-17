@@ -60,6 +60,7 @@ import type {
   FunnelEdge,
   StepMetric,
   PeriodInput,
+  VslInsight,
 } from "@/types";
 
 /** Cores estáveis por posição na comparação. */
@@ -73,16 +74,22 @@ interface FunnelBundle {
   vsl: VslSummary;
 }
 
+/**
+ * As quatro coisas que só existem por funil.
+ *
+ * `vslAll` chega pronto de fora, e não é buscado aqui: a chamada não depende do
+ * funil, então fazê-la dentro baixava a MESMA resposta uma vez por funil para
+ * filtrar cada uma no cliente depois.
+ */
 async function loadBundle(
   id: string,
-  period: PeriodInput
+  vslAll: VslInsight[]
 ): Promise<FunnelBundle> {
-  const [funnel, steps, edges, metrics, vslAll] = await Promise.all([
+  const [funnel, steps, edges, metrics] = await Promise.all([
     getFunnel(id),
     listSteps(id),
     listEdges(id),
     getStepMetrics(id),
-    getVslInsights(period),
   ]);
   return {
     funnel,
@@ -152,7 +159,9 @@ export function MetricsPage() {
     const ids = isGlobal ? funnels.map((f) => f.id) : selectedIds;
     if (ids.length === 0) return;
     setLoading(true);
-    Promise.all(ids.map((id) => loadBundle(id, period)))
+    // Uma chamada de VSL para a tela inteira, não uma por funil.
+    getVslInsights(period)
+      .then((vslAll) => Promise.all(ids.map((id) => loadBundle(id, vslAll))))
       .then(setBundles)
       .finally(() => setLoading(false));
   }, [selectedIds, period, funnels, isGlobal]);
@@ -1178,9 +1187,12 @@ function SingleFunnelView({
             data={clarity}
             fields={[
               ["Sessões", clarity?.sessions?.toLocaleString("pt-BR")],
+              ["Visitantes únicos", clarity?.distinctUsers?.toLocaleString("pt-BR")],
               ["Páginas vistas", clarity?.pageViews?.toLocaleString("pt-BR")],
               ["Tempo médio (seg)", clarity?.avgTime?.toFixed(1)],
-              ["Taxa de rejeição", `${clarity?.bounceRate?.toFixed(1) ?? 0}%`],
+              // A Data Export API do Clarity não publica taxa de rejeição.
+              // Rolagem média é o que ele entrega de fato sobre abandono.
+              ["Rolagem média", clarity?.avgScrollDepth != null ? `${clarity.avgScrollDepth.toFixed(1)}%` : undefined],
             ]}
             empty="Configure o token Clarity em Configurações"
             // O período pedido não é o período que o Clarity entregou: ele

@@ -344,15 +344,30 @@ function GeneralLiveView({
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [isPolling, setIsPolling] = useState(true);
   const [saleFilter, setSaleFilter] = useState<SaleFilter>("all");
+  const [stepsByFunnel, setStepsByFunnel] = useState<Record<string, FunnelStep[]>>({});
+
+  // As etapas do funil ficam FORA do polling: elas só mudam quando alguém edita
+  // o funil no ateliê, não a cada 5 segundos. Buscá-las junto somava uma
+  // requisição por funil a cada ciclo para receber sempre a mesma resposta.
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(
+      funnels.map(async (f) => [f.id, await listSteps(f.id)] as const)
+    ).then((pares) => {
+      if (!cancelled) setStepsByFunnel(Object.fromEntries(pares));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [funnels]);
 
   const refresh = useCallback(async () => {
     const entries = await Promise.all(
       funnels.map(async (f) => {
-        const [conv, sales, flow, steps] = await Promise.all([
+        const [conv, sales, flow] = await Promise.all([
           getLiveConversion(f.id, convWindow),
           getLiveSales(f.id, salesWindow),
           getLiveFlow(f.id),
-          listSteps(f.id),
         ]);
         return [
           f.id,
@@ -360,7 +375,7 @@ function GeneralLiveView({
             conv,
             sales,
             funnel: f,
-            steps,
+            steps: stepsByFunnel[f.id] ?? [],
             totalOnline: flow.reduce((s, l) => s + l.online, 0),
           },
         ] as const;
@@ -368,7 +383,7 @@ function GeneralLiveView({
     );
     setByFunnel(Object.fromEntries(entries));
     setLastUpdated(new Date());
-  }, [funnels, convWindow, salesWindow]);
+  }, [funnels, convWindow, salesWindow, stepsByFunnel]);
 
   useEffect(() => {
     setLoading(true);

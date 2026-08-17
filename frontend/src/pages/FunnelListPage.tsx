@@ -94,12 +94,16 @@ export function FunnelListPage() {
     if (funnels.length === 0) return;
     let cancelled = false;
 
+    // Uma chamada de VSL para a lista inteira: ela não depende do funil, e
+    // buscá-la dentro do laço baixava a MESMA resposta uma vez por funil.
+    const vslDaTela = getVslInsights(period);
+
     Promise.all(
       funnels.map(async (f) => {
         const [metrics, steps, vslAll] = await Promise.all([
           getStepMetrics(f.id),
           listSteps(f.id),
-          getVslInsights(period),
+          vslDaTela,
         ]);
         const visitors = metrics.reduce((s, m) => s + m.visitors, 0);
         const conversions = metrics.reduce((s, m) => s + m.conversions, 0);

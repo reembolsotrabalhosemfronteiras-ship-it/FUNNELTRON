@@ -355,6 +355,24 @@ isso, rodar o import duas vezes no mesmo dia dobra o número.
 | 74 | README reescrito com o passo a passo real de subida (banco, backend, frontend, conta, teste de fumaça) | `README.md` |
 | 75 | **Rastreador em produção não batia** (Railway). Três causas somadas: (a) o preflight CORS vinha do domínio do funil e a API respondia `400 Disallowed CORS origin` — agora `/api/live/track` tem CORS aberto por middleware próprio, e só ela; (b) o heartbeat mandava `application/json`, que obriga preflight — virou `text/plain` (requisição simples) e o endpoint lê o corpo cru; (c) o snippet saía sem `endpoint`, então o POST ia para o domínio do funil — o card passa a usar `window.location.origin` e o `tracker.js` deduz a origem da própria tag `<script>`. `Funneltron.lastStatus` no console diz se está batendo | `backend/app/main.py`, `backend/app/routers/live.py`, `frontend/public/tracker.js`, `TrackerCard.tsx`, `SettingsPage.tsx` |
 
+| 76 | **Integração do Clarity estava pedindo credencial que não existe.** O card exigia Client ID, Client Secret e Project ID do Azure AD; a Data Export API do Clarity autentica só com o token do projeto — que já nasce amarrado ao projeto, sem OAuth no meio. Além do formulário, a URL montada no serviço (`clarity.ms/api/v1/export/v1/{id}/sessions`) não era endpoint real: mesmo com o token certo, a chamada falharia. Agora: **um campo só** (Token de API), endpoint `export-data/api/v1/project-live-insights`, parser das métricas que o Clarity de fato devolve, cache de 30 min e mensagem específica para 401/403/429 | `services/clarity.py`, `routers/metrics.py`, `routers/integrations.py`, `api/client.ts`, `SettingsPage.tsx` |
+| 77 | **"Testar" testava o banco, não o que estava digitado.** O backend lia a credencial gravada, então quem colava o token e clicava em Testar recebia "credenciais não configuradas" — com o token correto na tela. O botão virou **"Salvar e testar"** e grava antes de chamar. No Clarity, o teste passou a bater na API de verdade (token errado ou expirado antes passava no teste e só falhava na tela de Métricas) | `SettingsPage.tsx`, `routers/integrations.py`, `services/clarity.py` |
+| 78 | **Salvar Configurações apagava o token já gravado.** O backend nunca devolve token salvo (só a marca de "configurado"), então o formulário abre em branco toda vez — e cada Salvar reenviava string vazia por cima da credencial boa. Campo vazio deixou de ser enviado | `api/client.ts` |
+| 79 | Página Ao Vivo na fonte Clarity **aparece zerada em vez de sumir** quando nunca houve importação: os cards ficam, com 0 e o carimbo de "nenhuma importação", e o aviso de configuração vira uma linha embaixo | `ClarityLiveView.tsx`, `api/client.ts` |
+| 80 | "Taxa de rejeição" saiu das telas de Clarity: a Data Export API não publica bounce rate, e o valor exibido vinha de uma conta inventada. No lugar entraram métricas reais — visitantes únicos, páginas por sessão, rolagem média | `ClarityLiveView.tsx`, `MetricsPage.tsx`, `services/clarity.py` |
+| 81 | Aba **Importações** movida para baixo de **Ao Vivo** na sidebar | `Sidebar.tsx` |
+| 82 | **App travando: o backend reconstruía o cliente do Supabase a cada requisição.** Medido: `create_client` custa ~470 ms, dos quais ~430 ms são CPU pura (mesmo tempo com URL falsa, sem rede possível), e `auth.get_user` somava mais uma ida à rede por requisição. Como as telas fazem várias chamadas por funil, o custo multiplicava. Agora há cache por token (`core/cache.py`), com teto de 64 entradas e validade de 15 min (1 min para a validação do token). **Medido no mesmo processo: 1386 ms → 203 ms por requisição protegida** | `core/cache.py`, `core/supabase_client.py`, `core/auth.py` |
+| 83 | `getVslInsights(period)` era chamado **uma vez por funil** com argumento idêntico, em duas telas — a mesma resposta baixada N vezes para ser filtrada no cliente depois. Passou a ser uma chamada por tela | `MetricsPage.tsx`, `FunnelListPage.tsx` |
+| 84 | Ao Vivo rebuscava `listSteps` de cada funil **a cada 5 segundos** no polling. As etapas só mudam quando alguém edita o funil no ateliê — saíram do ciclo para um efeito próprio | `LivePage.tsx` |
+
+### 🔒 Isolamento entre contas continua garantido (item 82)
+
+O cliente por requisição existia para corrigir o **S1** (vazamento de sessão entre
+usuários). O cache **não reabre** essa porta: a chave do cache é o próprio JWT,
+então dois usuários têm tokens diferentes, logo clientes diferentes. O que foi
+eliminado é só a reconstrução repetida do *mesmo* cliente para o *mesmo* usuário.
+As três verificações de isolamento do `smoke_test.py` passam (44/44 no total).
+
 ### 🔒 Bugs de segurança/correção encontrados ao ligar o banco
 
 | # | Bug | Consequência | Correção |
@@ -372,7 +390,7 @@ isso, rodar o import duas vezes no mesmo dia dobra o número.
 |---|---|
 | **Seletor de fonte + histórico salvo** | Código pronto e verificado (seletor nas 3 páginas, carimbo de tempo, snapshots das duas fontes, dedupe por `event_id`). Falta **rodar `backend/supabase/migrations/002_fontes_de_dados.sql`** no SQL Editor do Supabase — sem isso as rotas novas respondem erro de tabela inexistente. Depois: reinstalar o `tracker.js` atualizado nas páginas do funil, para o `event_id` começar a chegar. |
 | **Aba "Ao Vivo" em produção** | Funciona ponta a ponta contra o banco (heartbeat → pessoas online → log de entradas → webhook → feed de vendas), verificado com tráfego simulado. Falta **instalar o snippet nas páginas reais** do funil para entrar tráfego de verdade. |
-| **Métricas de Clarity e VTurb** | As rotas existem e respondem, mas devolvem vazio: nenhuma credencial real foi configurada e o `step_metrics` nunca foi populado. O botão "Sincronizar" é o gatilho — falta exercitar com token real. |
+| **Métricas de Clarity e VTurb** | O caminho do Clarity foi reescrito para a credencial e o endpoint corretos (itens 76–78), mas **ainda não foi exercitado com token real** — a verificação parou no typecheck e nas telas em modo de exemplo. Falta colar o token em Configurações, clicar em "Salvar e testar" e abrir Métricas para a primeira importação. O `step_metrics` continua sem ser populado; o botão "Sincronizar" é o gatilho. |
 | **Políticas de RLS do `live_page_entries`** | Foram adicionadas ao `schema.sql` **depois** de você já ter rodado o script, então não existem no seu banco. A leitura funciona porque a rota usa a chave de serviço. Para deixar a defesa em profundidade igual às outras tabelas, rode só esse trecho do schema. |
 
 ### ⚠️ Não verificado visualmente
@@ -482,7 +500,23 @@ uma origem, sem CORS.
 7. **Rotas do ao vivo leem com a chave de serviço** (`live_page_entries`) — a
    permissão é checada no código, não pelo RLS. Vale igualar quando as políticas
    do schema forem aplicadas no banco.
-8. **Contas de teste no banco** — `qa@funneltron-local.app` e vários
+8. **O Clarity só entrega 3 dias e 10 consultas por dia** — limite do fornecedor,
+   não do código. Períodos de 30 ou 90 dias na tela do Clarity cobrem 3 dias; a
+   resposta traz `days` com o que realmente veio e um `warning`. Histórico mais
+   longo só existe acumulando os snapshots diários em `clarity_snapshots`.
+9. **`LivePage` quebra quando a API devolve erro no lugar de lista** —
+   `rows.map is not a function` (`LivePage.tsx:769`) com o backend fora do ar.
+   Falha na renderização inteira em vez de mostrar a tela vazia.
+10. **~290 ms de overhead do `supabase-py` por consulta** — medido: uma
+    requisição HTTP crua ao host do Supabase leva **31 ms**, e a mesma consulta
+    pelo cliente leva **324 ms**. Não é latência de rede nem região do projeto;
+    é custo do próprio pacote. Com o cache de cliente resolvido (item 82), este
+    virou o maior custo restante. Caminho, se incomodar: falar com o PostgREST
+    por `httpx` direto nas rotas mais quentes.
+11. **Ao Vivo ainda faz 3 × N requisições a cada 5 s** — melhor que as 4 × N de
+    antes, mas continua sendo uma chamada por funil por métrica. O caminho é um
+    endpoint que devolva o ao vivo de todos os funis de uma vez.
+12. **Contas de teste no banco** — `qa@funneltron-local.app`, `perf.ui@funneltron-smoke.app` e vários
    `smoke.*@funneltron-smoke.app` criados durante a verificação. Podem ser
    apagadas no painel do Supabase → Authentication → Users.
 
