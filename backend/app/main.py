@@ -17,10 +17,37 @@ settings = get_settings()
 # efêmero ele "funciona", aceita cadastro, salva funil — e some no próximo
 # deploy. Melhor não subir do que subir perdendo dado em silêncio.
 if settings.environment == "production" and is_local_mode():
+    faltando = [
+        nome
+        for nome, valor in (
+            ("SUPABASE_URL", settings.supabase_url),
+            ("SUPABASE_KEY", settings.supabase_key),
+            ("SUPABASE_SERVICE_KEY", settings.supabase_service_key),
+        )
+        if not valor.strip() or valor.strip().startswith(("COLE_AQUI", "your_"))
+    ]
+
+    # Impresso além de levantado: no painel de log do servidor, o texto legível
+    # aparece antes da pilha de chamadas e é o que a pessoa lê primeiro.
+    print("\n" + "=" * 68)
+    print("FUNNELTRON NÃO SUBIU — falta configuração")
+    print("=" * 68)
+    print("\nVariáveis de ambiente faltando:\n")
+    for nome in faltando:
+        print(f"   • {nome}")
+    print(
+        "\nPegue os valores no painel do Supabase:"
+        "\n   Project Settings → API"
+        "\n      SUPABASE_URL          = Project URL"
+        "\n      SUPABASE_KEY          = chave anon / publishable"
+        "\n      SUPABASE_SERVICE_KEY  = chave service_role / secret"
+        "\n\nE defina nas variáveis de ambiente do servidor"
+        " (Railway: aba Variables).\n"
+    )
+    print("=" * 68 + "\n", flush=True)
+
     raise RuntimeError(
-        "ENVIRONMENT=production sem credenciais do Supabase. "
-        "Defina SUPABASE_URL, SUPABASE_KEY e SUPABASE_SERVICE_KEY nas "
-        "variáveis de ambiente do servidor."
+        "Faltam variáveis de ambiente: " + ", ".join(faltando)
     )
 
 # Criar app
@@ -33,7 +60,7 @@ app = FastAPI(
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=settings.allowed_origins,
     allow_origin_regex=settings.cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
