@@ -40,7 +40,7 @@ class LayoutSaveRequest(BaseModel):
 
 
 @router.get("/{funnel_id}/steps")
-async def get_steps(
+def get_steps(
     funnel_id: str,
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_db)
@@ -74,7 +74,7 @@ async def get_steps(
 
 
 @router.get("/{funnel_id}/edges")
-async def get_edges(
+def get_edges(
     funnel_id: str,
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_db)
@@ -107,7 +107,7 @@ async def get_edges(
         )
 
 
-async def _assert_owner(funnel_id: str, current_user, supabase: Client):
+def _assert_owner(funnel_id: str, current_user, supabase: Client):
     """404 se o funil não existe OU não é do usuário — a mesma resposta nos dois
     casos, de propósito: distinguir revelaria a existência do funil alheio."""
     funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
@@ -136,7 +136,7 @@ async def create_step(
     reescrever o funil todo.
     """
     try:
-        await _assert_owner(funnel_id, current_user, supabase)
+        _assert_owner(funnel_id, current_user, supabase)
 
         payload = step.model_dump(exclude_none=True)
         payload["funnel_id"] = funnel_id
@@ -165,7 +165,7 @@ async def create_edge(
 ):
     """Cria (ou atualiza) UMA conexão entre duas etapas."""
     try:
-        await _assert_owner(funnel_id, current_user, supabase)
+        _assert_owner(funnel_id, current_user, supabase)
 
         payload = edge.model_dump(exclude_none=True)
         payload["funnel_id"] = funnel_id
@@ -186,7 +186,7 @@ async def create_edge(
 
 
 @router.put("/{funnel_id}/layout")
-async def save_layout(
+def save_layout(
     funnel_id: str,
     layout: LayoutSaveRequest,
     current_user = Depends(get_current_user),
@@ -269,7 +269,7 @@ async def save_layout(
 
 
 @router.delete("/{funnel_id}/layout", status_code=status.HTTP_204_NO_CONTENT)
-async def clear_layout(
+def clear_layout(
     funnel_id: str,
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_db)

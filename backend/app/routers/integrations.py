@@ -25,7 +25,7 @@ class TestConnectionRequest(BaseModel):
 
 
 @router.get("/credentials")
-async def get_credentials(
+def get_credentials(
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_db)
 ):
@@ -58,7 +58,7 @@ async def get_credentials(
 
 
 @router.post("/credentials")
-async def save_credentials(
+def save_credentials(
     credentials: CredentialsRequest,
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_db)

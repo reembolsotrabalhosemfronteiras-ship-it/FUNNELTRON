@@ -147,7 +147,7 @@ async def get_clarity_metrics(
 
 
 @router.get("/overview")
-async def get_overview_metrics(
+def get_overview_metrics(
     period: Optional[str] = "30d",
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
@@ -222,7 +222,7 @@ async def get_overview_metrics(
 
 
 @router.get("/funnels/ranking")
-async def get_funnels_ranking(
+def get_funnels_ranking(
     period: Optional[str] = "30d",
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
@@ -291,7 +291,7 @@ async def get_funnels_ranking(
 
 
 @router.get("/vsl")
-async def get_vsl_metrics(
+def get_vsl_metrics(
     period: Optional[str] = "30d",
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
@@ -388,7 +388,7 @@ async def get_vsl_metrics(
 
 
 @router.get("/funnels/{funnel_id}")
-async def get_funnel_metrics(
+def get_funnel_metrics(
     funnel_id: str,
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_db)
@@ -423,7 +423,7 @@ async def get_funnel_metrics(
 
 
 @router.post("/funnels/{funnel_id}/sync", status_code=status.HTTP_204_NO_CONTENT)
-async def sync_funnel_metrics(
+def sync_funnel_metrics(
     funnel_id: str,
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_db)

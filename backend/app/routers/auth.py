@@ -25,7 +25,7 @@ class AuthResponse(BaseModel):
 
 
 @router.post("/login", response_model=AuthResponse)
-async def login(
+def login(
     credentials: LoginRequest,
     supabase: Client = Depends(get_supabase_client)
 ):
@@ -56,7 +56,7 @@ async def login(
 
 
 @router.post("/signup", response_model=AuthResponse)
-async def signup(
+def signup(
     data: SignupRequest,
     supabase: Client = Depends(get_supabase_client)
 ):
@@ -99,7 +99,7 @@ async def signup(
 
 
 @router.post("/logout")
-async def logout(supabase: Client = Depends(get_supabase_client)):
+def logout(supabase: Client = Depends(get_supabase_client)):
     """Logout"""
     try:
         supabase.auth.sign_out()
@@ -112,7 +112,7 @@ async def logout(supabase: Client = Depends(get_supabase_client)):
 
 
 @router.post("/refresh")
-async def refresh_token(
+def refresh_token(
     refresh_token: str,
     supabase: Client = Depends(get_supabase_client)
 ):

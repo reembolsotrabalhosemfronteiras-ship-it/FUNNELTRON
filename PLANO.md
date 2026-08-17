@@ -365,6 +365,29 @@ isso, rodar o import duas vezes no mesmo dia dobra o número.
 | 83 | `getVslInsights(period)` era chamado **uma vez por funil** com argumento idêntico, em duas telas — a mesma resposta baixada N vezes para ser filtrada no cliente depois. Passou a ser uma chamada por tela | `MetricsPage.tsx`, `FunnelListPage.tsx` |
 | 84 | Ao Vivo rebuscava `listSteps` de cada funil **a cada 5 segundos** no polling. As etapas só mudam quando alguém edita o funil no ateliê — saíram do ciclo para um efeito próprio | `LivePage.tsx` |
 
+| 85 | **Requisições simultâneas serializavam.** 38 rotas eram `async def` fazendo I/O bloqueante (todo o `supabase-py` é síncrono): rodando no event loop, cada uma travava as outras enquanto esperava o Supabase. Como o Ao Vivo dispara 3 × N chamadas de uma vez, elas entravam em fila. Declaradas `def`, o FastAPI as executa num pool de threads. Mesma mudança em `get_current_user`/`get_optional_user`. **Medido: 12 requisições simultâneas 4434 ms → 382 ms** (uma sozinha: 193 ms — ou seja, agora andam de verdade em paralelo) | `core/auth.py`, todos os `routers/` |
+
+### 🔴 O rastreador ao vivo está quebrado em silêncio (achado, NÃO corrigido)
+
+`POST /api/live/track` responde **204 como se tivesse gravado**, mas não grava:
+
+```
+Could not find the 'event_id' column of 'live_page_entries' in the schema cache
+```
+
+É a migration **`backend/supabase/migrations/002_fontes_de_dados.sql`, que nunca
+foi rodada** — já estava na seção "Em andamento", mas o efeito não estava claro:
+não é só "as rotas novas respondem erro", é que **nenhum heartbeat entra no
+banco**. Por isso o Ao Vivo não mostra ninguém.
+
+Correção: rodar o SQL no SQL Editor do Supabase. É ação no banco, fora do código.
+
+Confirmado como **anterior** a estas mudanças: o `smoke_test.py` dá as mesmas
+duas falhas no commit `664e7c6`, sem nada deste turno aplicado (41/44 nos dois).
+
+Fica registrado que `track_heartbeat` engolir o erro e devolver 204 é o que
+escondeu isso — vale decidir se um erro de gravação deve mesmo virar sucesso.
+
 ### 🔒 Isolamento entre contas continua garantido (item 82)
 
 O cliente por requisição existia para corrigir o **S1** (vazamento de sessão entre
@@ -507,12 +530,15 @@ uma origem, sem CORS.
 9. **`LivePage` quebra quando a API devolve erro no lugar de lista** —
    `rows.map is not a function` (`LivePage.tsx:769`) com o backend fora do ar.
    Falha na renderização inteira em vez de mostrar a tela vazia.
-10. **~290 ms de overhead do `supabase-py` por consulta** — medido: uma
-    requisição HTTP crua ao host do Supabase leva **31 ms**, e a mesma consulta
-    pelo cliente leva **324 ms**. Não é latência de rede nem região do projeto;
-    é custo do próprio pacote. Com o cache de cliente resolvido (item 82), este
-    virou o maior custo restante. Caminho, se incomodar: falar com o PostgREST
-    por `httpx` direto nas rotas mais quentes.
+10. ~~**~290 ms de overhead do `supabase-py` por consulta**~~ — **estava errado,
+    e a conclusão era acionável na direção errada.** O controle da medição era
+    ruim: comparei uma consulta real com um `GET /rest/v1/`, que não toca o
+    Postgres (29 ms). Na comparação justa, a MESMA consulta leva 180 ms pelo
+    `supabase-py` e 176 ms por `httpx` cru — não há overhead de biblioteca. O
+    profile confirma: 98% do tempo é o socket esperando resposta. **Não vale
+    reescrever rota nenhuma com `httpx`, e não vale trocar a região do projeto.**
+    O caminho para ganhar aqui é fazer MENOS consultas, não consultas mais
+    rápidas (`get_live_conversion` faz 4 seguidas ≈ 720 ms).
 11. **Ao Vivo ainda faz 3 × N requisições a cada 5 s** — melhor que as 4 × N de
     antes, mas continua sendo uma chamada por funil por métrica. O caminho é um
     endpoint que devolva o ao vivo de todos os funis de uma vez.

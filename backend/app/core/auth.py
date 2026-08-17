@@ -19,12 +19,17 @@ _validated_tokens = TTLCache(maxsize=64, ttl_seconds=60.0)
 optional_security = HTTPBearer(auto_error=False)
 
 
-async def get_current_user(
+def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
     """
     Valida o token JWT do Supabase Auth e retorna o usuário atual.
     O token vem do frontend no header: Authorization: Bearer <token>
+
+    Declarada `def` e não `async def` de propósito: `auth.get_user()` é uma
+    chamada de rede BLOQUEANTE. Numa dependência `async`, ela roda no event
+    loop e trava todas as outras requisições enquanto espera. Sendo `def`, o
+    FastAPI a executa num pool de threads e as requisições andam junto.
     """
     try:
         token = credentials.credentials
@@ -68,13 +73,13 @@ def get_db(credentials: HTTPAuthorizationCredentials = Depends(security)):
     return make_user_client(credentials.credentials)
 
 
-async def get_optional_user(
+def get_optional_user(
     credentials: HTTPAuthorizationCredentials = Depends(optional_security),
 ):
     """Mesma coisa que get_current_user, mas não falha se não tiver token."""
     if not credentials:
         return None
     try:
-        return await get_current_user(credentials)
+        return get_current_user(credentials)
     except Exception:
         return None

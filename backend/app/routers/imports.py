@@ -21,7 +21,7 @@ class SalesImportRequest(BaseModel):
 
 
 @router.get("")
-async def list_imports(
+def list_imports(
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_db)
 ):
@@ -41,7 +41,7 @@ async def list_imports(
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_import(
+def create_import(
     import_data: SalesImportRequest,
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_db)
@@ -69,7 +69,7 @@ async def create_import(
 
 
 @router.delete("/{import_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_import(
+def delete_import(
     import_id: str,
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_db)

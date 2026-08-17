@@ -109,7 +109,7 @@ async def track_heartbeat(
 
 
 @router.get("")
-async def get_live_data(
+def get_live_data(
     funnel_id: str,
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_db)
@@ -179,7 +179,7 @@ async def get_live_data(
 
 
 @router.get("/entries")
-async def get_page_entries(
+def get_page_entries(
     funnel_id: str,
     window: int = 30,
     limit: int = 40,
@@ -269,7 +269,7 @@ async def get_page_entries(
 
 
 @router.get("/vsl")
-async def get_live_vsl_data(
+def get_live_vsl_data(
     funnel_id: str,
     minutes: int = 5,
     current_user = Depends(get_current_user),
@@ -337,7 +337,7 @@ async def get_live_vsl_data(
 
 
 @router.get("/active-funnels")
-async def get_active_funnels(
+def get_active_funnels(
     minutes: int = 5,
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_db)
@@ -375,7 +375,7 @@ async def get_active_funnels(
 
 
 @router.get("/sales")
-async def get_live_sales(
+def get_live_sales(
     funnel_id: str,
     window: int = 60,
     current_user = Depends(get_current_user),
@@ -436,7 +436,7 @@ async def get_live_sales(
 
 
 @router.get("/conversion")
-async def get_live_conversion(
+def get_live_conversion(
     funnel_id: str,
     window: int = 30,
     scope: str = "window",
@@ -548,7 +548,7 @@ async def get_live_conversion(
 
 
 @router.post("/webhook", status_code=status.HTTP_202_ACCEPTED)
-async def receive_sale_webhook(
+def receive_sale_webhook(
     payload: dict,
     request: Request,
     secret: Optional[str] = Depends(WEBHOOK_HEADER)

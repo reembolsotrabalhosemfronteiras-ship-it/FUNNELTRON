@@ -43,7 +43,7 @@ def _assert_owns_funnel(funnel_id: str, user_id: str, supabase: Client) -> None:
 # ---------------------------------------------------------------------------
 
 @router.get("/preference")
-async def get_preference(
+def get_preference(
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_db)
 ):
@@ -72,7 +72,7 @@ async def get_preference(
 
 
 @router.put("/preference")
-async def set_preference(
+def set_preference(
     body: PreferenceRequest,
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_db)
@@ -102,7 +102,7 @@ async def set_preference(
 # ---------------------------------------------------------------------------
 
 @router.get("/tracker/history")
-async def get_tracker_history(
+def get_tracker_history(
     funnel_id: str,
     bucket: str = "hour",
     limit: int = 48,
@@ -136,7 +136,7 @@ async def get_tracker_history(
 
 
 @router.post("/tracker/snapshot", status_code=status.HTTP_201_CREATED)
-async def capture_tracker_snapshot(
+def capture_tracker_snapshot(
     funnel_id: str,
     bucket: str = "hour",
     current_user = Depends(get_current_user),
@@ -173,7 +173,7 @@ async def capture_tracker_snapshot(
 # ---------------------------------------------------------------------------
 
 @router.get("/clarity/latest")
-async def get_latest_clarity(
+def get_latest_clarity(
     funnel_id: Optional[str] = None,
     period: Optional[str] = None,
     current_user = Depends(get_current_user),
@@ -209,7 +209,7 @@ async def get_latest_clarity(
 
 
 @router.get("/clarity/history")
-async def get_clarity_history(
+def get_clarity_history(
     funnel_id: Optional[str] = None,
     limit: int = 30,
     current_user = Depends(get_current_user),

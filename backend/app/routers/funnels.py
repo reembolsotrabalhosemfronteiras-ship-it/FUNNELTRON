@@ -28,7 +28,7 @@ class FunnelUpdate(BaseModel):
 
 
 @router.get("")
-async def list_funnels(
+def list_funnels(
     status: Optional[str] = None,
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_db)
@@ -52,7 +52,7 @@ async def list_funnels(
 
 
 @router.get("/{funnel_id}")
-async def get_funnel(
+def get_funnel(
     funnel_id: str,
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_db)
@@ -81,7 +81,7 @@ async def get_funnel(
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_funnel(
+def create_funnel(
     funnel: FunnelCreate,
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_db)
@@ -107,7 +107,7 @@ async def create_funnel(
 
 
 @router.put("/{funnel_id}")
-async def update_funnel(
+def update_funnel(
     funnel_id: str,
     funnel: FunnelUpdate,
     current_user = Depends(get_current_user),
@@ -149,7 +149,7 @@ async def update_funnel(
 
 
 @router.patch("/{funnel_id}")
-async def patch_funnel_status(
+def patch_funnel_status(
     funnel_id: str,
     status_update: dict,
     current_user = Depends(get_current_user),
@@ -185,7 +185,7 @@ async def patch_funnel_status(
 
 
 @router.delete("/{funnel_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_funnel(
+def delete_funnel(
     funnel_id: str,
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_db)
