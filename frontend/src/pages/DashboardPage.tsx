@@ -7,7 +7,6 @@ import {
   TrendingUp,
   Zap,
   RefreshCw,
-  Filter,
   ChevronRight,
 } from "lucide-react";
 import { groupVslByFunnel } from "@/lib/funnelStats";
@@ -29,8 +28,8 @@ import { Header } from "@/components/common/Header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/common/Card";
 import { Badge, StatusBadge } from "@/components/common/Badge";
 import { Button } from "@/components/common/Button";
-import { Select } from "@/components/common/Select";
 import { Spinner } from "@/components/common/Spinner";
+import { PeriodPicker, periodLabel } from "@/components/common/PeriodPicker";
 import { cn } from "@/lib/cn";
 import {
   getOverview,
@@ -41,15 +40,8 @@ import type {
   OverviewMetrics,
   FunnelComparisonRow,
   VslInsight,
-  Period,
+  PeriodInput,
 } from "@/types";
-
-const periodLabels: Record<Period, string> = {
-  "7d": "7 dias",
-  "30d": "30 dias",
-  "90d": "90 dias",
-  all: "Tudo",
-};
 
 const sourceColors: Record<string, string> = {
   clarity: "#3b82f6",
@@ -58,7 +50,7 @@ const sourceColors: Record<string, string> = {
 };
 
 export function DashboardPage() {
-  const [period, setPeriod] = useState<Period>("30d");
+  const [period, setPeriod] = useState<PeriodInput>("30d");
   const [overview, setOverview] = useState<OverviewMetrics | null>(null);
   const [ranking, setRanking] = useState<FunnelComparisonRow[]>([]);
   const [vsl, setVsl] = useState<VslInsight[]>([]);
@@ -86,7 +78,7 @@ export function DashboardPage() {
     {
       label: "Visitantes",
       value: overview?.totalVisitors.toLocaleString("pt-BR") ?? 0,
-      sub: `Período: ${periodLabels[period]}`,
+      sub: `Período: ${periodLabel(period)}`,
       icon: <Users className="text-blue-500" />,
       accent: "text-blue-500",
     },
@@ -123,19 +115,7 @@ export function DashboardPage() {
         subtitle="Métricas gerais de todos os funis"
         actions={
           <>
-            <div className="flex items-center gap-2">
-              <Filter size={16} className="text-muted-foreground" />
-              <Select
-                value={period}
-                onChange={(e) => setPeriod(e.target.value as Period)}
-                className="w-36"
-              >
-                <option value="7d">7 dias</option>
-                <option value="30d">30 dias</option>
-                <option value="90d">90 dias</option>
-                <option value="all">Tudo</option>
-              </Select>
-            </div>
+            <PeriodPicker value={period} onChange={setPeriod} />
             <Button variant="outline" size="sm" disabled={loading}>
               <RefreshCw size={14} className={cn(loading && "animate-spin")} />
               Atualizar
