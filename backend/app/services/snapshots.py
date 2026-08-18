@@ -72,6 +72,83 @@ def save_clarity_snapshot(
     return result.data[0] if result.data else row
 
 
+def log_clarity_pull(
+    user_id: str,
+    period: str,
+    ok: bool,
+    funnel_id: Optional[str] = None,
+    days: Optional[int] = None,
+    message: Optional[str] = None,
+    sessions: Optional[int] = None,
+) -> Optional[dict]:
+    """
+    Anota uma consulta ao Clarity no log append-only.
+
+    Registra sucesso E falha: a tentativa que falhou por token vencido gastou
+    uma das 10 chamadas do dia igual, e um contador que só soma acerto mente
+    sobre a cota restante.
+
+    Nunca levanta: o log é registro, não o dado. Se a migração 003 ainda não
+    rodou, a puxada em si continua valendo.
+    """
+    row = {
+        "user_id": user_id,
+        "funnel_id": funnel_id,
+        "period": period,
+        "days": days,
+        "ok": ok,
+        "message": message,
+        "sessions": sessions,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    try:
+        result = get_supabase_admin().table("clarity_pulls").insert(row).execute()
+        return result.data[0] if result.data else row
+    except Exception:
+        return None
+
+
+def list_clarity_pulls(user_id: str, limit: int = 20) -> list:
+    """As últimas puxadas, mais recente primeiro. Lista vazia se a tabela não existe."""
+    try:
+        result = (
+            get_supabase_admin()
+            .table("clarity_pulls")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return result.data or []
+    except Exception:
+        return []
+
+
+def count_clarity_pulls_today(user_id: str) -> int:
+    """
+    Quantas consultas já foram gastas hoje (UTC), para a tela mostrar o que
+    sobra das 10 diárias antes de o usuário clicar e levar 429.
+    """
+    inicio = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+
+    try:
+        result = (
+            get_supabase_admin()
+            .table("clarity_pulls")
+            .select("id")
+            .eq("user_id", user_id)
+            .gte("created_at", inicio.isoformat())
+            .execute()
+        )
+        return len(result.data or [])
+    except Exception:
+        return 0
+
+
 def latest_clarity_snapshot(
     user_id: str,
     funnel_id: Optional[str] = None,

@@ -61,8 +61,14 @@ function LiveNodeBase({ id, data, selected }: NodeProps<LiveNodeData>) {
               : "border-slate-700 bg-slate-900/85"
           )}
         >
+          {/* Ponto fixo, sem `animate-pulse`: nesta tela movimento significa
+              UMA pessoa mudando de página. Um ponto piscando em cada card
+              enchia o painel de movimento constante — dizia "está passando
+              tráfego agora" o tempo todo, e o olho parava de acreditar na
+              bolinha da seta, que é a única que fala de alguém de verdade.
+              A cor já separa "tem gente" de "vazio". */}
           {online > 0 && (
-            <span className="h-2 w-2 shrink-0 self-center rounded-full bg-red-500 animate-pulse" />
+            <span className="h-2 w-2 shrink-0 self-center rounded-full bg-red-500" />
           )}
           <span
             className={cn(

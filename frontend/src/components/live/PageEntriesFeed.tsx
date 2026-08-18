@@ -63,7 +63,11 @@ export function PageEntriesFeed({
                   <span
                     className={cn(
                       "h-2 w-2 shrink-0 rounded-full",
-                      fresh ? "bg-red-500 animate-pulse" : "bg-muted-foreground/40"
+                      // Sem `animate-pulse`: `fresh` é só "está no topo da
+                      // lista" (i < 2), não "acabou de acontecer" — os dois
+                      // pontos ficavam piscando para sempre, mesmo sem
+                      // ninguém navegando. A cor já marca as linhas novas.
+                      fresh ? "bg-red-500" : "bg-muted-foreground/40"
                     )}
                   />
                   {entry.device === "mobile" ? (

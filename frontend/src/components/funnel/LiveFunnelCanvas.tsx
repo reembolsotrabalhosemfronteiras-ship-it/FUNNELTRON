@@ -21,7 +21,12 @@ import {
   LIVE_BADGE_H,
 } from "@/lib/canvasLayout";
 import { useTheme } from "@/components/common/Header";
-import type { LiveStepData } from "@/api/client";
+import {
+  detectTransitions,
+  newestEntryTime,
+  pulseEdge,
+} from "@/lib/livePulse";
+import type { LiveStepData, LivePageEntry } from "@/api/client";
 
 // Nós "ao vivo" usam o LiveNode (partículas de pessoas dentro do print) e as
 // arestas usam o StepEdge na variante live (bolinha de luz viajando A→B).
@@ -34,6 +39,8 @@ interface LiveFunnelCanvasProps {
   edges: FunnelEdge[];
   /** Pessoas online por etapa — alimenta as partículas e o badge. */
   liveFlow: LiveStepData[];
+  /** Log de entradas em página: é dele que saem os pulos animados nas setas. */
+  entries?: LivePageEntry[];
   onOpen?: (stepId: string) => void;
 }
 
@@ -42,10 +49,47 @@ function LiveViewport({
   steps,
   edges,
   liveFlow,
+  entries,
   onOpen,
 }: LiveFunnelCanvasProps) {
   const { fitView } = useReactFlow();
   const { dark } = useTheme();
+
+  // Trocar de funil zera o marcador: os instantes são comparáveis entre funis,
+  // e sem isso a primeira leitura do funil novo animaria o histórico inteiro.
+  const pulseCursor = useRef<number | null>(null);
+  useEffect(() => {
+    pulseCursor.current = null;
+  }, [funnel.id]);
+
+  // Um pulo de verdade = uma bolinha. A primeira leitura só marca onde o log
+  // estava: quem já tinha andado antes de a tela abrir não vira animação.
+  useEffect(() => {
+    if (!entries) return;
+    const newest = newestEntryTime(entries);
+    if (pulseCursor.current === null) {
+      pulseCursor.current = newest;
+      return;
+    }
+
+    const transicoes = detectTransitions(entries, pulseCursor.current);
+    if (newest > pulseCursor.current) pulseCursor.current = newest;
+    if (transicoes.length === 0) return;
+
+    // Duas pessoas no mesmo trecho viram duas bolinhas na MESMA aresta, em
+    // sequência — por isso agrupa antes de avisar.
+    const porAresta = new Map<string, number>();
+    for (const t of transicoes) {
+      const aresta = edges.find(
+        (e) => e.sourceStepId === t.from && e.targetStepId === t.to
+      );
+      // Pulo sem seta desenhada (ex.: entrou direto numa página do meio) não
+      // tem por onde animar — o número do card já mostra que ela chegou.
+      if (!aresta) continue;
+      porAresta.set(aresta.id, (porAresta.get(aresta.id) ?? 0) + 1);
+    }
+    porAresta.forEach((n, id) => pulseEdge(id, n));
+  }, [entries, edges]);
 
   // Mapa stepId → online. Memoizado pelos VALORES, não pelo array: o polling
   // devolve um array novo a cada 5s, quase sempre com os mesmos números, e
@@ -241,6 +285,7 @@ export function LiveFunnelCanvas({
   steps,
   edges,
   liveFlow,
+  entries,
   onOpen,
 }: LiveFunnelCanvasProps) {
   if (steps.length === 0) {
@@ -285,7 +330,7 @@ export function LiveFunnelCanvas({
       </svg>
 
       <span className="pointer-events-none absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-full border border-red-500/60 bg-red-950/70 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-red-300 backdrop-blur">
-        <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+        <span className="h-2 w-2 rounded-full bg-red-500" />
         ao vivo
       </span>
 
@@ -296,6 +341,7 @@ export function LiveFunnelCanvas({
             steps={steps}
             edges={edges}
             liveFlow={liveFlow}
+            entries={entries}
             onOpen={onOpen}
           />
         </ReactFlowProvider>

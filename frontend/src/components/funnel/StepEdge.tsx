@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import {
   BaseEdge,
   EdgeLabelRenderer,
@@ -5,6 +6,7 @@ import {
   type EdgeProps,
 } from "reactflow";
 import { cn } from "@/lib/cn";
+import { onEdgePulse } from "@/lib/livePulse";
 import { conversionColor, conversionChip } from "@/lib/conversion";
 import {
   EDGE_CONDITION_COLOR,
@@ -22,16 +24,68 @@ export interface StepEdgeData {
   targetVisitors?: number;
   /** Repassado do canvas — "live" liga a animação de bolinha de luz. */
   variant?: "dark" | "light" | "live";
-  /** Quantas bolinhas de luz emitir (tráfego na aresta). Só usado no live. */
-  pulseCount?: number;
+}
+
+/** Quanto tempo a bolinha leva de uma página até a outra. */
+const BALL_DURATION = 1.5;
+/** Espaçamento entre bolinhas do mesmo lote (várias pessoas de uma vez). */
+const BALL_STAGGER_MS = 220;
+/** Teto de bolinhas simultâneas numa aresta — acima disso vira borrão. */
+const MAX_BALLS = 8;
+
+interface Pulse {
+  key: number;
+  /** Atraso até esta bolinha partir, em ms. */
+  delay: number;
+}
+
+/**
+ * Bolinhas em voo nesta aresta. Cada uma nasce de um pulo de verdade avisado
+ * pelo canvas (ver `lib/livePulse.ts`) e morre quando chega no destino — nada
+ * anima enquanto ninguém anda.
+ */
+function useEdgePulses(edgeId: string, enabled: boolean): Pulse[] {
+  const [pulses, setPulses] = useState<Pulse[]>([]);
+  const nextKey = useRef(0);
+  const timers = useRef<number[]>([]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    const unsubscribe = onEdgePulse(edgeId, (count) => {
+      const lote: Pulse[] = [];
+      const n = Math.min(count, MAX_BALLS);
+      for (let i = 0; i < n; i++) {
+        lote.push({ key: nextKey.current++, delay: i * BALL_STAGGER_MS });
+      }
+      setPulses((atuais) => [...atuais, ...lote].slice(-MAX_BALLS));
+
+      const chaves = new Set(lote.map((p) => p.key));
+      const t = window.setTimeout(
+        () => setPulses((atuais) => atuais.filter((p) => !chaves.has(p.key))),
+        (n - 1) * BALL_STAGGER_MS + BALL_DURATION * 1000 + 120
+      );
+      timers.current.push(t);
+    });
+    return () => {
+      unsubscribe();
+      timers.current.forEach(clearTimeout);
+      timers.current = [];
+    };
+  }, [edgeId, enabled]);
+
+  return pulses;
 }
 
 /**
  * Bolinha de luz que viaja da página A até a página B ao longo do caminho da
  * aresta. Implementada com SMIL `<animateMotion>`: o atributo `path` recebe o
  * mesmo `edgePath` desenhado pela aresta, então a bolinha segue o traçado
- * exato (curvas inclusive). Várias bolinhas com `begin` escalonado dão a
- * sensação de fluxo contínuo de pessoas.
+ * exato (curvas inclusive).
+ *
+ * `begin="indefinite"` + `beginElement()` no efeito, e não `begin="0s"`: o
+ * relógio do SMIL é o do documento, não o da montagem do elemento. Uma bolinha
+ * criada aos 40s de página com `begin="0s"` nasceria com a animação já vencida
+ * — aparecia parada no fim do caminho.
  *
  * O brilho é feito com um segundo círculo maior e translúcido, **não** com
  * `filter`: a região de um filtro SVG é calculada a partir da bounding box
@@ -40,33 +94,43 @@ export interface StepEdgeData {
  */
 function LightBall({
   edgePath,
-  begin,
-  duration,
+  delay,
 }: {
   edgePath: string;
-  begin: string;
-  duration: number;
+  delay: number;
 }) {
-  const motion = (
-    <animateMotion
-      dur={`${duration}s`}
-      begin={begin}
-      repeatCount="indefinite"
-      path={edgePath}
-      keyPoints="0;1"
-      keyTimes="0;1"
-      calcMode="linear"
-    />
-  );
+  const motionRef = useRef<SVGElement>(null);
+  const [andando, setAndando] = useState(false);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setAndando(true);
+      (motionRef.current as SVGAnimationElement | null)?.beginElement();
+    }, delay);
+    return () => clearTimeout(t);
+  }, [delay]);
 
   return (
-    <g className="pointer-events-none">
-      <g>
-        <circle r={9} fill="url(#liveBallGlowGradient)" opacity={0.55} />
-        <circle r={3.5} fill="#fecaca" />
-        <circle r={2} fill="#fff" />
-        {motion}
-      </g>
+    <g
+      className="pointer-events-none"
+      // Antes de partir a bolinha fica na origem do caminho; escondida, para
+      // não virar um ponto parado em cima do card enquanto espera a vez.
+      style={{ opacity: andando ? 1 : 0 }}
+    >
+      <circle r={9} fill="url(#liveBallGlowGradient)" opacity={0.55} />
+      <circle r={3.5} fill="#fecaca" />
+      <circle r={2} fill="#fff" />
+      <animateMotion
+        ref={motionRef}
+        dur={`${BALL_DURATION}s`}
+        begin="indefinite"
+        repeatCount="1"
+        fill="freeze"
+        path={edgePath}
+        keyPoints="0;1"
+        keyTimes="0;1"
+        calcMode="linear"
+      />
     </g>
   );
 }
@@ -103,7 +167,7 @@ export function StepEdge({
   const conditionLabel =
     data?.label || (condition === "default" ? "" : EDGE_CONDITION_LABEL[condition]);
 
-  const ballCount = live ? Math.min(3, Math.max(1, data?.pulseCount ?? 1)) : 0;
+  const pulses = useEdgePulses(id, live);
 
   return (
     <>
@@ -122,13 +186,8 @@ export function StepEdge({
       />
 
       {live &&
-        Array.from({ length: ballCount }).map((_, i) => (
-          <LightBall
-            key={i}
-            edgePath={edgePath}
-            begin={`${i * 0.9}s`}
-            duration={2.4 + (i % 2) * 0.6}
-          />
+        pulses.map((p) => (
+          <LightBall key={p.key} edgePath={edgePath} delay={p.delay} />
         ))}
 
       <EdgeLabelRenderer>

@@ -102,13 +102,20 @@ class ClarityService:
         except Exception as e:
             return {"error": True, "message": f"Erro ao conectar com Clarity: {str(e)}"}
 
-    async def get_live_insights(self, user_id: str, num_days: int = 3) -> Dict:
+    async def get_live_insights(
+        self, user_id: str, num_days: int = 3, force: bool = False
+    ) -> Dict:
         """
         Métricas agregadas dos últimos `num_days` dias (teto de 3, do Clarity).
 
         Devolve `{"metrics": {...}, "days": N}` ou `{"error": True, "message": ...}`.
         `days` é quantos dias o número REALMENTE cobre — quem chama usa isso para
         rotular a tela quando o pedido foi maior que o teto.
+
+        `force=True` ignora o cache de 30 min e vai à API mesmo. Existe só para o
+        botão "Puxar agora": quem clica está pedindo dado novo, e devolver o
+        mesmo número de meia hora atrás faria o botão parecer quebrado. Cada uso
+        gasta uma das 10 chamadas diárias — não use em caminho automático.
         """
         days = max(1, min(int(num_days or self.MAX_DAYS), self.MAX_DAYS))
 

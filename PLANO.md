@@ -1,7 +1,7 @@
 # PLANO — FUNNELTRON
 
 Arquivo de contexto vivo do projeto. **Atualizado ao fim de cada tarefa.**
-Última atualização: 2026-08-17
+Última atualização: 2026-08-18
 
 ---
 
@@ -368,6 +368,8 @@ isso, rodar o import duas vezes no mesmo dia dobra o número.
 | 85 | **Requisições simultâneas serializavam.** 38 rotas eram `async def` fazendo I/O bloqueante (todo o `supabase-py` é síncrono): rodando no event loop, cada uma travava as outras enquanto esperava o Supabase. Como o Ao Vivo dispara 3 × N chamadas de uma vez, elas entravam em fila. Declaradas `def`, o FastAPI as executa num pool de threads. Mesma mudança em `get_current_user`/`get_optional_user`. **Medido: 12 requisições simultâneas 4434 ms → 382 ms** (uma sozinha: 193 ms — ou seja, agora andam de verdade em paralelo) | `core/auth.py`, todos os `routers/` |
 
 | 86 | **O painel do Ao Vivo piscava preto a cada atualização.** A aba de UM funil (`useLiveFunnel`) continuava rebuscando `getFunnel`/`listSteps`/`listEdges` dentro do polling — o item 84 só tinha tirado isso da vista Geral. A resposta era sempre igual, mas em objetos novos: o canvas recalculava `spreadSteps`, trocava todos os nós e chamava `fitView` antes do React Flow remedir os cards, enquadrando caixas de tamanho zero — o fundo `bg-slate-950` aparecia sozinho por um instante. Estrutura e números viraram estados separados, e o canvas passou a comparar o desenho por **assinatura** (id/label/tipo/print/posição/lado do badge), não por identidade de objeto: array novo com o mesmo desenho não remonta nem refaz o fit. `onlineMap` também virou memo por valor, para as arestas não reiniciarem as bolinhas de luz a cada ciclo | `LivePage.tsx`, `LiveFunnelCanvas.tsx` |
+| 87 | **A página do Ao Vivo inteira ficava preta, do nada.** Não era layout: era um erro sem ninguém para segurar. `apiGet` é um `fetch` cru, e `fetch` só rejeita em falha de rede — um 401 (token expirado depois de um tempo com a aba aberta), 404 ou 500 chegava como resposta normal e `r.json()` devolvia o corpo de erro do FastAPI, `{detail: "..."}`, tipado como se fosse a lista esperada. O `try/catch` do `refresh` não via nada, pois ninguém tinha lançado. Aí o primeiro `for`/`reduce` em cima daquele objeto (`newestEntryTime`, `liveFlow.reduce`) lançava "is not iterable" **de dentro de um efeito** — e sem nenhuma barreira de erro no app, o React 18 desmontava a árvore inteira: sumia cabeçalho, abas, vendas, tudo, sobrando o fundo escuro da página. Corrigido na raiz: `okJson` confere o status antes de ler o corpo (24 chamadas migradas), então a falha vira exceção e cai no `catch` de quem chamou — a tela mantém os últimos dados bons. Somado a isso, `ErrorBoundary` novo em volta das três vistas do Ao Vivo, para que um erro futuro pare na seção e mostre a mensagem em vez de apagar a página, e `GeneralLiveView.refresh` ganhou o `try/catch` que faltava | `api/client.ts`, `common/ErrorBoundary.tsx`, `LivePage.tsx` |
+| 88 | **Ao Vivo tinha animação em laço o tempo todo, e isso apagava o único sinal que importa.** Cinco `animate-pulse` infinitos (ponto de cada card com gente, selo do painel, os dois cabeçalhos e as duas primeiras linhas do feed — onde `fresh` era só `i < 2`, isto é, "está no topo", não "acabou de acontecer") mantinham a tela em movimento mesmo com ninguém navegando: parecia tráfego passando sem parar, e o olho deixava de acreditar na bolinha da seta, que é a única que representa uma pessoa de verdade mudando de página. Todos viraram pontos fixos — a cor continua separando "tem gente"/"vazio" e "nova"/"antiga". Os keyframes `float`, `light-travel` e `pulse-soft` do `index.css` já eram código morto (nenhum uso) e foram removidos junto | `LiveNode.tsx`, `LiveFunnelCanvas.tsx`, `LivePage.tsx`, `PageEntriesFeed.tsx`, `index.css` |
 
 ### ✅ O rastreador ao vivo estava quebrado em silêncio — RESOLVIDO
 
@@ -530,9 +532,11 @@ uma origem, sem CORS.
    não do código. Períodos de 30 ou 90 dias na tela do Clarity cobrem 3 dias; a
    resposta traz `days` com o que realmente veio e um `warning`. Histórico mais
    longo só existe acumulando os snapshots diários em `clarity_snapshots`.
-9. **`LivePage` quebra quando a API devolve erro no lugar de lista** —
-   `rows.map is not a function` (`LivePage.tsx:769`) com o backend fora do ar.
-   Falha na renderização inteira em vez de mostrar a tela vazia.
+9. ~~**`LivePage` quebra quando a API devolve erro no lugar de lista**~~ —
+   **resolvido no item 87.** `okJson` confere o status antes de ler o corpo, e
+   as vistas do Ao Vivo estão dentro de `ErrorBoundary`. Vale notar que o mesmo
+   `ErrorBoundary` ainda **não** cobre as outras páginas: lá um erro de render
+   continua apagando o app inteiro.
 10. ~~**~290 ms de overhead do `supabase-py` por consulta**~~ — **estava errado,
     e a conclusão era acionável na direção errada.** O controle da medição era
     ruim: comparei uma consulta real com um `GET /rest/v1/`, que não toca o

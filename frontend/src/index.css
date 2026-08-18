@@ -100,56 +100,11 @@ body {
 
 /* --- Live page animations --- */
 
-/* Partículas flutuantes dentro dos nós (pessoas ao vivo) */
-@keyframes float {
-  0%, 100% {
-    transform: translate(0, 0) rotate(0deg);
-  }
-  25% {
-    transform: translate(var(--fx1, 4px), var(--fy1, -6px)) rotate(var(--fr1, 8deg));
-  }
-  50% {
-    transform: translate(var(--fx2, -5px), var(--fy2, 4px)) rotate(var(--fr2, -10deg));
-  }
-  75% {
-    transform: translate(var(--fx3, 6px), var(--fy3, 5px)) rotate(var(--fr3, 12deg));
-  }
-}
+/* Não há mais nenhuma animação em laço nesta tela, e é de propósito: no Ao
+   Vivo, algo se mexendo quer dizer UMA pessoa saindo de uma página e entrando
+   na seguinte. A única animação é a bolinha de luz da seta (SMIL
+   `<animateMotion>`, em `StepEdge.tsx`), que nasce de um pulo real e morre ao
+   chegar. Partículas flutuando nos cards, `light-travel` e `pulse-soft` viviam
+   aqui e foram removidas — rodavam sem parar e faziam a tela parecer cheia de
+   tráfego mesmo com ninguém navegando. */
 
-.animate-float {
-  animation: float var(--fd, 6s) ease-in-out infinite;
-  animation-delay: var(--fdelay, 0s);
-}
-
-/* Reduz motion para acessibilidade */
-@media (prefers-reduced-motion: reduce) {
-  .animate-float {
-    animation: none;
-  }
-}
-
-/* Bolinha de luz viajando pela aresta (SMIL via offset-path fallback) */
-@keyframes light-travel {
-  from {
-    offset-distance: 0%;
-    opacity: 1;
-  }
-  to {
-    offset-distance: 100%;
-    opacity: 0;
-  }
-}
-
-.animate-light-travel {
-  animation: light-travel var(--ltd, 1000ms) cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
-}
-
-/* Pulsar suave para badges online */
-@keyframes pulse-soft {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-
-.animate-pulse-soft {
-  animation: pulse-soft 2s ease-in-out infinite;
-}

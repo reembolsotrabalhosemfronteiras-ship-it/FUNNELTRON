@@ -13,6 +13,7 @@ import { Card, CardContent } from "@/components/common/Card";
 import { Button } from "@/components/common/Button";
 import { Badge } from "@/components/common/Badge";
 import { Spinner } from "@/components/common/Spinner";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { cn } from "@/lib/cn";
 import {
   listFunnels,
@@ -246,7 +247,7 @@ function FunnelLiveView({
             <span
               className={cn(
                 "h-2 w-2 rounded-full",
-                isPolling ? "bg-red-500 animate-pulse" : "bg-muted-foreground"
+                isPolling ? "bg-red-500" : "bg-muted-foreground"
               )}
             />
             {isPolling ? "ao vivo" : "pausado"} · {lastUpdated.toLocaleTimeString()}
@@ -258,6 +259,7 @@ function FunnelLiveView({
           steps={data.steps}
           edges={data.edges}
           liveFlow={data.liveFlow}
+          entries={data.entries}
         />
 
         {trackerMissing && (
@@ -291,7 +293,7 @@ function FunnelLiveView({
         <div className="lg:col-span-2 space-y-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+              <span className="h-2 w-2 rounded-full bg-red-500" />
               <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
                 Entradas em página
               </h3>
@@ -405,36 +407,45 @@ function GeneralLiveView({
     let cancelled = false;
     Promise.all(
       funnels.map(async (f) => [f.id, await listSteps(f.id)] as const)
-    ).then((pares) => {
-      if (!cancelled) setStepsByFunnel(Object.fromEntries(pares));
-    });
+    )
+      .then((pares) => {
+        if (!cancelled) setStepsByFunnel(Object.fromEntries(pares));
+      })
+      .catch((err) => console.error("Erro ao carregar etapas dos funis:", err));
     return () => {
       cancelled = true;
     };
   }, [funnels]);
 
   const refresh = useCallback(async () => {
-    const entries = await Promise.all(
-      funnels.map(async (f) => {
-        const [conv, sales, flow] = await Promise.all([
-          getLiveConversion(f.id, convWindow),
-          getLiveSales(f.id, salesWindow),
-          getLiveFlow(f.id),
-        ]);
-        return [
-          f.id,
-          {
-            conv,
-            sales,
-            funnel: f,
-            steps: stepsByFunnel[f.id] ?? [],
-            totalOnline: flow.reduce((s, l) => s + l.online, 0),
-          },
-        ] as const;
-      })
-    );
-    setByFunnel(Object.fromEntries(entries));
-    setLastUpdated(new Date());
+    // Um funil fora do ar (ou o token expirado) não pode derrubar a vista:
+    // sem este catch a falha virava rejeição não tratada e a aba parava de se
+    // atualizar em silêncio, mostrando números velhos como se fossem de agora.
+    try {
+      const entries = await Promise.all(
+        funnels.map(async (f) => {
+          const [conv, sales, flow] = await Promise.all([
+            getLiveConversion(f.id, convWindow),
+            getLiveSales(f.id, salesWindow),
+            getLiveFlow(f.id),
+          ]);
+          return [
+            f.id,
+            {
+              conv,
+              sales,
+              funnel: f,
+              steps: stepsByFunnel[f.id] ?? [],
+              totalOnline: flow.reduce((s, l) => s + l.online, 0),
+            },
+          ] as const;
+        })
+      );
+      setByFunnel(Object.fromEntries(entries));
+      setLastUpdated(new Date());
+    } catch (err) {
+      console.error("Erro ao atualizar a vista geral:", err);
+    }
   }, [funnels, convWindow, salesWindow, stepsByFunnel]);
 
   useEffect(() => {
@@ -718,23 +729,27 @@ export function LivePage() {
         {source !== "clarity" &&
           (activeTab === "geral" ? (
             activeFunnels.length > 0 ? (
-              <GeneralLiveView
-                funnels={activeFunnels}
-                convWindow={convWindow}
-                salesWindow={salesWindow}
-              />
+              <ErrorBoundary area="Ao Vivo · Geral">
+                <GeneralLiveView
+                  funnels={activeFunnels}
+                  convWindow={convWindow}
+                  salesWindow={salesWindow}
+                />
+              </ErrorBoundary>
             ) : (
               <div className="py-16 text-center text-muted-foreground">
                 Nenhum funil recebendo tráfego ao vivo no momento.
               </div>
             )
           ) : selectedFunnel ? (
-            <FunnelLiveView
-              funnel={selectedFunnel}
-              vslWindow={vslWindow}
-              convWindow={convWindow}
-              salesWindow={salesWindow}
-            />
+            <ErrorBoundary area={`Ao Vivo · ${selectedFunnel.name}`}>
+              <FunnelLiveView
+                funnel={selectedFunnel}
+                vslWindow={vslWindow}
+                convWindow={convWindow}
+                salesWindow={salesWindow}
+              />
+            </ErrorBoundary>
           ) : (
             <div className="py-16 text-center text-muted-foreground">
               Funil não encontrado.
@@ -742,9 +757,11 @@ export function LivePage() {
           ))}
 
         {source !== "tracker" && (
-          <ClarityLiveView
-            funnelId={activeTab === "geral" ? undefined : activeTab}
-          />
+          <ErrorBoundary area="Ao Vivo · Clarity">
+            <ClarityLiveView
+              funnelId={activeTab === "geral" ? undefined : activeTab}
+            />
+          </ErrorBoundary>
         )}
       </main>
     </div>

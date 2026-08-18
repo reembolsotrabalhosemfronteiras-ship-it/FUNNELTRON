@@ -104,6 +104,30 @@ function apiGet(path: string): Promise<Response> {
   return fetch(path, { headers: authHeaders() });
 }
 
+/**
+ * Lê o corpo JSON **depois** de conferir o status.
+ *
+ * `fetch` só rejeita em falha de rede: um 401 (token expirado), 404 ou 500
+ * chega aqui como resposta normal, e `r.json()` devolve o corpo de erro do
+ * FastAPI — `{ detail: "..." }`. Esse objeto seguia adiante tipado como se
+ * fosse a lista esperada, e o primeiro `for`/`reduce`/`.map` em cima dele
+ * lançava "is not iterable". Vindo de dentro de um efeito ou de um render, o
+ * React 18 desmonta a árvore inteira: a tela inteira ficava preta, sem
+ * mensagem e sem jeito de saber o porquê.
+ *
+ * Lançando aqui, o erro cai no `try/catch` de quem chamou — a tela mantém os
+ * últimos dados bons e o console diz o que aconteceu.
+ */
+async function okJson(r: Response) {
+  if (!r.ok) {
+    const corpo = await r.text().catch(() => "");
+    throw new Error(
+      `Backend respondeu ${r.status}${corpo ? `: ${corpo.slice(0, 200)}` : ""}`
+    );
+  }
+  return r.json();
+}
+
 function apiSend(
   path: string,
   method: string,
@@ -130,7 +154,7 @@ function apiSend(
 export async function listFunnels(status?: FunnelStatus): Promise<Funnel[]> {
   if (!USE_MOCK)
     return apiGet(`/api/funnels${status ? `?status=${status}` : ""}`)
-      .then((r) => r.json())
+      .then(okJson)
       .then((rows: Record<string, any>[]) => rows.map(fromApiFunnel));
   // Exemplos + criados pelo usuário, sem os apagados, com o status salvo.
   const deleted = new Set(readDeleted());
@@ -146,7 +170,7 @@ export async function listFunnels(status?: FunnelStatus): Promise<Funnel[]> {
 export async function getFunnel(id: string): Promise<Funnel> {
   if (!USE_MOCK)
     return apiGet(`/api/funnels/${id}`)
-      .then((r) => r.json())
+      .then(okJson)
       .then(fromApiFunnel);
   const f =
     MOCK_FUNNELS.find((x) => x.id === id) ??
@@ -178,7 +202,7 @@ export async function createFunnel(
 ): Promise<Funnel> {
   if (!USE_MOCK)
     return apiSend(`/api/funnels`, "POST", toApiFunnel(payload))
-      .then((r) => r.json())
+      .then(okJson)
       .then(fromApiFunnel);
 
   const now = new Date().toISOString();
@@ -200,7 +224,7 @@ export async function updateFunnel(
 ): Promise<Funnel> {
   if (!USE_MOCK)
     return apiSend(`/api/funnels/${id}`, "PUT", toApiFunnel(payload))
-      .then((r) => r.json())
+      .then(okJson)
       .then(fromApiFunnel);
   const f = MOCK_FUNNELS.find((x) => x.id === id)!;
   return delay({ ...f, ...payload, updatedAt: new Date().toISOString() });
@@ -319,7 +343,7 @@ function readLayout(funnelId: string): StoredLayout | null {
 export async function listSteps(funnelId: string): Promise<FunnelStep[]> {
   if (!USE_MOCK)
     return apiGet(`/api/funnels/${funnelId}/steps`)
-      .then((r) => r.json())
+      .then(okJson)
       .then((rows: Record<string, any>[]) => rows.map(fromApiStep));
   return delay(readLayout(funnelId)?.steps ?? MOCK_STEPS[funnelId] ?? []);
 }
@@ -327,7 +351,7 @@ export async function listSteps(funnelId: string): Promise<FunnelStep[]> {
 export async function listEdges(funnelId: string): Promise<FunnelEdge[]> {
   if (!USE_MOCK)
     return apiGet(`/api/funnels/${funnelId}/edges`)
-      .then((r) => r.json())
+      .then(okJson)
       .then((rows: Record<string, any>[]) => rows.map(fromApiEdge));
   return delay(readLayout(funnelId)?.edges ?? MOCK_EDGES[funnelId] ?? []);
 }
@@ -389,7 +413,7 @@ export async function saveStep(
       "POST",
       toApiStep({ ...step, id: step.id ?? crypto.randomUUID() } as FunnelStep)
     )
-      .then((r) => r.json())
+      .then(okJson)
       .then(fromApiStep);
   const id = step.id ?? crypto.randomUUID();
   return delay({ ...step, id, funnelId } as FunnelStep);
@@ -405,7 +429,7 @@ export async function saveEdge(
       "POST",
       toApiEdge({ ...edge, id: edge.id ?? crypto.randomUUID() } as FunnelEdge)
     )
-      .then((r) => r.json())
+      .then(okJson)
       .then(fromApiEdge);
   const id = edge.id ?? crypto.randomUUID();
   return delay({ ...edge, id, funnelId } as FunnelEdge);
@@ -417,7 +441,7 @@ export async function getStepMetrics(
 ): Promise<StepMetric[]> {
   if (!USE_MOCK)
     return apiGet(`/api/metrics/funnels/${funnelId}`)
-      .then((r) => r.json())
+      .then(okJson)
       .then((rows: Record<string, any>[]) =>
         // A rota pode devolver um envelope ({ metrics: [...] }) ou a lista
         // crua, dependendo de ter ou não métrica sincronizada.
@@ -444,7 +468,7 @@ export async function getOverview(
 ): Promise<OverviewMetrics> {
   if (!USE_MOCK)
     return apiGet(`/api/metrics/overview?${periodQuery(period)}`)
-      .then((r) => r.json())
+      .then(okJson)
       .then(fromApiOverview);
   return delay({
     ...MOCK_OVERVIEW,
@@ -457,7 +481,7 @@ export async function getFunnelRanking(
 ): Promise<FunnelComparisonRow[]> {
   if (!USE_MOCK)
     return apiGet(`/api/metrics/funnels/ranking?${periodQuery(period)}`)
-      .then((r) => r.json())
+      .then(okJson)
       .then((rows: Record<string, any>[]) => rows.map(fromApiComparisonRow));
   return delay(
     MOCK_COMPARISON.map((r) => ({
@@ -472,7 +496,7 @@ export async function getVslInsights(
 ): Promise<VslInsight[]> {
   if (!USE_MOCK)
     return apiGet(`/api/metrics/vsl?${periodQuery(period)}`)
-      .then((r) => r.json())
+      .then(okJson)
       .then((rows: Record<string, any>[]) => rows.map(fromApiVslInsight));
   return delay(
     MOCK_VSL.map((v) => ({
@@ -565,7 +589,7 @@ function fromApiImport(row: Record<string, any>): SalesImport {
 export async function listImports(): Promise<SalesImport[]> {
   if (!USE_MOCK)
     return apiGet(`/api/imports`)
-      .then((r) => r.json())
+      .then(okJson)
       .then((rows: Record<string, any>[]) => rows.map(fromApiImport));
   try {
     const raw = localStorage.getItem(IMPORTS_KEY);
@@ -638,7 +662,7 @@ export interface IntegrationCredentials {
 
 export async function getCredentials(): Promise<IntegrationCredentials> {
   if (!USE_MOCK)
-    return apiGet(`/api/integrations/credentials`).then((r) => r.json());
+    return apiGet(`/api/integrations/credentials`).then(okJson);
   return delay({
     vturbToken: "",
     vturbTier: "pro",
@@ -928,7 +952,7 @@ export async function getLatestClarity(
   }
 
   const q = funnelId ? `?funnel_id=${funnelId}` : "";
-  return apiGet(`/api/sources/clarity/latest${q}`).then((r) => r.json());
+  return apiGet(`/api/sources/clarity/latest${q}`).then(okJson);
 }
 
 /** Períodos já fechados do nosso rastreador (histórico consultável). */
@@ -953,7 +977,7 @@ export async function getTrackerHistory(
 
   return apiGet(
     `/api/sources/tracker/history?funnel_id=${funnelId}&bucket=${bucket}&limit=${limit}`
-  ).then((r) => r.json());
+  ).then(okJson);
 }
 
 /** Fecha o período corrente num snapshot agora, sem esperar o cron. */
@@ -976,7 +1000,7 @@ export async function captureTrackerSnapshot(
     `/api/sources/tracker/snapshot?funnel_id=${funnelId}&bucket=${bucket}`,
     "POST",
     {}
-  ).then((r) => r.json());
+  ).then(okJson);
 }
 
 // --- VTurb API (mock por enquanto, substituir quando tiver token real) ---
@@ -1018,7 +1042,7 @@ export async function getLiveVsl(
   if (!USE_MOCK)
     return apiGet(
       `/api/live/vsl?funnel_id=${funnelId}&minutes=${minutes}`
-    ).then((r) => r.json());
+    ).then(okJson);
 
   // Mock: retorna dados realistas para as VSLs do funil
   const layout = readLayout(funnelId);
@@ -1042,7 +1066,7 @@ export async function getLiveFlow(
   funnelId: string
 ): Promise<LiveStepData[]> {
   if (!USE_MOCK)
-    return apiGet(`/api/live?funnel_id=${funnelId}`).then((r) => r.json());
+    return apiGet(`/api/live?funnel_id=${funnelId}`).then(okJson);
 
   // Mock: rastreador próprio retornando pessoas online por etapa
   const layout = readLayout(funnelId);
@@ -1206,7 +1230,7 @@ export interface LiveConversion {
 /** IDs dos funis que receberam tráfego nos últimos ~5 min. */
 export async function getActiveFunnels(): Promise<string[]> {
   if (!USE_MOCK)
-    return apiGet(`/api/live/active-funnels`).then((r) => r.json());
+    return apiGet(`/api/live/active-funnels`).then(okJson);
 
   // Mock: todos os funis de exemplo "ativos", exceto inativos que não têm
   // tráfego. Filtra pelos MOCK_FUNNELS para não mostrar lixo.
@@ -1223,7 +1247,7 @@ export async function getLiveSales(
   if (!USE_MOCK)
     return apiGet(
       `/api/live/sales?funnel_id=${funnelId}&window=${windowMinutes}`
-    ).then((r) => r.json());
+    ).then(okJson);
 
   // Mock: gera vendas aleatórias com timestamp dentro da janela.
   const now = Date.now();
@@ -1300,7 +1324,7 @@ export async function getLivePageEntries(
   if (!USE_MOCK)
     return apiGet(
       `/api/live/entries?funnel_id=${funnelId}&window=${windowMinutes}&limit=${limit}`
-    ).then((r) => r.json());
+    ).then(okJson);
 
   // Mock: uma entrada a cada ~7s, ancorada numa grade de tempo fixa. Cada
   // "slot" da grade tem semente própria, então as linhas antigas não mudam
@@ -1391,7 +1415,7 @@ export async function getDayConversion(
   if (!USE_MOCK)
     return apiGet(
       `/api/live/conversion?funnel_id=${funnelId}&scope=today`
-    ).then((r) => r.json());
+    ).then(okJson);
 
   const layout = readLayout(funnelId);
   const steps = layout?.steps ?? MOCK_STEPS[funnelId] ?? [];
@@ -1437,7 +1461,7 @@ export async function getLiveConversion(
   if (!USE_MOCK)
     return apiGet(
       `/api/live/conversion?funnel_id=${funnelId}&window=${windowMinutes}`
-    ).then((r) => r.json());
+    ).then(okJson);
 
   // Mock: queda de conversão realista por etapa, cada uma sobre a anterior.
   const layout = readLayout(funnelId);
