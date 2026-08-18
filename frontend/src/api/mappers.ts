@@ -76,6 +76,7 @@ export function fromApiStep(row: Record<string, any>): FunnelStep {
     screenshotUrl: row.screenshot_url ?? row.screenshotUrl ?? null,
     status: (row.status ?? undefined) as FunnelStatus | undefined,
     subFunnelId: row.sub_funnel_id ?? row.subFunnelId ?? null,
+    playerId: row.player_id ?? row.playerId ?? null,
   };
 }
 
@@ -92,6 +93,7 @@ export function toApiStep(step: FunnelStep): Record<string, any> {
     screenshot_url: step.screenshotUrl ?? null,
     status: step.status ?? null,
     sub_funnel_id: step.subFunnelId ?? null,
+    player_id: step.playerId ?? null,
   };
 }
 

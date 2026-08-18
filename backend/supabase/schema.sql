@@ -75,6 +75,8 @@ create table public.funnel_steps (
   screenshot_url text,
   status text,
   sub_funnel_id uuid references public.funnels on delete set null,
+  -- Player do VTurb, só usado quando type = 'vsl' (ver migration 004).
+  player_id text,
   created_at timestamptz default now()
 );
 

@@ -22,6 +22,7 @@ class StepData(BaseModel):
     screenshot_url: Optional[str] = None
     status: Optional[str] = None
     sub_funnel_id: Optional[str] = None
+    player_id: Optional[str] = None
 
 
 class EdgeData(BaseModel):
@@ -226,7 +227,8 @@ def save_layout(
                     "order_index": step.order_index,
                     "screenshot_url": step.screenshot_url,
                     "status": step.status,
-                    "sub_funnel_id": step.sub_funnel_id
+                    "sub_funnel_id": step.sub_funnel_id,
+                    "player_id": step.player_id
                 }
                 for step in layout.steps
             ]

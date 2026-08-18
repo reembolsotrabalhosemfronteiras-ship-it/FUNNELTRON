@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, RefreshCw, Edit, Settings, BarChart3 } from "lucide-react";
 import { Header } from "@/components/common/Header";
@@ -34,6 +34,28 @@ export function FunnelViewPage() {
       })
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Métricas por etapa (leitura local, sem custo de cota externa) atualizam
+  // sozinhas em segundo plano — sem isso a tela só mudava quando alguém
+  // apertava "Sincronizar" ou trocava de página e voltava.
+  const refreshMetrics = useCallback(() => {
+    if (!id) return;
+    getStepMetrics(id).then(setMetrics);
+  }, [id]);
+
+  useEffect(() => {
+    if (document.visibilityState !== "visible") return;
+    const i = setInterval(refreshMetrics, 30000);
+    return () => clearInterval(i);
+  }, [refreshMetrics]);
+
+  useEffect(() => {
+    const h = () => {
+      if (document.visibilityState === "visible") refreshMetrics();
+    };
+    document.addEventListener("visibilitychange", h);
+    return () => document.removeEventListener("visibilitychange", h);
+  }, [refreshMetrics]);
 
   const handleSync = async () => {
     if (!id) return;

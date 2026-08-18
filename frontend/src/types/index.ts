@@ -60,6 +60,8 @@ export interface FunnelStep {
   status?: FunnelStatus;
   /** Preenchido quando `type === "sub_funnel"`: qual funil de upsell embutir. */
   subFunnelId?: string | null;
+  /** Preenchido quando `type === "vsl"`: player do VTurb para o proxy de live users. */
+  playerId?: string | null;
 }
 
 export interface FunnelEdge {

@@ -1206,6 +1206,26 @@ function Inspector({
         </div>
         )}
 
+        {step.type === "vsl" && (
+          <div>
+            <label className="mb-1 block text-[11px] text-slate-400">
+              Player ID do VTurb
+            </label>
+            <input
+              value={step.playerId ?? ""}
+              placeholder="ex: 64f1a2b3c4d5e6f7"
+              onChange={(e) =>
+                onPatch({ playerId: e.target.value.trim() || null })
+              }
+              className="w-full rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-sky-500"
+            />
+            <p className="mt-1 text-[10px] leading-snug text-slate-500">
+              Sem isso a página "Ao Vivo" não mostra quem está assistindo esta
+              VSL agora.
+            </p>
+          </div>
+        )}
+
         <div>
           <label className="mb-1 block text-[11px] text-slate-400">
             Print da página

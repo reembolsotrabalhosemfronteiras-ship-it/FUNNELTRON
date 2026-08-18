@@ -1,4 +1,5 @@
 """Router de rastreamento ao vivo"""
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
@@ -9,6 +10,8 @@ from ..core.supabase_client import get_supabase_client, get_supabase_admin
 from ..core.config import get_settings
 from ..services.vturb import vturb_service
 from supabase import Client
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/live", tags=["live"])
 
@@ -48,8 +51,12 @@ async def track_heartbeat(
     try:
         corpo = await request.body()
         beat = LiveBeatRequest.model_validate_json(corpo)
-    except Exception as e:
-        print(f"Erro no track (corpo inválido): {e}")
+    except Exception:
+        # Corpo malformado — o snippet manda o que consegue, não vale a pena
+        # devolver erro pra ele (sendBeacon ignora a resposta mesmo). Mas o
+        # erro precisa ficar visível no log do servidor, não só engolido: foi
+        # exatamente esse silêncio que escondeu a migration 002 não rodada.
+        logger.exception("Erro no track: corpo inválido")
         return None
 
     try:
@@ -102,9 +109,16 @@ async def track_heartbeat(
 
         return None
 
-    except Exception as e:
-        # Não expõe erros internos para o snippet
-        print(f"Erro no track: {e}")
+    except Exception:
+        # Não expõe erros internos para o snippet (sempre 204 pra ele), mas
+        # loga com traceback: um `print` sozinho pode não aparecer em nenhum
+        # lugar monitorado em produção, e uma falha de gravação aqui significa
+        # visitante que "sumiu" sem ninguém saber por quê.
+        logger.exception(
+            "Erro no track: falha ao gravar heartbeat (session_id=%s, funnel_id=%s)",
+            beat.session_id,
+            beat.funnel_id,
+        )
         return None
 
 
@@ -269,7 +283,7 @@ def get_page_entries(
 
 
 @router.get("/vsl")
-def get_live_vsl_data(
+async def get_live_vsl_data(
     funnel_id: str,
     minutes: int = 5,
     current_user = Depends(get_current_user),
@@ -310,18 +324,35 @@ def get_live_vsl_data(
         if not steps.data:
             return []
 
-        # Para cada VSL, busca live_users do VTurb
+        # Para cada VSL com player_id configurado, busca live_users do VTurb.
+        # Etapas sem player_id ficam de fora do retorno: mostrar "0 pessoas"
+        # pra uma VSL que nunca foi ligada ao VTurb seria inventar um dado,
+        # não reportar ausência dele.
         result = []
 
         for step in steps.data:
-            # TODO: extrair player_id do step (precisa estar armazenado em extra_config ou similar)
-            # Por enquanto, retorna placeholder
+            player_id = step.get("player_id")
+            if not player_id:
+                continue
+
+            vturb_result = await vturb_service.get_live_users(
+                current_user.id, player_id, minutes
+            )
+
+            # Erro (sem credenciais, rate limit, etc.) também não vira zero —
+            # a etapa simplesmente não aparece nesta chamada.
+            if not isinstance(vturb_result, list):
+                continue
+
+            live_users = sum(int(d.get("live_users", 0)) for d in vturb_result)
+            domain = vturb_result[0].get("domain", "") if vturb_result else ""
+
             result.append({
                 "stepId": step["id"],
-                "playerId": "",
+                "playerId": player_id,
                 "label": step["label"],
-                "liveUsers": 0,
-                "domain": "",
+                "liveUsers": live_users,
+                "domain": domain,
                 "windowMinutes": minutes
             })
 
@@ -482,16 +513,25 @@ def get_live_conversion(
             "*"
         ).eq("funnel_id", funnel_id).order("order_index").execute()
 
-        # Visitantes únicos por etapa = primeiros heartbeats na janela.
-        beats = supabase.table("live_beats").select(
+        # Visitantes únicos por etapa = quem ENTROU em cada página na janela,
+        # lido do log de entradas (`live_page_entries`), não de `live_beats`.
+        # `live_beats` guarda uma linha só por sessão com o step_id ATUAL — uma
+        # sessão que passou por 3 páginas e está na 4ª some das 3 primeiras
+        # assim que anda, e o gráfico de funil desmoronava para 0% em etapas
+        # que tiveram tráfego real, só porque ninguém está mais parado nelas.
+        # Admin, não o cliente do usuário: mesma pegadinha já corrigida em
+        # `/entries` — a consulta a `live_page_entries` com o client comum
+        # voltava vazia em silêncio. A permissão já foi checada acima (o funil
+        # é deste usuário).
+        entries = get_supabase_admin().table("live_page_entries").select(
             "step_id, session_id"
-        ).eq("funnel_id", funnel_id).gte("first_seen", since).execute()
+        ).eq("funnel_id", funnel_id).gte("entered_at", since).execute()
 
         # Conta sessões distintas por etapa.
         by_step: dict = {}
-        for b in beats.data:
-            sid = b.get("session_id")
-            st = b.get("step_id")
+        for e in entries.data:
+            sid = e.get("session_id")
+            st = e.get("step_id")
             if not st or not sid:
                 continue
             by_step.setdefault(st, set()).add(sid)
@@ -512,19 +552,29 @@ def get_live_conversion(
         entry_step = steps.data[0] if steps.data else None
         total_visitors = step_visitors.get(entry_step["id"], 0) if entry_step else 0
 
-        # Taxa por etapa (entrada relativa à etapa anterior).
+        # Taxa por etapa (entrada relativa à etapa anterior, sempre — nunca à
+        # última etapa que teve gente). Só a primeira etapa é 100% por
+        # definição (é a própria base). Uma etapa sem visitante nenhum tem
+        # 0%, não 100%: o `prev in (None, 0)` antigo tratava "não sei" e
+        # "ninguém passou por aqui" como a mesma coisa, e o funil aparecia com
+        # várias etapas seguidas em 100% mesmo sem tráfego real nelas.
         step_rates = []
         prev = None
-        for s in steps.data:
+        for i, s in enumerate(steps.data):
             v = step_visitors.get(s["id"], 0)
-            rate = 100.0 if prev in (None, 0) else round((v / prev) * 100, 1)
+            if i == 0:
+                rate = 100.0
+            elif not prev:
+                rate = 0.0
+            else:
+                rate = round((v / prev) * 100, 1)
             step_rates.append({
                 "stepId": s["id"],
                 "label": s["label"],
                 "visitors": v,
                 "rate": rate,
             })
-            prev = v if v > 0 else prev
+            prev = v
 
         rate = round((conversions / total_visitors) * 100, 1) if total_visitors else 0.0
 

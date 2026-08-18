@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   ArrowLeft,
@@ -155,16 +155,41 @@ export function MetricsPage() {
     });
   }, []);
 
+  const refreshBundles = useCallback(
+    (withSpinner: boolean) => {
+      const ids = isGlobal ? funnels.map((f) => f.id) : selectedIds;
+      if (ids.length === 0) return;
+      if (withSpinner) setLoading(true);
+      // Uma chamada de VSL para a tela inteira, não uma por funil.
+      return getVslInsights(period)
+        .then((vslAll) => Promise.all(ids.map((id) => loadBundle(id, vslAll))))
+        .then(setBundles)
+        .finally(() => {
+          if (withSpinner) setLoading(false);
+        });
+    },
+    [selectedIds, period, funnels, isGlobal]
+  );
+
   useEffect(() => {
-    const ids = isGlobal ? funnels.map((f) => f.id) : selectedIds;
-    if (ids.length === 0) return;
-    setLoading(true);
-    // Uma chamada de VSL para a tela inteira, não uma por funil.
-    getVslInsights(period)
-      .then((vslAll) => Promise.all(ids.map((id) => loadBundle(id, vslAll))))
-      .then(setBundles)
-      .finally(() => setLoading(false));
-  }, [selectedIds, period, funnels, isGlobal]);
+    refreshBundles(true);
+  }, [refreshBundles]);
+
+  // Atualização silenciosa em segundo plano (sem spinner) — a página só
+  // reagia antes quando o período ou o funil selecionado mudava.
+  useEffect(() => {
+    if (document.visibilityState !== "visible") return;
+    const i = setInterval(() => refreshBundles(false), 60000);
+    return () => clearInterval(i);
+  }, [refreshBundles]);
+
+  useEffect(() => {
+    const h = () => {
+      if (document.visibilityState === "visible") refreshBundles(false);
+    };
+    document.addEventListener("visibilitychange", h);
+    return () => document.removeEventListener("visibilitychange", h);
+  }, [refreshBundles]);
 
   const toggleFunnel = (id: string) => {
     setSelectedIds((cur) =>
