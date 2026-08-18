@@ -8,12 +8,15 @@ interface ConversionBarProps {
   className?: string;
   /** Recorte de tempo. "today" troca o rótulo e some com o "últimos N min". */
   scope?: "window" | "today";
+  /** Presente = mostra o botão de alternar recorte, no lugar de duas cartas empilhadas. */
+  onToggleScope?: () => void;
 }
 
 export function ConversionBar({
   data,
   className,
   scope = "window",
+  onToggleScope,
 }: ConversionBarProps) {
   const rateColor = conversionColor(data.rate);
   const periodLabel =
@@ -24,16 +27,27 @@ export function ConversionBar({
   return (
     <Card className={cn("", className)}>
       <CardContent className="p-4">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold">
             Conversão de compra — {periodLabel}
           </h3>
-          <span
-            className="text-lg font-bold"
-            style={{ color: rateColor }}
-          >
-            {data.rate.toFixed(1)}%
-          </span>
+          <div className="flex items-center gap-2">
+            {onToggleScope && (
+              <button
+                type="button"
+                onClick={onToggleScope}
+                className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                {scope === "today" ? "Ver janela curta" : "Ver hoje"}
+              </button>
+            )}
+            <span
+              className="text-lg font-bold"
+              style={{ color: rateColor }}
+            >
+              {data.rate.toFixed(1)}%
+            </span>
+          </div>
         </div>
 
         {/* Os três números são a MESMA conta: entraram → compraram → fatia.

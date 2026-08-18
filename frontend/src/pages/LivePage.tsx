@@ -207,6 +207,7 @@ function FunnelLiveView({
     salesWindow
   );
   const [saleFilter, setSaleFilter] = useState<SaleFilter>("all");
+  const [convScope, setConvScope] = useState<"window" | "today">("window");
 
   const filteredSales = useMemo(() => {
     if (!data) return [];
@@ -280,13 +281,17 @@ function FunnelLiveView({
           <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
             Conversão
           </h3>
-          {/* Duas escalas de tempo. A janela curta diz como está agora; o dia
-              diz se isso é normal. Uma sozinha não se interpreta. */}
-          {data.conversion && (
-            <ConversionBar data={data.conversion} scope="window" />
-          )}
-          {data.dayConversion && (
-            <ConversionBar data={data.dayConversion} scope="today" />
+          {/* Duas escalas de tempo, um card só: a janela curta diz como está
+              agora, o dia diz se isso é normal — o botão alterna entre elas
+              em vez de empilhar duas cartas iguais na tela. */}
+          {(convScope === "today" ? data.dayConversion : data.conversion) && (
+            <ConversionBar
+              data={(convScope === "today" ? data.dayConversion : data.conversion)!}
+              scope={convScope}
+              onToggleScope={() =>
+                setConvScope((s) => (s === "today" ? "window" : "today"))
+              }
+            />
           )}
         </div>
 
@@ -728,19 +733,16 @@ export function LivePage() {
             vezes. */}
         {source !== "clarity" &&
           (activeTab === "geral" ? (
-            activeFunnels.length > 0 ? (
-              <ErrorBoundary area="Ao Vivo · Geral">
-                <GeneralLiveView
-                  funnels={activeFunnels}
-                  convWindow={convWindow}
-                  salesWindow={salesWindow}
-                />
-              </ErrorBoundary>
-            ) : (
-              <div className="py-16 text-center text-muted-foreground">
-                Nenhum funil recebendo tráfego ao vivo no momento.
-              </div>
-            )
+            // Mostra TODOS os funis cadastrados, não só os com tráfego agora —
+            // senão a aba "Geral" some inteira quando ninguém está online, e
+            // "ninguém no sistema" é uma informação, não um estado vazio.
+            <ErrorBoundary area="Ao Vivo · Geral">
+              <GeneralLiveView
+                funnels={funnels}
+                convWindow={convWindow}
+                salesWindow={salesWindow}
+              />
+            </ErrorBoundary>
           ) : selectedFunnel ? (
             <ErrorBoundary area={`Ao Vivo · ${selectedFunnel.name}`}>
               <FunnelLiveView
