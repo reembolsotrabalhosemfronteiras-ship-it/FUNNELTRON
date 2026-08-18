@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Save, CheckCircle2, AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Header } from "@/components/common/Header";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/common/Card";
@@ -6,8 +6,9 @@ import { Button } from "@/components/common/Button";
 import { Input, Label } from "@/components/common/Input";
 import { Select } from "@/components/common/Select";
 import { Badge } from "@/components/common/Badge";
-import { getCredentials, saveCredentials, testConnection } from "@/api/client";
+import { getCredentials, saveCredentials, testConnection, listFunnels } from "@/api/client";
 import type { IntegrationCredentials } from "@/api/client";
+import type { Funnel } from "@/types";
 import { cn } from "@/lib/cn";
 import { TrackerCard } from "@/components/settings/TrackerCard";
 
@@ -18,6 +19,19 @@ export function SettingsPage() {
   const [showVturb, setShowVturb] = useState(false);
   const [showClarity, setShowClarity] = useState(false);
   const [showWebhook, setShowWebhook] = useState(false);
+  const [funnels, setFunnels] = useState<Funnel[]>([]);
+  // PerfectPay não sabe o que é um "funil" — cada um precisa da própria URL de
+  // webhook, com o funnel_id embutido no link, não configurável em um campo só.
+  const [webhookFunnelId, setWebhookFunnelId] = useState<string>("");
+
+  useEffect(() => {
+    listFunnels()
+      .then((list) => {
+        setFunnels(list);
+        if (list.length > 0) setWebhookFunnelId(list[0].id);
+      })
+      .catch((err) => console.error("Erro ao carregar funis:", err));
+  }, []);
 
   const [form, setForm] = useState<IntegrationCredentials>({
     vturbToken: "",
@@ -244,8 +258,8 @@ export function SettingsPage() {
                   Webhook de Venda
                 </CardTitle>
                 <CardDescription>
-                  Configure o segredo que a PerfectPay envia ao disparar o webhook
-                  de venda pendente/paga.
+                  Cada funil tem sua própria URL — a PerfectPay não sabe o que é
+                  um "funil", então o link já vem com o funil embutido.
                 </CardDescription>
               </div>
               <Badge variant="info">PerfectPay</Badge>
@@ -253,21 +267,46 @@ export function SettingsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
+              <Label>Funil</Label>
+              <Select
+                value={webhookFunnelId}
+                onChange={(e) => setWebhookFunnelId(e.target.value)}
+                className="mt-1"
+                disabled={funnels.length === 0}
+              >
+                {funnels.length === 0 ? (
+                  <option value="">Nenhum funil cadastrado</option>
+                ) : (
+                  funnels.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
+                    </option>
+                  ))
+                )}
+              </Select>
+            </div>
+
+            <div>
               <Label>URL do Webhook (cole na PerfectPay)</Label>
               <div className="flex items-center gap-2 mt-1">
                 <Input
                   type="text"
                   readOnly
-                  value={form.webhookUrl}
+                  value={
+                    webhookFunnelId
+                      ? `${window.location.origin}/api/live/webhook/perfectpay/${webhookFunnelId}`
+                      : ""
+                  }
                   className="font-mono text-xs bg-muted/40"
                 />
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
+                  disabled={!webhookFunnelId}
                   onClick={() => {
                     navigator.clipboard?.writeText(
-                      `${window.location.origin}${form.webhookUrl}`
+                      `${window.location.origin}/api/live/webhook/perfectpay/${webhookFunnelId}`
                     );
                   }}
                 >
@@ -275,19 +314,20 @@ export function SettingsPage() {
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                Endpoint público:{" "}
-                <code className="font-mono">{window.location.origin}{form.webhookUrl}</code>
+                Cole exatamente essa URL na integração de webhook do produto
+                correspondente a este funil, com "Formato postback:
+                PerfectPay".
               </p>
             </div>
 
             <div>
-              <Label>Segredo do Webhook (X-Webhook-Secret)</Label>
+              <Label>Public token</Label>
               <div className="relative mt-1">
                 <Input
                   type={showWebhook ? "text" : "password"}
                   value={form.webhookSecret}
                   onChange={(e) => setForm({ ...form, webhookSecret: e.target.value })}
-                  placeholder="Cole ou gere um segredo"
+                  placeholder="Cole o Public token da PerfectPay"
                   className="pr-10"
                 />
                 <button
@@ -299,8 +339,9 @@ export function SettingsPage() {
                 </button>
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                A PerfectPay deve enviar esse valor no header{" "}
-                <code className="font-mono">X-Webhook-Secret</code>. Deixe em
+                Copie o mesmo <strong>Public token</strong> que aparece na tela
+                de configuração do webhook, na PerfectPay (campo "Segurança").
+                Ele vem dentro de cada chamada, não em um header — deixe em
                 branco para aceitar qualquer chamada.
               </p>
             </div>

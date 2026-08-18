@@ -701,3 +701,111 @@ def receive_sale_webhook(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro ao processar webhook: {str(e)}"
         )
+
+
+# `sale_status_enum` oficial da PerfectPay (documentação de postback). A
+# tabela `live_sales` só distingue pending/paid hoje — é tudo que "PIX gerado"
+# x "PIX pago" precisa. Os demais status (rejeitado, cancelado, reembolsado,
+# chargeback, em análise...) não têm onde cair sem inventar um terceiro estado
+# que ninguém pediu ainda, então ficam de fora por enquanto: melhor não gravar
+# do que gravar como se fosse uma venda paga ou pendente.
+PERFECTPAY_PAID_STATUSES = {2, 8, 10}  # approved, authorized, completed
+PERFECTPAY_PENDING_STATUSES = {1}      # pending (aguardando pagamento: boleto OU pix)
+
+
+@router.post("/webhook/perfectpay/{funnel_id}", status_code=status.HTTP_202_ACCEPTED)
+def receive_perfectpay_webhook(
+    funnel_id: str,
+    payload: dict,
+):
+    """
+    Webhook NATIVO da PerfectPay — uma URL por funil, porque o payload dela
+    não tem noção de "funil": o `funnel_id` vem da própria URL, não do corpo.
+
+    Formato oficial (support.perfectpay.com.br/doc/perfectpay/postback):
+    `token`, `code`, `sale_amount`, `sale_status_enum`, `customer.full_name`,
+    entre outros. O `token` é o segredo do postback — a PerfectPay não
+    oferece header customizado nessa integração, então a autenticação é por
+    esse campo do corpo, e não por `X-Webhook-Secret` (isso é do webhook
+    genérico em `/webhook`, usado por integrações manuais/Zapier).
+    """
+    try:
+        supabase = get_supabase_admin()
+
+        funnel = supabase.table("funnels").select("id, user_id").eq(
+            "id", funnel_id
+        ).execute()
+        if not funnel.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Funil não encontrado"
+            )
+
+        cred = supabase.table("api_credentials").select("api_token").eq(
+            "user_id", funnel.data[0]["user_id"]
+        ).eq("provider", "webhook").execute()
+        expected = (
+            cred.data[0]["api_token"]
+            if cred.data and cred.data[0].get("api_token")
+            else ""
+        )
+        if expected and payload.get("token") != expected:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token do webhook inválido"
+            )
+
+        status_enum = payload.get("sale_status_enum")
+        if status_enum in PERFECTPAY_PAID_STATUSES:
+            status_value = "paid"
+        elif status_enum in PERFECTPAY_PENDING_STATUSES:
+            status_value = "pending"
+        else:
+            logger.info(
+                "Webhook PerfectPay ignorado (funnel_id=%s): sale_status_enum=%s (%s) sem mapeamento pending/paid",
+                funnel_id,
+                status_enum,
+                payload.get("sale_status_detail"),
+            )
+            return {"ok": True, "saved": False, "reason": "status sem mapeamento pending/paid"}
+
+        code = payload.get("code")
+        customer = (payload.get("customer") or {}).get("full_name")
+        amount = float(payload.get("sale_amount") or 0)
+
+        row = {
+            "funnel_id": funnel_id,
+            "status": status_value,
+            "amount": amount,
+            "customer": customer,
+            "external_id": code,
+        }
+
+        # Mesma dedupe manual do webhook genérico: o índice de external_id é
+        # PARCIAL e não serve de alvo pra ON CONFLICT (42P10). A PerfectPay
+        # reenvia o mesmo `code` quando o status muda (pendente → aprovado),
+        # e sem isso a mesma venda entraria duas vezes.
+        existing = None
+        if code:
+            found = supabase.table("live_sales").select("id").eq(
+                "external_id", code
+            ).execute()
+            existing = found.data[0] if found.data else None
+
+        if existing:
+            result = supabase.table("live_sales").update(row).eq(
+                "id", existing["id"]
+            ).execute()
+        else:
+            result = supabase.table("live_sales").insert(row).execute()
+
+        return {"ok": True, "saved": len(result.data) > 0}
+
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Erro no webhook da PerfectPay (funnel_id=%s)", funnel_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro ao processar webhook da PerfectPay"
+        )

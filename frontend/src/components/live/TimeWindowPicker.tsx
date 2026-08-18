@@ -5,6 +5,10 @@ const WINDOW_OPTIONS = [
   { label: "5 min", value: 5 },
   { label: "30 min", value: 30 },
   { label: "1 hora", value: 60 },
+  { label: "3 horas", value: 180 },
+  { label: "6 horas", value: 360 },
+  { label: "12 horas", value: 720 },
+  { label: "24 horas", value: 1440 },
 ] as const;
 
 export interface TimeWindowPickerProps {

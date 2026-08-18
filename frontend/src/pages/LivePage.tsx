@@ -613,14 +613,15 @@ export function LivePage() {
   const [activeIds, setActiveIds] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<string>("geral");
   const [loadingScope, setLoadingScope] = useState(true);
-  const [vslWindow, setVslWindow] = useState(5);
-  const [convWindow, setConvWindow] = useState(30);
-  const [salesWindow, setSalesWindow] = useState(60);
+  // Uma janela só para VSL, conversão e vendas — três seletores separados
+  // convidavam a comparar "entrou" (num intervalo) com "comprou" (noutro) e
+  // tirar conclusão errada. Trocar a janela agora vale para a tela inteira.
+  const [liveWindow, setLiveWindow] = useState(30);
   const { source, setSource } = useDataSource();
 
-  // Os seletores de janela (5m/30m/1h) são do NOSSO rastreador. O Clarity
-  // agrega por dia: oferecer "últimos 5 minutos" para ele prometeria um recorte
-  // que a fonte não sabe entregar.
+  // O seletor de janela é do NOSSO rastreador. O Clarity agrega por dia:
+  // oferecer "últimos 5 minutos" para ele prometeria um recorte que a fonte
+  // não sabe entregar.
   const showWindowPickers = source !== "clarity";
 
   useEffect(() => {
@@ -699,26 +700,11 @@ export function LivePage() {
           <div className="flex items-center gap-3 flex-wrap justify-end">
             <SourceSelector value={source} onChange={setSource} />
             {showWindowPickers && (
-              <>
-                <TimeWindowPicker
-                  label="VSL"
-                  icon={<Zap size={14} className="text-purple-500" />}
-                  value={vslWindow}
-                  onChange={setVslWindow}
-                />
-                <TimeWindowPicker
-                  label="Conversão"
-                  icon={<LayoutGrid size={14} className="text-emerald-500" />}
-                  value={convWindow}
-                  onChange={setConvWindow}
-                />
-                <TimeWindowPicker
-                  label="Vendas"
-                  icon={<Zap size={14} className="text-blue-500" />}
-                  value={salesWindow}
-                  onChange={setSalesWindow}
-                />
-              </>
+              <TimeWindowPicker
+                icon={<Zap size={14} className="text-blue-500" />}
+                value={liveWindow}
+                onChange={setLiveWindow}
+              />
             )}
           </div>
         }
@@ -739,17 +725,17 @@ export function LivePage() {
             <ErrorBoundary area="Ao Vivo · Geral">
               <GeneralLiveView
                 funnels={funnels}
-                convWindow={convWindow}
-                salesWindow={salesWindow}
+                convWindow={liveWindow}
+                salesWindow={liveWindow}
               />
             </ErrorBoundary>
           ) : selectedFunnel ? (
             <ErrorBoundary area={`Ao Vivo · ${selectedFunnel.name}`}>
               <FunnelLiveView
                 funnel={selectedFunnel}
-                vslWindow={vslWindow}
-                convWindow={convWindow}
-                salesWindow={salesWindow}
+                vslWindow={liveWindow}
+                convWindow={liveWindow}
+                salesWindow={liveWindow}
               />
             </ErrorBoundary>
           ) : (
