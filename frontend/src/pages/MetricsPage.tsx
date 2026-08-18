@@ -94,7 +94,9 @@ async function loadBundle(
     listEdges(id),
     // "Comparar" ainda não tem como render lado a lado nesta grade — cai no
     // Clarity/VTurb, igual antes.
-    source === "tracker" ? getTrackerMetrics(id, period) : getStepMetrics(id),
+    source === "tracker"
+      ? getTrackerMetrics(id, period)
+      : getStepMetrics(id, period),
   ]);
   return {
     funnel,

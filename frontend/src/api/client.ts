@@ -10,6 +10,7 @@ import type {
   FunnelStatus,
 } from "@/types";
 import { isDateRange } from "@/types";
+import type { SlugTypeRule } from "@/lib/urlImport";
 import {
   MOCK_FUNNELS,
   MOCK_STEPS,
@@ -436,11 +437,19 @@ export async function saveEdge(
 }
 
 // --- Métricas ---
+/**
+ * `period` é opcional: sem ele, devolve todo o histórico (comportamento de
+ * sempre, pros chamadores que ainda não passam período). Com ele, filtra
+ * pela mesma janela que `getTrackerMetrics` já respeitava.
+ */
 export async function getStepMetrics(
-  funnelId: string
+  funnelId: string,
+  period?: PeriodInput
 ): Promise<StepMetric[]> {
   if (!USE_MOCK)
-    return apiGet(`/api/metrics/funnels/${funnelId}`)
+    return apiGet(
+      `/api/metrics/funnels/${funnelId}${period ? `?${periodQuery(period)}` : ""}`
+    )
       .then(okJson)
       .then((rows: Record<string, any>[]) =>
         // A rota pode devolver um envelope ({ metrics: [...] }) ou a lista
@@ -947,6 +956,29 @@ export async function setDataSourcePreference(source: DataSource): Promise<void>
   } catch {
     /* já salvou local; sincroniza na próxima */
   }
+}
+
+/**
+ * Regras de tipo de página por slug, salvas pelo usuário em Configurações.
+ * `null` = ainda não personalizou — quem chama cai nos padrões embutidos
+ * (`DEFAULT_SLUG_RULES`, em `@/lib/urlImport`).
+ */
+export async function getSlugRules(): Promise<SlugTypeRule[] | null> {
+  if (USE_MOCK) return delay(null, 0);
+
+  try {
+    const r = await apiGet("/api/sources/slug-rules");
+    if (!r.ok) return null;
+    const data = await r.json();
+    return (data.rules as SlugTypeRule[] | null) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveSlugRules(rules: SlugTypeRule[]): Promise<void> {
+  if (USE_MOCK) return;
+  await apiSend("/api/sources/slug-rules", "PUT", { rules }).then(okJson);
 }
 
 /** Último dado do Clarity que existe — é o que a página Ao Vivo mostra. */

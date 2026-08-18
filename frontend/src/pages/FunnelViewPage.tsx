@@ -19,10 +19,12 @@ import { cn } from "@/lib/cn";
 import { SourceSelector, useDataSource } from "@/components/common/SourceSelector";
 import { ClarityLiveView } from "@/components/live/ClarityLiveView";
 
-// A tela não tem seletor de período próprio — "all" é o mais honesto pro
-// rastreador: os snapshots diários só existem desde que o agendador passou a
-// rodar, então "tudo que existe" já é um recorte natural, não escondido.
-const TRACKER_PERIOD = "all" as const;
+// A tela não tem seletor de período próprio — "all" é o mais honesto: pro
+// rastreador, os snapshots diários só existem desde que o agendador passou a
+// rodar, então "tudo que existe" já é um recorte natural, não escondido; pro
+// Clarity/VTurb, é o mesmo histórico completo que a rota já devolvia antes de
+// aceitar período.
+const FUNNEL_VIEW_PERIOD = "all" as const;
 
 export function FunnelViewPage() {
   const { id } = useParams<{ id: string }>();
@@ -37,8 +39,8 @@ export function FunnelViewPage() {
   const fetchMetrics = useCallback(
     (funnelId: string) =>
       source === "tracker"
-        ? getTrackerMetrics(funnelId, TRACKER_PERIOD)
-        : getStepMetrics(funnelId),
+        ? getTrackerMetrics(funnelId, FUNNEL_VIEW_PERIOD)
+        : getStepMetrics(funnelId, FUNNEL_VIEW_PERIOD),
     [source]
   );
 

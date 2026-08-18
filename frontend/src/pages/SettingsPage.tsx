@@ -11,6 +11,7 @@ import type { IntegrationCredentials } from "@/api/client";
 import type { Funnel } from "@/types";
 import { cn } from "@/lib/cn";
 import { TrackerCard } from "@/components/settings/TrackerCard";
+import { SlugRulesCard } from "@/components/settings/SlugRulesCard";
 
 export function SettingsPage() {
   const [saving, setSaving] = useState(false);
@@ -357,6 +358,9 @@ export function SettingsPage() {
         <TrackerCard
           apiOrigin={import.meta.env.VITE_API_ORIGIN || window.location.origin}
         />
+
+        {/* Tipo de página por slug */}
+        <SlugRulesCard />
 
         {/* Salvar */}
         <div className="flex justify-end gap-3">

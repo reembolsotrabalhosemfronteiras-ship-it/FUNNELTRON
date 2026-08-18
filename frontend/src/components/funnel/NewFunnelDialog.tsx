@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Sparkles,
   Package,
@@ -10,7 +10,14 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { STEP_TYPE_LABEL } from "./AtelierNode";
-import { guessStepType, parseUrlList, type ParsedUrl } from "@/lib/urlImport";
+import {
+  guessStepType,
+  parseUrlList,
+  DEFAULT_SLUG_RULES,
+  type ParsedUrl,
+  type SlugTypeRule,
+} from "@/lib/urlImport";
+import { getSlugRules } from "@/api/client";
 import type { FunnelKind } from "@/types";
 
 export type NewFunnelChoice =
@@ -32,8 +39,17 @@ export function NewFunnelDialog({
   const [kind, setKind] = useState<FunnelKind>("front");
   const [name, setName] = useState("");
   const [raw, setRaw] = useState("");
+  // Regras do usuário (Configurações), com os padrões embutidos enquanto
+  // carrega — sem isso o primeiro palpite da sessão sairia sempre "outra".
+  const [rules, setRules] = useState<SlugTypeRule[]>(DEFAULT_SLUG_RULES);
 
-  const parsed = parseUrlList(raw);
+  useEffect(() => {
+    getSlugRules().then((r) => {
+      if (r && r.length > 0) setRules(r);
+    });
+  }, []);
+
+  const parsed = parseUrlList(raw, rules);
 
   return (
     <div

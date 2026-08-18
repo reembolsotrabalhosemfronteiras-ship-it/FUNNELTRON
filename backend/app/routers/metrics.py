@@ -500,10 +500,21 @@ def get_vsl_metrics(
 @router.get("/funnels/{funnel_id}")
 def get_funnel_metrics(
     funnel_id: str,
+    period: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
     current_user = Depends(get_current_user),
     supabase: Client = Depends(get_db)
 ):
-    """Busca todas as métricas de um funil específico"""
+    """
+    Busca as métricas (Clarity/VTurb) de um funil específico.
+
+    `period`/`from_date`/`to_date` são opcionais: sem nenhum dos três, devolve
+    tudo, para não quebrar quem já chamava sem período. Com um deles, filtra
+    pela coluna `date` — antes essa rota devolvia TODO o histórico sempre, e o
+    seletor de período nas telas não filtrava nada aqui (só o endpoint do
+    rastreador, `/tracker/{funnel_id}`, filtrava de verdade).
+    """
     try:
         # Verifica se o funil pertence ao usuário
         funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
@@ -517,9 +528,15 @@ def get_funnel_metrics(
             )
 
         # Busca métricas
-        metrics = supabase.table("step_metrics").select("*").eq(
+        query = supabase.table("step_metrics").select("*").eq(
             "funnel_id", funnel_id
-        ).order("date", desc=True).execute()
+        )
+
+        if period or from_date or to_date:
+            start_date, end_date = parse_period(period, from_date, to_date)
+            query = query.gte("date", start_date).lte("date", end_date)
+
+        metrics = query.order("date", desc=True).execute()
 
         return metrics.data
 

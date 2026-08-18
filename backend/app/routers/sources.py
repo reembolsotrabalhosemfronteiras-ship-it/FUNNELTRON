@@ -7,7 +7,7 @@ tempo — não existe endpoint que devolva as duas somadas, de propósito.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from typing import Optional, Literal
+from typing import List, Optional, Literal
 
 from ..core.auth import get_current_user, get_db
 from ..core.supabase_client import get_supabase_admin
@@ -21,6 +21,15 @@ DataSource = Literal["tracker", "clarity", "compare"]
 
 class PreferenceRequest(BaseModel):
     data_source: DataSource
+
+
+class SlugTypeRule(BaseModel):
+    keyword: str
+    type: str
+
+
+class SlugRulesRequest(BaseModel):
+    rules: List[SlugTypeRule]
 
 
 def _assert_owns_funnel(funnel_id: str, user_id: str, supabase: Client) -> None:
@@ -94,6 +103,67 @@ def set_preference(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro ao salvar preferência: {str(e)}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Regras de tipo de página por slug (importação por lista de URLs)
+# ---------------------------------------------------------------------------
+
+@router.get("/slug-rules")
+def get_slug_rules(
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_db)
+):
+    """
+    Regras salvas pelo usuário para o palpite de tipo de página na
+    importação por URL. `null`/lista vazia = ainda não personalizou; a tela
+    usa os padrões embutidos nesse caso (não duplicados aqui de propósito —
+    o usuário edita a cópia local e salva quando quiser guardar).
+    """
+    try:
+        result = (
+            supabase.table("user_preferences")
+            .select("slug_type_rules")
+            .eq("user_id", current_user.id)
+            .execute()
+        )
+
+        if not result.data or not result.data[0].get("slug_type_rules"):
+            return {"rules": None}
+
+        return {"rules": result.data[0]["slug_type_rules"]}
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar regras de slug: {str(e)}"
+        )
+
+
+@router.put("/slug-rules")
+def set_slug_rules(
+    body: SlugRulesRequest,
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_db)
+):
+    """Salva a lista de regras do usuário (substitui a lista inteira)."""
+    try:
+        supabase.table("user_preferences").upsert(
+            {
+                "user_id": current_user.id,
+                "slug_type_rules": [r.model_dump() for r in body.rules],
+                "updated_at": "now()",
+            },
+            on_conflict="user_id",
+        ).execute()
+
+        return {"rules": [r.model_dump() for r in body.rules]}
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao salvar regras de slug: {str(e)}"
         )
 
 

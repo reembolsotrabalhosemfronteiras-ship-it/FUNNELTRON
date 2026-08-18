@@ -108,7 +108,7 @@ export function FunnelListPage() {
           // compacto — cai no Clarity/VTurb, igual antes.
           source === "tracker"
             ? getTrackerMetrics(f.id, period)
-            : getStepMetrics(f.id),
+            : getStepMetrics(f.id, period),
           listSteps(f.id),
           vslDaTela,
         ]);
