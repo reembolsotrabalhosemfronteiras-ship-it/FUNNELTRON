@@ -260,14 +260,15 @@ function LiveViewport({
       fitView
       fitViewOptions={{ padding: 0.25 }}
       minZoom={0.2}
-      maxZoom={1.2}
-      // Painel fixo e centralizado: sem pan, sem zoom, sem scroll roubando.
-      panOnDrag={false}
-      panOnScroll={false}
-      zoomOnScroll={false}
-      zoomOnPinch={false}
-      zoomOnDoubleClick={false}
-      preventScrolling={false}
+      maxZoom={2}
+      // Só os nós continuam travados (não é o ateliê, é só visualização) —
+      // mover e dar zoom no canvas em si passou a valer, funis grandes não
+      // cabem inteiros na tela sem isso.
+      panOnDrag
+      panOnScroll
+      zoomOnScroll
+      zoomOnPinch
+      zoomOnDoubleClick
       proOptions={{ hideAttribution: true }}
     >
       <Background
