@@ -50,6 +50,7 @@ import {
   listSteps,
   listEdges,
   getStepMetrics,
+  getTrackerMetrics,
   getClarityMetrics,
   getVturbMetrics,
   getVslInsights,
@@ -83,13 +84,17 @@ interface FunnelBundle {
  */
 async function loadBundle(
   id: string,
-  vslAll: VslInsight[]
+  vslAll: VslInsight[],
+  source: DataSource,
+  period: PeriodInput
 ): Promise<FunnelBundle> {
   const [funnel, steps, edges, metrics] = await Promise.all([
     getFunnel(id),
     listSteps(id),
     listEdges(id),
-    getStepMetrics(id),
+    // "Comparar" ainda não tem como render lado a lado nesta grade — cai no
+    // Clarity/VTurb, igual antes.
+    source === "tracker" ? getTrackerMetrics(id, period) : getStepMetrics(id),
   ]);
   return {
     funnel,
@@ -162,13 +167,15 @@ export function MetricsPage() {
       if (withSpinner) setLoading(true);
       // Uma chamada de VSL para a tela inteira, não uma por funil.
       return getVslInsights(period)
-        .then((vslAll) => Promise.all(ids.map((id) => loadBundle(id, vslAll))))
+        .then((vslAll) =>
+          Promise.all(ids.map((id) => loadBundle(id, vslAll, source, period)))
+        )
         .then(setBundles)
         .finally(() => {
           if (withSpinner) setLoading(false);
         });
     },
-    [selectedIds, period, funnels, isGlobal]
+    [selectedIds, period, funnels, isGlobal, source]
   );
 
   useEffect(() => {

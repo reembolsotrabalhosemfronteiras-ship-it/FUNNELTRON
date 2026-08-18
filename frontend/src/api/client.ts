@@ -452,6 +452,23 @@ export async function getStepMetrics(
   return delay(MOCK_STEP_METRICS[funnelId] ?? [], 600);
 }
 
+/**
+ * Mesma forma de `getStepMetrics`, mas do NOSSO rastreador (`tracker_snapshots`),
+ * não do Clarity/VTurb — é o que alimenta as telas quando a fonte selecionada
+ * é "Nosso rastreador". Ao contrário de `getStepMetrics`, filtra pelo período
+ * de verdade (o backend soma só os snapshots diários dentro da janela).
+ */
+export async function getTrackerMetrics(
+  funnelId: string,
+  period: PeriodInput
+): Promise<StepMetric[]> {
+  if (!USE_MOCK)
+    return apiGet(`/api/metrics/tracker/${funnelId}?${periodQuery(period)}`)
+      .then(okJson)
+      .then((rows: Record<string, any>[]) => rows.map(fromApiMetric));
+  return delay(MOCK_STEP_METRICS[funnelId] ?? [], 600);
+}
+
 export async function syncMetrics(funnelId: string): Promise<void> {
   if (!USE_MOCK)
     return apiSend(

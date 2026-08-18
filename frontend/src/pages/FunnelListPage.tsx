@@ -8,6 +8,7 @@ import { Button } from "@/components/common/Button";
 import { Input } from "@/components/common/Input";
 import { Spinner } from "@/components/common/Spinner";
 import { PeriodPicker, periodLabel } from "@/components/common/PeriodPicker";
+import { SourceSelector, useDataSource } from "@/components/common/SourceSelector";
 import {
   listFunnels,
   deleteFunnel,
@@ -15,6 +16,7 @@ import {
   setFunnelStatus,
   listSteps,
   getStepMetrics,
+  getTrackerMetrics,
   getVslInsights,
 } from "@/api/client";
 import type { Funnel, FunnelKind, FunnelStatus, PeriodInput } from "@/types";
@@ -77,6 +79,7 @@ export function FunnelListPage() {
   const [tab, setTab] = useState<FilterTab>("all");
   const [search, setSearch] = useState("");
   const [period, setPeriod] = useState<PeriodInput>("30d");
+  const { source, setSource } = useDataSource();
   const [sortKey, setSortKey] = useState<SortKey>("rate");
   const [sortDesc, setSortDesc] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -101,7 +104,11 @@ export function FunnelListPage() {
     Promise.all(
       funnels.map(async (f) => {
         const [metrics, steps, vslAll] = await Promise.all([
-          getStepMetrics(f.id),
+          // "Comparar" ainda não tem como render lado a lado num card
+          // compacto — cai no Clarity/VTurb, igual antes.
+          source === "tracker"
+            ? getTrackerMetrics(f.id, period)
+            : getStepMetrics(f.id),
           listSteps(f.id),
           vslDaTela,
         ]);
@@ -130,7 +137,7 @@ export function FunnelListPage() {
     return () => {
       cancelled = true;
     };
-  }, [funnels, period]);
+  }, [funnels, period, source]);
 
   // --- Gerenciar funis ------------------------------------------------------
 
@@ -259,6 +266,7 @@ export function FunnelListPage() {
             ))}
           </div>
 
+          <SourceSelector value={source} onChange={setSource} />
           <PeriodPicker value={period} onChange={setPeriod} align="start" />
 
           <div className="flex flex-1 flex-wrap items-center justify-end gap-2">

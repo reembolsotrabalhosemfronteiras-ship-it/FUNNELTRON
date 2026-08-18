@@ -1,9 +1,9 @@
 """Router de métricas"""
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from ..core.auth import get_current_user, get_db
-from ..core.supabase_client import get_supabase_client
+from ..core.supabase_client import get_supabase_client, get_supabase_admin
 from ..services.clarity import clarity_service
 from ..services import snapshots
 from supabase import Client
@@ -218,6 +218,116 @@ def get_overview_metrics(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro ao buscar métricas: {str(e)}"
+        )
+
+
+@router.get("/tracker/{funnel_id}")
+def get_tracker_metrics(
+    funnel_id: str,
+    period: Optional[str] = "30d",
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_db)
+):
+    """
+    Mesmo formato de `GET /funnels/{funnel_id}` (visitors/conversions por
+    etapa), mas do NOSSO rastreador — para as telas mostrarem algo de
+    verdade quando a fonte selecionada é "Nosso rastreador" (antes, essa
+    escolha não mudava nenhum número: todas liam só `step_metrics`, que só
+    o Clarity/VTurb alimentam).
+
+    Fonte: `tracker_snapshots` (bucket "day", fechado sozinho pelo
+    agendador — ver `core/scheduler.py`), filtrado pelo período pedido.
+
+    O rastreador não mede "conversão" por etapa como o Clarity/VTurb (eles
+    têm meta configurada por página); a única conversão real que ele
+    enxerga é a VENDA paga (`live_sales`). Por isso ela inteira vai para a
+    etapa-meta do funil (a marcada em "meta de conversão", ou a primeira do
+    tipo "obrigado"), e as demais etapas ficam com conversions=0 — zero de
+    verdade (ninguém comprou "nessa etapa"), não ausência de dado.
+    """
+    try:
+        funnel_result = supabase.table("funnels").select("*").eq(
+            "id", funnel_id
+        ).eq("user_id", current_user.id).execute()
+
+        if not funnel_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Funil não encontrado"
+            )
+        funnel = funnel_result.data[0]
+
+        steps = supabase.table("funnel_steps").select("id, type").eq(
+            "funnel_id", funnel_id
+        ).execute().data or []
+
+        start_date, end_date = parse_period(period, from_date, to_date)
+        start_ts = datetime.fromisoformat(start_date).replace(
+            tzinfo=timezone.utc
+        ).isoformat()
+        end_ts = (
+            datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc)
+            + timedelta(days=1)
+        ).isoformat()
+
+        admin = get_supabase_admin()
+
+        snaps = admin.table("tracker_snapshots").select(
+            "payload"
+        ).eq("funnel_id", funnel_id).eq("bucket", "day").gte(
+            "period_start", start_ts
+        ).lt("period_start", end_ts).execute()
+
+        by_step: dict = {}
+        for row in snaps.data or []:
+            for step_id, count in ((row.get("payload") or {}).get("byStep") or {}).items():
+                if step_id == "unmapped":
+                    continue
+                by_step[step_id] = by_step.get(step_id, 0) + int(count)
+
+        # Etapa-meta da conversão de compra: a marcada pelo dono, senão a
+        # primeira do tipo "obrigado". Sem nenhuma das duas, não tem onde
+        # colocar a venda — fica tudo em conversions=0 mesmo.
+        goal_step_id = funnel.get("conversion_goal_step_id")
+        if not goal_step_id:
+            goal_step = next((s for s in steps if s.get("type") == "thank_you"), None)
+            goal_step_id = goal_step["id"] if goal_step else None
+
+        conversions_total = 0
+        if goal_step_id:
+            sales = admin.table("live_sales").select("id").eq(
+                "funnel_id", funnel_id
+            ).eq("status", "paid").gte(
+                "created_at", start_ts
+            ).lt("created_at", end_ts).execute()
+            conversions_total = len(sales.data or [])
+
+        result = []
+        for step in steps:
+            visitors = by_step.get(step["id"], 0)
+            conversions = conversions_total if step["id"] == goal_step_id else 0
+            rate = round((conversions / visitors) * 100, 1) if visitors else 0.0
+            result.append({
+                "id": f"{step['id']}:{start_date}:{end_date}",
+                "funnel_id": funnel_id,
+                "step_id": step["id"],
+                "date": end_date,
+                "visitors": visitors,
+                "conversions": conversions,
+                "conversion_rate": rate,
+                "source": "tracker",
+            })
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar métricas do rastreador: {str(e)}"
         )
 
 

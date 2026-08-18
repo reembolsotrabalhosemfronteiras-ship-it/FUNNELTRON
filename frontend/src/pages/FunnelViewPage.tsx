@@ -6,11 +6,23 @@ import { Card, CardContent } from "@/components/common/Card";
 import { Button } from "@/components/common/Button";
 import { Spinner } from "@/components/common/Spinner";
 import { FunnelCanvas } from "@/components/funnel";
-import { getFunnel, listSteps, listEdges, getStepMetrics, syncMetrics } from "@/api/client";
+import {
+  getFunnel,
+  listSteps,
+  listEdges,
+  getStepMetrics,
+  getTrackerMetrics,
+  syncMetrics,
+} from "@/api/client";
 import type { Funnel, FunnelStep, FunnelEdge, StepMetric } from "@/types";
 import { cn } from "@/lib/cn";
 import { SourceSelector, useDataSource } from "@/components/common/SourceSelector";
 import { ClarityLiveView } from "@/components/live/ClarityLiveView";
+
+// A tela não tem seletor de período próprio — "all" é o mais honesto pro
+// rastreador: os snapshots diários só existem desde que o agendador passou a
+// rodar, então "tudo que existe" já é um recorte natural, não escondido.
+const TRACKER_PERIOD = "all" as const;
 
 export function FunnelViewPage() {
   const { id } = useParams<{ id: string }>();
@@ -22,10 +34,18 @@ export function FunnelViewPage() {
   const [syncing, setSyncing] = useState(false);
   const { source, setSource } = useDataSource();
 
+  const fetchMetrics = useCallback(
+    (funnelId: string) =>
+      source === "tracker"
+        ? getTrackerMetrics(funnelId, TRACKER_PERIOD)
+        : getStepMetrics(funnelId),
+    [source]
+  );
+
   useEffect(() => {
     if (!id) return;
     setLoading(true);
-    Promise.all([getFunnel(id), listSteps(id), listEdges(id), getStepMetrics(id)])
+    Promise.all([getFunnel(id), listSteps(id), listEdges(id), fetchMetrics(id)])
       .then(([f, s, e, m]) => {
         setFunnel(f);
         setSteps(s);
@@ -33,15 +53,15 @@ export function FunnelViewPage() {
         setMetrics(m);
       })
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, fetchMetrics]);
 
   // Métricas por etapa (leitura local, sem custo de cota externa) atualizam
   // sozinhas em segundo plano — sem isso a tela só mudava quando alguém
   // apertava "Sincronizar" ou trocava de página e voltava.
   const refreshMetrics = useCallback(() => {
     if (!id) return;
-    getStepMetrics(id).then(setMetrics);
-  }, [id]);
+    fetchMetrics(id).then(setMetrics);
+  }, [id, fetchMetrics]);
 
   useEffect(() => {
     if (document.visibilityState !== "visible") return;
@@ -60,8 +80,10 @@ export function FunnelViewPage() {
   const handleSync = async () => {
     if (!id) return;
     setSyncing(true);
-    await syncMetrics(id);
-    const m = await getStepMetrics(id);
+    // O rastreador não tem o que "sincronizar" — ele já grava sozinho.
+    // Sincronizar é só coisa de Clarity/VTurb (puxada manual sob cota).
+    if (source !== "tracker") await syncMetrics(id);
+    const m = await fetchMetrics(id);
     setMetrics(m);
     setSyncing(false);
   };

@@ -27,7 +27,7 @@ export type EdgeCondition =
   | "on_no_bump"
   | "back_redirect";
 
-export type MetricSource = "clarity" | "vturb" | "manual";
+export type MetricSource = "clarity" | "vturb" | "manual" | "tracker";
 
 export interface Funnel {
   id: string;
