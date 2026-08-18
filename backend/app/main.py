@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from .core import scheduler
 from .core.config import get_settings
 from .core.supabase_client import is_local_mode, LOCAL_DATA_DIR
 from .routers import (
@@ -126,6 +127,17 @@ if is_local_mode():
     _static_dir = LOCAL_DATA_DIR / "storage"
     _static_dir.mkdir(parents=True, exist_ok=True)
     app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
+
+@app.on_event("startup")
+async def _iniciar_agendador():
+    """
+    Sem isto, o histórico do rastreador (`tracker_snapshots`) só nascia se
+    alguém abrisse a tela e clicasse em "Sincronizar" — um dia sem clique não
+    deixava snapshot nenhum, mesmo com os eventos brutos intactos em
+    `live_page_entries`. Ver `core/scheduler.py`.
+    """
+    scheduler.start()
 
 
 @app.get("/api/health")

@@ -288,3 +288,34 @@ def list_tracker_snapshots(funnel_id: str, bucket: str = "hour", limit: int = 48
         .execute()
     )
     return result.data or []
+
+
+def capture_all_day_snapshots() -> int:
+    """
+    Fecha o snapshot do dia (bucket "day") de todos os funis existentes,
+    de todos os usuários.
+
+    Chamado periodicamente pelo agendador em segundo plano (`core/scheduler.py`)
+    — sem isso, o histórico do rastreador só existia se alguém clicasse em
+    "Sincronizar" na tela; um dia sem clique não deixava rastro em
+    `tracker_snapshots`, mesmo com `live_page_entries` (a fonte, append-only)
+    intacto. O upsert em `save_tracker_snapshot` faz o resto: rodar de novo no
+    mesmo dia só atualiza a linha com o total mais recente, nunca duplica.
+
+    Retorna quantos funis foram processados com sucesso. Erro em um funil não
+    derruba os outros.
+    """
+    funnels = get_supabase_admin().table("funnels").select("id").execute()
+
+    ok = 0
+    for row in funnels.data or []:
+        funnel_id = row.get("id")
+        if not funnel_id:
+            continue
+        try:
+            save_tracker_snapshot(funnel_id, "day")
+            ok += 1
+        except Exception:
+            continue
+
+    return ok
