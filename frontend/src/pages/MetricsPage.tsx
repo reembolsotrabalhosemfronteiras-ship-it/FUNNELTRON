@@ -1121,52 +1121,6 @@ function SingleFunnelView({
             readOnly
           />
 
-          <details className="rounded-lg border border-border">
-            <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground">
-              Ver os números em lista
-            </summary>
-            <div className="space-y-3 p-3 pt-0">
-              {mainPath.map((c, i) => (
-                <div key={i} className="space-y-2 rounded-lg bg-muted/30 p-3">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="truncate font-medium">{c.from}</span>
-                      <span className="shrink-0 text-muted-foreground">→</span>
-                      <span className="truncate font-medium">{c.to}</span>
-                    </div>
-                    <Badge
-                      variant={c.rate >= 80 ? "success" : c.rate >= 50 ? "warning" : "danger"}
-                      className="shrink-0 font-semibold"
-                    >
-                      {c.rate.toFixed(1)}%
-                    </Badge>
-                  </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className={cn("h-full rounded-full transition-all", conversionBar(c.rate))}
-                      style={{ width: `${Math.min(100, c.rate)}%` }}
-                    />
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <span>{c.sourceVisitors.toLocaleString("pt-BR")} chegaram</span>
-                    <span>·</span>
-                    <span className="font-medium text-foreground">
-                      {c.targetVisitors.toLocaleString("pt-BR")} seguiram
-                    </span>
-                    {c.lost > 0 && (
-                      <>
-                        <span>·</span>
-                        <span className="font-medium text-danger">
-                          {c.lost.toLocaleString("pt-BR")} abandonaram
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </details>
-
           {branchPath.length > 0 && (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
