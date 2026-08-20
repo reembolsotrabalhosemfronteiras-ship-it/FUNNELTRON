@@ -200,6 +200,43 @@
     } catch (e) {}
   });
 
+  /**
+   * Propaga `click_id=<sessionId>` para os links de saída da página (ex: o
+   * botão que leva ao checkout). É o gancho que fecha o círculo até o
+   * webhook: gateways como a PerfectPay têm um placeholder {click_id} na
+   * URL de postback que eles preenchem com o valor desse parâmetro — assim
+   * o backend sabe, ao receber a venda, de qual sessão/step ela veio.
+   *
+   * Só adiciona se o link ainda não tiver click_id (não sobrescreve um
+   * click_id de anúncio que já esteja lá) e não mexe em nenhum outro
+   * parâmetro — utm_*, fbclid, gclid etc. continuam intocados.
+   */
+  function propagarClickId() {
+    try {
+      var links = document.getElementsByTagName("a");
+      for (var i = 0; i < links.length; i++) {
+        var a = links[i];
+        var href = a.getAttribute("href");
+        if (!href || href.indexOf("#") === 0 || href.indexOf("javascript:") === 0) continue;
+        if (href.indexOf("click_id=") !== -1) continue;
+        var sep = href.indexOf("?") === -1 ? "?" : "&";
+        a.setAttribute("href", href + sep + "click_id=" + encodeURIComponent(sessionId));
+      }
+    } catch (e) {}
+  }
+
+  propagarClickId();
+  // Reaplica quando o DOM muda (SPA, checkout carregado async) sem precisar
+  // rebater a cada intervalo — MutationObserver só quando o navegador tem.
+  try {
+    if (window.MutationObserver) {
+      new MutationObserver(propagarClickId).observe(document.body, {
+        childList: true,
+        subtree: true,
+      });
+    }
+  } catch (e) {}
+
   // Expõe p/ debug/manual flush.
   window.Funneltron = Object.assign({}, cfg, {
     sessionId: sessionId,

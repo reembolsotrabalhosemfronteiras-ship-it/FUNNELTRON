@@ -10,6 +10,7 @@ from ..core.auth import get_current_user, get_optional_user, get_db
 from ..core.supabase_client import get_supabase_client, get_supabase_admin
 from ..core.config import get_settings
 from ..services.vturb import vturb_service
+from ..services.push import notify_sale
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -689,7 +690,7 @@ def receive_sale_webhook(
         # vezes e o faturamento do dia sairia inflado.
         existing = None
         if external_id:
-            found = supabase.table("live_sales").select("id").eq(
+            found = supabase.table("live_sales").select("id, status").eq(
                 "external_id", external_id
             ).execute()
             existing = found.data[0] if found.data else None
@@ -700,6 +701,12 @@ def receive_sale_webhook(
             ).execute()
         else:
             result = supabase.table("live_sales").insert(row).execute()
+
+        # Só notifica em venda nova ou mudança de status (pending → paid) —
+        # o gateway reenvia o mesmo webhook por retentativa, e sem essa
+        # checagem a mesma venda tocaria "PIX gerado" várias vezes.
+        if not existing or existing.get("status") != status_value:
+            notify_sale(funnel_id, status_value, amount, payload.get("customer"))
 
         return {"ok": True, "saved": len(result.data) > 0}
 
@@ -726,6 +733,7 @@ PERFECTPAY_PENDING_STATUSES = {1}      # pending (aguardando pagamento: boleto O
 def receive_perfectpay_webhook(
     funnel_id: str,
     payload: dict,
+    click_id: Optional[str] = None,
 ):
     """
     Webhook NATIVO da PerfectPay — uma URL por funil, porque o payload dela
@@ -737,6 +745,15 @@ def receive_perfectpay_webhook(
     oferece header customizado nessa integração, então a autenticação é por
     esse campo do corpo, e não por `X-Webhook-Secret` (isso é do webhook
     genérico em `/webhook`, usado por integrações manuais/Zapier).
+
+    `click_id`: não vem no corpo, vem na QUERY STRING. É o placeholder
+    `{click_id}` que o dono do funil configura na URL de postback dentro da
+    PerfectPay (".../webhook/perfectpay/<funnel_id>?click_id={click_id}") —
+    a PerfectPay substitui esse placeholder pelo valor do parâmetro
+    `click_id` que estava na URL do checkout no momento da compra. Esse valor
+    é o `session_id` que o tracker.js gera por visitante e propaga entre as
+    páginas do funil, então dá para saber exatamente qual sessão comprou e
+    em qual step ela estava (resolvido abaixo via `live_beats`).
     """
     try:
         supabase = get_supabase_admin()
@@ -782,12 +799,26 @@ def receive_perfectpay_webhook(
         customer = (payload.get("customer") or {}).get("full_name")
         amount = float(payload.get("sale_amount") or 0)
 
+        # Resolve o step pela sessão que fez a compra, e não pelo payload —
+        # a PerfectPay nunca manda step_id. `click_id` só existe se o dono do
+        # funil configurou o placeholder na URL de postback; sem ele a venda
+        # continua sendo salva, só sem etapa (comportamento de antes).
+        step_id = None
+        if click_id:
+            beat = supabase.table("live_beats").select("step_id").eq(
+                "session_id", click_id
+            ).execute()
+            if beat.data:
+                step_id = beat.data[0].get("step_id")
+
         row = {
             "funnel_id": funnel_id,
+            "step_id": step_id,
             "status": status_value,
             "amount": amount,
             "customer": customer,
             "external_id": code,
+            "session_id": click_id,
         }
 
         # Mesma dedupe manual do webhook genérico: o índice de external_id é
@@ -796,7 +827,7 @@ def receive_perfectpay_webhook(
         # e sem isso a mesma venda entraria duas vezes.
         existing = None
         if code:
-            found = supabase.table("live_sales").select("id").eq(
+            found = supabase.table("live_sales").select("id, status").eq(
                 "external_id", code
             ).execute()
             existing = found.data[0] if found.data else None
@@ -807,6 +838,9 @@ def receive_perfectpay_webhook(
             ).execute()
         else:
             result = supabase.table("live_sales").insert(row).execute()
+
+        if not existing or existing.get("status") != status_value:
+            notify_sale(funnel_id, status_value, amount, customer)
 
         return {"ok": True, "saved": len(result.data) > 0}
 

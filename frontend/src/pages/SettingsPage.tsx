@@ -13,6 +13,16 @@ import { cn } from "@/lib/cn";
 import { TrackerCard } from "@/components/settings/TrackerCard";
 import { SlugRulesCard } from "@/components/settings/SlugRulesCard";
 
+// `{click_id}` é o placeholder oficial da PerfectPay (lista de parâmetros
+// disponíveis na configuração de webhook dela): ela substitui isso pelo
+// valor do parâmetro `click_id` que estava na URL do checkout na hora da
+// compra — o mesmo id de sessão que o tracker.js já propaga pelos links do
+// funil. Sem esse pedaço na URL, a venda continua sendo salva, só sem
+// step/sessão associados.
+function perfectPayWebhookUrl(funnelId: string): string {
+  return `${window.location.origin}/api/live/webhook/perfectpay/${funnelId}?click_id={click_id}`;
+}
+
 export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [savingField, setSavingField] = useState<"vturb" | "webhook" | null>(null);
@@ -323,11 +333,7 @@ export function SettingsPage() {
                 <Input
                   type="text"
                   readOnly
-                  value={
-                    webhookFunnelId
-                      ? `${window.location.origin}/api/live/webhook/perfectpay/${webhookFunnelId}`
-                      : ""
-                  }
+                  value={webhookFunnelId ? perfectPayWebhookUrl(webhookFunnelId) : ""}
                   className="font-mono text-xs bg-muted/40"
                 />
                 <Button
@@ -336,9 +342,7 @@ export function SettingsPage() {
                   size="sm"
                   disabled={!webhookFunnelId}
                   onClick={() => {
-                    navigator.clipboard?.writeText(
-                      `${window.location.origin}/api/live/webhook/perfectpay/${webhookFunnelId}`
-                    );
+                    navigator.clipboard?.writeText(perfectPayWebhookUrl(webhookFunnelId));
                   }}
                 >
                   Copiar
@@ -347,7 +351,9 @@ export function SettingsPage() {
               <p className="text-xs text-muted-foreground mt-1">
                 Cole exatamente essa URL na integração de webhook do produto
                 correspondente a este funil, com "Formato postback:
-                PerfectPay".
+                PerfectPay". O <code>{"{click_id}"}</code> no final já vem
+                pronto — é o que faz o sistema saber de qual sessão/etapa
+                cada venda veio; não precisa mexer nele.
               </p>
             </div>
 
