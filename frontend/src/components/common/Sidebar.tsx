@@ -36,12 +36,15 @@ export function Sidebar() {
   return (
     <aside className="w-64 border-r border-border bg-card h-screen flex flex-col">
       <div className="p-4 border-b border-border">
-        <h1 className="flex items-center gap-2 text-lg font-bold tracking-tight">
+        {/* Não é h1: a página já tem o seu próprio (o título no Header) —
+            dois h1 na mesma tela quebra a hierarquia de heading que leitor
+            de tela e SEO dependem pra entender do que a página trata. */}
+        <div className="flex items-center gap-2 text-lg font-bold tracking-tight">
           <span className="text-primary">📊</span>
           <span>
             FUNNEL<span className="text-primary">TRON</span>
           </span>
-        </h1>
+        </div>
       </div>
 
       <nav className="flex-1 p-3 space-y-1">
