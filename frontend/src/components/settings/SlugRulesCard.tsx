@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Plus, Trash2, Save, Loader2, CheckCircle2, RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Plus, Trash2, Save, Loader2, CheckCircle2, RotateCcw, AlertTriangle } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/common/Card";
 import { Button } from "@/components/common/Button";
 import { Input } from "@/components/common/Input";
@@ -32,8 +32,15 @@ export function SlugRulesCard() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [customized, setCustomized] = useState(false);
+  // Falha na leitura fica marcada à parte de "nunca personalizou" — as duas
+  // pareciam a mesma coisa antes (getSlugRules devolvia null pros dois
+  // casos), e um "Salvar" nessa hora sobrescrevia uma personalização real
+  // com os padrões, sem aviso nenhum.
+  const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setLoadError(false);
     getSlugRules()
       .then((r) => {
         if (r && r.length > 0) {
@@ -41,8 +48,13 @@ export function SlugRulesCard() {
           setCustomized(true);
         }
       })
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const updateRule = (index: number, patch: Partial<SlugTypeRule>) => {
     setRules((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
@@ -66,13 +78,16 @@ export function SlugRulesCard() {
 
   const handleSave = async () => {
     setSaving(true);
-    // Linha em branco não serve pra nada além de poluir a lista salva.
-    const clean = rules.filter((r) => r.keyword.trim().length > 0);
-    await saveSlugRules(clean);
-    setRules(clean);
-    setCustomized(true);
-    setSaving(false);
-    setSaved(true);
+    try {
+      // Linha em branco não serve pra nada além de poluir a lista salva.
+      const clean = rules.filter((r) => r.keyword.trim().length > 0);
+      await saveSlugRules(clean);
+      setRules(clean);
+      setCustomized(true);
+      setSaved(true);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -101,7 +116,21 @@ export function SlugRulesCard() {
           </div>
         ) : (
           <>
-            {!customized && (
+            {loadError && (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
+                <span className="flex items-center gap-1.5">
+                  <AlertTriangle size={13} />
+                  Não deu pra carregar suas regras salvas — salvar agora
+                  sobrescreveria com os padrões. Tente de novo antes de
+                  editar.
+                </span>
+                <Button type="button" variant="outline" size="sm" onClick={load}>
+                  Tentar de novo
+                </Button>
+              </div>
+            )}
+
+            {!loadError && !customized && (
               <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                 Estas são as regras padrão. Edite, adicione ou remova à
                 vontade — nada é salvo até clicar em "Salvar".
@@ -161,7 +190,13 @@ export function SlugRulesCard() {
                 </Button>
               </div>
 
-              <Button type="button" size="sm" onClick={handleSave} disabled={saving}>
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleSave}
+                disabled={saving || loadError}
+                title={loadError ? "Recarregue antes de salvar" : undefined}
+              >
                 {saving ? (
                   <Loader2 size={14} className="animate-spin" />
                 ) : saved ? (

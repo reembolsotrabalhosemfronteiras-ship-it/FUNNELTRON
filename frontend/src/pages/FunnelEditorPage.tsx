@@ -50,7 +50,7 @@ import {
   listFunnels,
   listSteps,
   listEdges,
-  getStepMetrics,
+  getMetrics,
   captureScreenshot,
   saveFunnelLayout,
 } from "@/api/client";
@@ -194,7 +194,7 @@ function Atelier({ funnelId }: { funnelId: string }) {
       getFunnel(funnelId),
       listSteps(funnelId),
       listEdges(funnelId),
-      getStepMetrics(funnelId),
+      getMetrics(funnelId, "clarity"),
     ])
       .then(([f, s, e, m]) => {
         setFunnel(f);

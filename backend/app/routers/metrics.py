@@ -221,21 +221,20 @@ def get_overview_metrics(
         )
 
 
-@router.get("/tracker/{funnel_id}")
-def get_tracker_metrics(
+def _tracker_step_metrics(
     funnel_id: str,
-    period: Optional[str] = "30d",
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
-    current_user = Depends(get_current_user),
-    supabase: Client = Depends(get_db)
+    period: Optional[str],
+    from_date: Optional[str],
+    to_date: Optional[str],
+    current_user,
+    supabase: Client,
 ):
     """
-    Mesmo formato de `GET /funnels/{funnel_id}` (visitors/conversions por
-    etapa), mas do NOSSO rastreador — para as telas mostrarem algo de
-    verdade quando a fonte selecionada é "Nosso rastreador" (antes, essa
-    escolha não mudava nenhum número: todas liam só `step_metrics`, que só
-    o Clarity/VTurb alimentam).
+    Mesmo formato do resultado de `GET /funnels/{funnel_id}` (visitors/
+    conversions por etapa), mas do NOSSO rastreador — chamada por
+    `get_funnel_metrics` quando `source=tracker` (antes, essa escolha não
+    mudava nenhum número: todas liam só `step_metrics`, que só o
+    Clarity/VTurb alimentam).
 
     Fonte: `tracker_snapshots` (bucket "day", fechado sozinho pelo
     agendador — ver `core/scheduler.py`), filtrado pelo período pedido.
@@ -288,10 +287,15 @@ def get_tracker_metrics(
                 by_step[step_id] = by_step.get(step_id, 0) + int(count)
 
         # Etapa-meta da conversão de compra: a marcada pelo dono, senão a
-        # primeira do tipo "obrigado". Sem nenhuma das duas, não tem onde
-        # colocar a venda — fica tudo em conversions=0 mesmo.
+        # primeira do tipo "obrigado". Mesma regra do `resolveGoalStep()` do
+        # frontend (lib/funnelStats.ts) — inclusive a defesa contra id
+        # pendurado: se a etapa marcada foi apagada/recriada num reedição do
+        # funil (novo id), `conversion_goal_step_id` continua preenchido mas
+        # não bate com etapa nenhuma. Sem essa defesa, as vendas pagas eram
+        # calculadas certas mas não apareciam em NENHUMA etapa — sumiam.
+        step_ids = {s["id"] for s in steps}
         goal_step_id = funnel.get("conversion_goal_step_id")
-        if not goal_step_id:
+        if not goal_step_id or goal_step_id not in step_ids:
             goal_step = next((s for s in steps if s.get("type") == "thank_you"), None)
             goal_step_id = goal_step["id"] if goal_step else None
 
@@ -500,6 +504,7 @@ def get_vsl_metrics(
 @router.get("/funnels/{funnel_id}")
 def get_funnel_metrics(
     funnel_id: str,
+    source: Optional[str] = "clarity",
     period: Optional[str] = None,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
@@ -507,14 +512,25 @@ def get_funnel_metrics(
     supabase: Client = Depends(get_db)
 ):
     """
-    Busca as métricas (Clarity/VTurb) de um funil específico.
+    Busca as métricas de um funil específico.
 
-    `period`/`from_date`/`to_date` são opcionais: sem nenhum dos três, devolve
-    tudo, para não quebrar quem já chamava sem período. Com um deles, filtra
-    pela coluna `date` — antes essa rota devolvia TODO o histórico sempre, e o
-    seletor de período nas telas não filtrava nada aqui (só o endpoint do
-    rastreador, `/tracker/{funnel_id}`, filtrava de verdade).
+    `source=tracker` devolve do NOSSO rastreador (`tracker_snapshots`);
+    qualquer outro valor (padrão `clarity`) devolve do Clarity/VTurb
+    (`step_metrics`). Um endpoint só, que decide server-side — antes eram
+    duas rotas (`/funnels/{funnel_id}` e `/tracker/{funnel_id}`) com formas
+    de responder ligeiramente diferentes, e cada uma das três telas que
+    mostra métricas tinha que repetir o mesmo `if (source === "tracker")`
+    na hora de escolher qual chamar.
+
+    `period`/`from_date`/`to_date` são opcionais na fonte Clarity/VTurb: sem
+    nenhum dos três, devolve tudo, para não quebrar quem já chamava sem
+    período. Com um deles, filtra pela coluna `date`.
     """
+    if source == "tracker":
+        return _tracker_step_metrics(
+            funnel_id, period or "30d", from_date, to_date, current_user, supabase
+        )
+
     try:
         # Verifica se o funil pertence ao usuário
         funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(

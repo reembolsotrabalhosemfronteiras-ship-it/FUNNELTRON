@@ -438,18 +438,30 @@ export async function saveEdge(
 
 // --- Métricas ---
 /**
- * `period` é opcional: sem ele, devolve todo o histórico (comportamento de
- * sempre, pros chamadores que ainda não passam período). Com ele, filtra
- * pela mesma janela que `getTrackerMetrics` já respeitava.
+ * Métricas por etapa de um funil. `source` decide de onde: "tracker" lê do
+ * nosso rastreador (`tracker_snapshots`); qualquer outro valor lê do
+ * Clarity/VTurb (`step_metrics`) — o backend decide num endpoint só
+ * (`GET /api/metrics/funnels/{id}?source=`), em vez de cada tela repetir o
+ * mesmo `source === "tracker" ? ... : ...` escolhendo qual rota chamar (era
+ * assim antes, com duas funções `getStepMetrics`/`getTrackerMetrics`
+ * separadas e três cópias do mesmo if/else nas páginas).
+ *
+ * `period` é opcional na fonte Clarity/VTurb: sem ele, devolve todo o
+ * histórico (comportamento de sempre, pros chamadores que ainda não passam
+ * período). Na fonte "tracker" o backend sempre filtra de verdade.
  */
-export async function getStepMetrics(
+export async function getMetrics(
   funnelId: string,
+  source: DataSource,
   period?: PeriodInput
 ): Promise<StepMetric[]> {
-  if (!USE_MOCK)
-    return apiGet(
-      `/api/metrics/funnels/${funnelId}${period ? `?${periodQuery(period)}` : ""}`
-    )
+  if (!USE_MOCK) {
+    const parts: string[] = [];
+    if (source === "tracker") parts.push("source=tracker");
+    if (period) parts.push(periodQuery(period));
+    const qs = parts.length ? `?${parts.join("&")}` : "";
+
+    return apiGet(`/api/metrics/funnels/${funnelId}${qs}`)
       .then(okJson)
       .then((rows: Record<string, any>[]) =>
         // A rota pode devolver um envelope ({ metrics: [...] }) ou a lista
@@ -458,23 +470,7 @@ export async function getStepMetrics(
           fromApiMetric
         )
       );
-  return delay(MOCK_STEP_METRICS[funnelId] ?? [], 600);
-}
-
-/**
- * Mesma forma de `getStepMetrics`, mas do NOSSO rastreador (`tracker_snapshots`),
- * não do Clarity/VTurb — é o que alimenta as telas quando a fonte selecionada
- * é "Nosso rastreador". Ao contrário de `getStepMetrics`, filtra pelo período
- * de verdade (o backend soma só os snapshots diários dentro da janela).
- */
-export async function getTrackerMetrics(
-  funnelId: string,
-  period: PeriodInput
-): Promise<StepMetric[]> {
-  if (!USE_MOCK)
-    return apiGet(`/api/metrics/tracker/${funnelId}?${periodQuery(period)}`)
-      .then(okJson)
-      .then((rows: Record<string, any>[]) => rows.map(fromApiMetric));
+  }
   return delay(MOCK_STEP_METRICS[funnelId] ?? [], 600);
 }
 
@@ -962,18 +958,20 @@ export async function setDataSourcePreference(source: DataSource): Promise<void>
  * Regras de tipo de página por slug, salvas pelo usuário em Configurações.
  * `null` = ainda não personalizou — quem chama cai nos padrões embutidos
  * (`DEFAULT_SLUG_RULES`, em `@/lib/urlImport`).
+ *
+ * Lança em vez de engolir o erro: `null` já significa "sem regra salva", e
+ * devolver `null` também numa falha de rede/servidor deixava indistinguível
+ * "nunca personalizou" de "não deu pra saber agora" — quem chama e tem botão
+ * de Salvar (SlugRulesCard) precisa dessa diferença pra não sobrescrever uma
+ * personalização real com os padrões só porque a leitura falhou uma vez.
  */
 export async function getSlugRules(): Promise<SlugTypeRule[] | null> {
   if (USE_MOCK) return delay(null, 0);
 
-  try {
-    const r = await apiGet("/api/sources/slug-rules");
-    if (!r.ok) return null;
-    const data = await r.json();
-    return (data.rules as SlugTypeRule[] | null) ?? null;
-  } catch {
-    return null;
-  }
+  const r = await apiGet("/api/sources/slug-rules");
+  if (!r.ok) throw new Error(`Falha ao buscar regras de slug (${r.status})`);
+  const data = await r.json();
+  return (data.rules as SlugTypeRule[] | null) ?? null;
 }
 
 export async function saveSlugRules(rules: SlugTypeRule[]): Promise<void> {

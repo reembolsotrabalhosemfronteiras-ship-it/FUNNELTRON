@@ -1,4 +1,5 @@
 """Router de rastreamento ao vivo"""
+import asyncio
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import APIKeyHeader
@@ -328,17 +329,22 @@ async def get_live_vsl_data(
         # Etapas sem player_id ficam de fora do retorno: mostrar "0 pessoas"
         # pra uma VSL que nunca foi ligada ao VTurb seria inventar um dado,
         # não reportar ausência dele.
-        result = []
+        configured = [s for s in steps.data if s.get("player_id")]
 
-        for step in steps.data:
-            player_id = step.get("player_id")
-            if not player_id:
-                continue
-
-            vturb_result = await vturb_service.get_live_users(
-                current_user.id, player_id, minutes
+        # Em paralelo, não uma de cada vez: as chamadas ao VTurb não dependem
+        # entre si, e um funil com várias VSLs esperava a soma das latências
+        # de cada uma antes de responder.
+        vturb_results = await asyncio.gather(
+            *(
+                vturb_service.get_live_users(
+                    current_user.id, step["player_id"], minutes
+                )
+                for step in configured
             )
+        )
 
+        result = []
+        for step, vturb_result in zip(configured, vturb_results):
             # Erro (sem credenciais, rate limit, etc.) também não vira zero —
             # a etapa simplesmente não aparece nesta chamada.
             if not isinstance(vturb_result, list):
@@ -349,7 +355,7 @@ async def get_live_vsl_data(
 
             result.append({
                 "stepId": step["id"],
-                "playerId": player_id,
+                "playerId": step["player_id"],
                 "label": step["label"],
                 "liveUsers": live_users,
                 "domain": domain,
@@ -563,7 +569,10 @@ def get_live_conversion(
         for i, s in enumerate(steps.data):
             v = step_visitors.get(s["id"], 0)
             if i == 0:
-                rate = 100.0
+                # 100% só faz sentido como "base de si mesma" quando há
+                # alguém pra ser base — sem isso a etapa de entrada mostrava
+                # "0 visitantes, 100%" numa janela sem tráfego nenhum.
+                rate = 100.0 if v > 0 else 0.0
             elif not prev:
                 rate = 0.0
             else:

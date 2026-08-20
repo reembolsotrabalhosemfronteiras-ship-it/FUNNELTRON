@@ -49,8 +49,7 @@ import {
   listFunnels,
   listSteps,
   listEdges,
-  getStepMetrics,
-  getTrackerMetrics,
+  getMetrics,
   getClarityMetrics,
   getVturbMetrics,
   getVslInsights,
@@ -92,11 +91,7 @@ async function loadBundle(
     getFunnel(id),
     listSteps(id),
     listEdges(id),
-    // "Comparar" ainda não tem como render lado a lado nesta grade — cai no
-    // Clarity/VTurb, igual antes.
-    source === "tracker"
-      ? getTrackerMetrics(id, period)
-      : getStepMetrics(id, period),
+    getMetrics(id, source, period),
   ]);
   return {
     funnel,
@@ -185,20 +180,25 @@ export function MetricsPage() {
   }, [refreshBundles]);
 
   // Atualização silenciosa em segundo plano (sem spinner) — a página só
-  // reagia antes quando o período ou o funil selecionado mudava.
-  useEffect(() => {
-    if (document.visibilityState !== "visible") return;
-    const i = setInterval(() => refreshBundles(false), 60000);
-    return () => clearInterval(i);
-  }, [refreshBundles]);
+  // reagia antes quando o período ou o funil selecionado mudava. `isPolling`
+  // é estado (não uma checagem só no instante em que o efeito monta): sem
+  // isso, um intervalo já em andamento continuava disparando depois da aba
+  // ir pro fundo, porque nada o parava de novo — só evitava começar um novo.
+  const [isPolling, setIsPolling] = useState(
+    document.visibilityState === "visible"
+  );
 
   useEffect(() => {
-    const h = () => {
-      if (document.visibilityState === "visible") refreshBundles(false);
-    };
+    const h = () => setIsPolling(document.visibilityState === "visible");
     document.addEventListener("visibilitychange", h);
     return () => document.removeEventListener("visibilitychange", h);
-  }, [refreshBundles]);
+  }, []);
+
+  useEffect(() => {
+    if (!isPolling) return;
+    const i = setInterval(() => refreshBundles(false), 60000);
+    return () => clearInterval(i);
+  }, [isPolling, refreshBundles]);
 
   const toggleFunnel = (id: string) => {
     setSelectedIds((cur) =>

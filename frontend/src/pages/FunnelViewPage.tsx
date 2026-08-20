@@ -6,14 +6,7 @@ import { Card, CardContent } from "@/components/common/Card";
 import { Button } from "@/components/common/Button";
 import { Spinner } from "@/components/common/Spinner";
 import { FunnelCanvas } from "@/components/funnel";
-import {
-  getFunnel,
-  listSteps,
-  listEdges,
-  getStepMetrics,
-  getTrackerMetrics,
-  syncMetrics,
-} from "@/api/client";
+import { getFunnel, listSteps, listEdges, getMetrics, syncMetrics } from "@/api/client";
 import type { Funnel, FunnelStep, FunnelEdge, StepMetric } from "@/types";
 import { cn } from "@/lib/cn";
 import { SourceSelector, useDataSource } from "@/components/common/SourceSelector";
@@ -37,10 +30,7 @@ export function FunnelViewPage() {
   const { source, setSource } = useDataSource();
 
   const fetchMetrics = useCallback(
-    (funnelId: string) =>
-      source === "tracker"
-        ? getTrackerMetrics(funnelId, FUNNEL_VIEW_PERIOD)
-        : getStepMetrics(funnelId, FUNNEL_VIEW_PERIOD),
+    (funnelId: string) => getMetrics(funnelId, source, FUNNEL_VIEW_PERIOD),
     [source]
   );
 
@@ -65,19 +55,24 @@ export function FunnelViewPage() {
     fetchMetrics(id).then(setMetrics);
   }, [id, fetchMetrics]);
 
-  useEffect(() => {
-    if (document.visibilityState !== "visible") return;
-    const i = setInterval(refreshMetrics, 30000);
-    return () => clearInterval(i);
-  }, [refreshMetrics]);
+  // `isPolling` é estado, não uma checagem só no instante em que o efeito
+  // monta — sem isso, um intervalo já em andamento continuava disparando
+  // depois da aba ir pro fundo, porque nada o parava de novo.
+  const [isPolling, setIsPolling] = useState(
+    document.visibilityState === "visible"
+  );
 
   useEffect(() => {
-    const h = () => {
-      if (document.visibilityState === "visible") refreshMetrics();
-    };
+    const h = () => setIsPolling(document.visibilityState === "visible");
     document.addEventListener("visibilitychange", h);
     return () => document.removeEventListener("visibilitychange", h);
-  }, [refreshMetrics]);
+  }, []);
+
+  useEffect(() => {
+    if (!isPolling) return;
+    const i = setInterval(refreshMetrics, 30000);
+    return () => clearInterval(i);
+  }, [isPolling, refreshMetrics]);
 
   const handleSync = async () => {
     if (!id) return;

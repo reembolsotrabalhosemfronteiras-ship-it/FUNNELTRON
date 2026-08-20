@@ -15,8 +15,7 @@ import {
   duplicateFunnel,
   setFunnelStatus,
   listSteps,
-  getStepMetrics,
-  getTrackerMetrics,
+  getMetrics,
   getVslInsights,
 } from "@/api/client";
 import type { Funnel, FunnelKind, FunnelStatus, PeriodInput } from "@/types";
@@ -104,11 +103,7 @@ export function FunnelListPage() {
     Promise.all(
       funnels.map(async (f) => {
         const [metrics, steps, vslAll] = await Promise.all([
-          // "Comparar" ainda não tem como render lado a lado num card
-          // compacto — cai no Clarity/VTurb, igual antes.
-          source === "tracker"
-            ? getTrackerMetrics(f.id, period)
-            : getStepMetrics(f.id, period),
+          getMetrics(f.id, source, period),
           listSteps(f.id),
           vslDaTela,
         ]);

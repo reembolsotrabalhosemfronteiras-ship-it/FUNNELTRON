@@ -44,9 +44,13 @@ export function NewFunnelDialog({
   const [rules, setRules] = useState<SlugTypeRule[]>(DEFAULT_SLUG_RULES);
 
   useEffect(() => {
-    getSlugRules().then((r) => {
-      if (r && r.length > 0) setRules(r);
-    });
+    // Leitura, não escrita — se falhar, os padrões embutidos já em `rules`
+    // servem de sobra pra este palpite não travar o diálogo.
+    getSlugRules()
+      .then((r) => {
+        if (r && r.length > 0) setRules(r);
+      })
+      .catch(() => {});
   }, []);
 
   const parsed = parseUrlList(raw, rules);
