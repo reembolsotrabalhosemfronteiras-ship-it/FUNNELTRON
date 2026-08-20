@@ -10,7 +10,7 @@ from .core import scheduler
 from .core.config import get_settings
 from .core.supabase_client import is_local_mode, LOCAL_DATA_DIR
 from .routers import (
-    auth, funnels, layout, screenshots, metrics, integrations, imports, live, sources
+    auth, funnels, layout, screenshots, metrics, integrations, imports, live, sources, push
 )
 
 # Configurações
@@ -119,6 +119,7 @@ app.include_router(integrations.router, prefix="/api")
 app.include_router(imports.router, prefix="/api")
 app.include_router(live.router, prefix="/api")
 app.include_router(sources.router, prefix="/api")
+app.include_router(push.router, prefix="/api")
 
 
 # Prints capturados no modo local são servidos daqui. No Supabase o Storage

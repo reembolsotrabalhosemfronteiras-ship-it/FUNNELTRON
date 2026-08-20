@@ -63,6 +63,15 @@ class Settings(BaseSettings):
     # Se vazio, o endpoint /api/live/webhook aceita qualquer requisição.
     webhook_secret: str = ""
 
+    # Notificação push (Web Push/VAPID) de "PIX gerado"/"PIX pago". Sem as
+    # duas chaves, o serviço fica mudo — nenhuma rota quebra, só não há
+    # notificação nativa quando a aba está fechada. Gere o par com
+    # `vapid_gen_keys` do pacote `pywebpush` ou em web-push-codelab.glitch.me.
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    # Contato exigido pelo protocolo Web Push (vai no header VAPID `sub`).
+    vapid_contact_email: str = "contato@funneltron.app"
+
     class Config:
         env_file = ".env"
         case_sensitive = False

@@ -1641,3 +1641,35 @@ export async function getLiveConversion(
     400
   );
 }
+
+// --- Notificação push (PIX gerado/pago) ---
+// Sem mock: depende do navegador (Service Worker/Push API) e do backend real.
+// Em USE_MOCK a UI de ativar notificações trata a chave vazia como
+// "recurso indisponível" e não oferece o botão.
+
+/** Confere o status sem tentar ler corpo — as duas rotas abaixo respondem 204. */
+async function okVoid(r: Response): Promise<void> {
+  if (!r.ok) {
+    const corpo = await r.text().catch(() => "");
+    throw new Error(
+      `Backend respondeu ${r.status}${corpo ? `: ${corpo.slice(0, 200)}` : ""}`
+    );
+  }
+}
+
+export async function getVapidPublicKey(): Promise<string> {
+  if (USE_MOCK) return "";
+  const r = await apiGet(`/api/push/vapid-public-key`).then(okJson);
+  return r.publicKey ?? "";
+}
+
+export async function subscribePush(subscription: {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}): Promise<void> {
+  await apiSend(`/api/push/subscribe`, "POST", subscription).then(okVoid);
+}
+
+export async function unsubscribePush(endpoint: string): Promise<void> {
+  await apiSend(`/api/push/unsubscribe`, "POST", { endpoint }).then(okVoid);
+}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   Zap,
@@ -15,6 +15,8 @@ import { Badge } from "@/components/common/Badge";
 import { Spinner } from "@/components/common/Spinner";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { cn } from "@/lib/cn";
+import { useNotifications } from "@/components/common/NotificationsProvider";
+import { PushToggle } from "@/components/common/PushToggle";
 import {
   listFunnels,
   getFunnel,
@@ -45,6 +47,44 @@ import { SalesFeed } from "@/components/live/SalesFeed";
 import { PageEntriesFeed } from "@/components/live/PageEntriesFeed";
 
 type SaleFilter = "all" | "paid" | "pending";
+
+// ---------------------------------------------------------------------------
+// Toast de venda: compara o resultado de cada ciclo de polling com o
+// anterior e avisa (container arredondado, canto inferior direito) só do
+// que é NOVO — venda que apareceu ou mudou de pendente pra paga. Roda
+// apenas enquanto a aba está visível, porque o polling que a alimenta já
+// pausa sozinho quando ela não está (ver `isPolling`/`visibilitychange`
+// acima) — é exatamente o "aberta" x "em segundo plano/fechada" que separa
+// este toast da notificação nativa disparada pelo backend via push.
+function useSaleAlerts(sales: LiveSale[] | undefined) {
+  const { notify } = useNotifications();
+  const seen = useRef<Map<string, string>>(new Map());
+  const primed = useRef(false);
+
+  useEffect(() => {
+    if (!sales) return;
+    // Primeira carga: só registra o que já existe, não tem "novo" ainda —
+    // sem isso, toda venda da janela viraria toast ao abrir a tela.
+    if (!primed.current) {
+      sales.forEach((s) => seen.current.set(s.id, s.status));
+      primed.current = true;
+      return;
+    }
+    sales.forEach((s) => {
+      const prevStatus = seen.current.get(s.id);
+      if (prevStatus === s.status) return;
+      seen.current.set(s.id, s.status);
+      if (s.status !== "paid" && s.status !== "pending") return;
+
+      const valor = `R$ ${s.amount.toLocaleString("pt-BR")}`;
+      notify({
+        title: s.status === "paid" ? "💰 PIX pago" : "🟡 PIX gerado",
+        body: `${valor}${s.customer ? ` · ${s.customer}` : ""}`,
+        url: `/funnel/${s.funnelId}/live`,
+      });
+    });
+  }, [sales, notify]);
+}
 
 // ---------------------------------------------------------------------------
 // Hook: carrega o estado "ao vivo" de UM funil e faz polling a cada 5s.
@@ -222,6 +262,8 @@ function FunnelLiveView({
   );
   const [saleFilter, setSaleFilter] = useState<SaleFilter>("all");
   const [convScope, setConvScope] = useState<"window" | "today">("window");
+
+  useSaleAlerts(data?.sales);
 
   const filteredSales = useMemo(() => {
     if (!data) return [];
@@ -531,6 +573,8 @@ function GeneralLiveView({
     return list;
   }, [byFunnel]);
 
+  useSaleAlerts(allSales);
+
   const stepLabels = useMemo(() => {
     const map: Record<string, string> = {};
     Object.values(byFunnel).forEach((v) =>
@@ -759,6 +803,7 @@ export function LivePage() {
         subtitle="Monitoramento em tempo real de visitantes e vendas"
         actions={
           <div className="flex items-center gap-3 flex-wrap justify-end">
+            <PushToggle />
             <SourceSelector value={source} onChange={setSource} />
             {showWindowPickers && (
               <TimeWindowPicker

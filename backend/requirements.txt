@@ -21,3 +21,5 @@ Pillow>=11
 # quebravam em produção, mesmo funcionando local (onde o venv tinha
 # `playwright install` rodado manualmente para a versão nova).
 playwright==1.48.0
+# Notificação push (PIX gerado/pago) no navegador/SO via Web Push (VAPID).
+pywebpush>=2.0
