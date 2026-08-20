@@ -35,8 +35,8 @@ export function PageEntriesFeed({
 }: PageEntriesFeedProps) {
   if (entries.length === 0) {
     return (
-      <Card className={className}>
-        <CardContent className="p-4 text-center text-sm text-muted-foreground">
+      <Card className={cn("flex h-full flex-col", className)}>
+        <CardContent className="flex flex-1 items-center justify-center p-4 text-center text-sm text-muted-foreground">
           Nenhuma entrada de página na janela selecionada.
         </CardContent>
       </Card>
@@ -44,9 +44,9 @@ export function PageEntriesFeed({
   }
 
   return (
-    <Card className={className}>
-      <CardContent className="p-2">
-        <div className="max-h-72 space-y-1 overflow-y-auto">
+    <Card className={cn("flex h-full flex-col", className)}>
+      <CardContent className="flex flex-1 flex-col p-2">
+        <div className="flex-1 space-y-1 overflow-y-auto">
           {entries.slice(0, maxItems).map((entry, i) => {
             const fresh = i < 2;
             return (

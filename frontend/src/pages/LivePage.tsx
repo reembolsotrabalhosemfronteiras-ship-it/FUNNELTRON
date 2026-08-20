@@ -327,9 +327,11 @@ function FunnelLiveView({
         )}
       </section>
 
-      {/* Conversão (30m/1h) + Log de entradas em página */}
-      <section className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-1 space-y-3">
+      {/* Conversão (30m/1h) + Log de entradas em página — mesma altura: o
+          feed de entradas estica pra acompanhar o card de conversão em vez
+          de sobrar como uma caixinha pequena com scroll próprio. */}
+      <section className="grid items-stretch gap-6 lg:grid-cols-3">
+        <div className="flex flex-col gap-3 lg:col-span-1">
           <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
             Conversão
           </h3>
@@ -347,7 +349,7 @@ function FunnelLiveView({
           )}
         </div>
 
-        <div className="lg:col-span-2 space-y-3">
+        <div className="flex flex-col gap-3 lg:col-span-2">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-red-500" />
@@ -362,6 +364,7 @@ function FunnelLiveView({
           <PageEntriesFeed
             entries={data.entries}
             stepLabels={data.stepLabels}
+            className="flex-1"
           />
         </div>
       </section>
