@@ -64,8 +64,12 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
   const { dark, toggle } = useTheme();
 
   return (
-    <header className="h-16 border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-10">
-      <div className="h-full px-4 flex items-center justify-between">
+    <header className="min-h-16 border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-10">
+      {/* Não é h-16 fixo: um subtítulo longo (ex. "Visão global · todos os
+          3 funis · 30 dias") quebra linha, e com altura fixa o conteúdo
+          transbordava — as ações (fonte, período) ficavam soltas acima do
+          título em vez de alinhadas ao lado dele. */}
+      <div className="min-h-16 px-4 py-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-semibold">{title}</h1>
           {subtitle && <span className="text-sm text-muted-foreground">{subtitle}</span>}
