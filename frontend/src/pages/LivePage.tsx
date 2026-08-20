@@ -26,7 +26,6 @@ import {
   getLiveConversion,
   getDayConversion,
   getLivePageEntries,
-  getActiveFunnels,
 } from "@/api/client";
 import type { Funnel, FunnelStep, FunnelEdge } from "@/types";
 import type {
@@ -610,7 +609,6 @@ function SummaryCard({
 export function LivePage() {
   const [funnels, setFunnels] = useState<Funnel[]>([]);
   const [funnelMap, setFunnelMap] = useState<Record<string, Funnel>>({});
-  const [activeIds, setActiveIds] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<string>("geral");
   const [loadingScope, setLoadingScope] = useState(true);
   // Uma janela só para VSL, conversão e vendas — três seletores separados
@@ -626,40 +624,33 @@ export function LivePage() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const [all, actives] = await Promise.all([listFunnels(), getActiveFunnels()]);
+    listFunnels()
+      .then((all) => {
         if (cancelled) return;
         const map: Record<string, Funnel> = {};
         all.forEach((f) => (map[f.id] = f));
         setFunnels(all);
         setFunnelMap(map);
-        // Só mostra abas para funis que existem E estão ativos.
-        const valid = actives.filter((id) => map[id]);
-        setActiveIds(valid);
-        if (valid.length > 0) setActiveTab(valid[0]);
-      } catch (err) {
-        console.error(err);
-      } finally {
+      })
+      .catch((err) => console.error(err))
+      .finally(() => {
         if (!cancelled) setLoadingScope(false);
-      }
-    })();
+      });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const activeFunnels = useMemo(
-    () => activeIds.map((id) => funnelMap[id]).filter(Boolean) as Funnel[],
-    [activeIds, funnelMap]
-  );
-
+  // Aba por funil, sempre — mesmo o que nunca recebeu tráfego. Antes só
+  // ganhava aba quem tinha tráfego recente (`getActiveFunnels`), e um funil
+  // parado não tinha como ser aberto na tela: sumia da lista de abas
+  // inteiro, em vez de aparecer zerado.
   const tabs: LiveTab[] = useMemo(
     () => [
       { key: "geral", label: "Geral", icon: <LayoutGrid size={14} /> },
-      ...activeFunnels.map((f) => ({ key: f.id, label: f.name })),
+      ...funnels.map((f) => ({ key: f.id, label: f.name })),
     ],
-    [activeFunnels]
+    [funnels]
   );
 
   const selectedFunnel = activeTab === "geral" ? null : funnelMap[activeTab];
