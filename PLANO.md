@@ -538,6 +538,13 @@ uma origem, sem CORS.
 7. **Rotas do ao vivo leem com a chave de serviço** (`live_page_entries`) — a
    permissão é checada no código, não pelo RLS. Vale igualar quando as políticas
    do schema forem aplicadas no banco.
+8. ~~**Sem framework de testes**~~ — resolvido: Vitest + Testing Library no
+   frontend (`frontend/vitest.config.ts`, `npm test`). 8 testes cobrindo
+   `computeStats` e `estimateVslConversionFromTracker` (lib/funnelStats.ts),
+   incluindo regressão dos bugs de "visitas = pageview somado" e "conversão de
+   compra caindo pra visita de página" corrigidos nesta rodada. Backend segue
+   sem testes automatizados — próximo passo natural é pytest pros endpoints de
+   `/metrics`.
 8. **O Clarity só entrega 3 dias e 10 consultas por dia** — limite do fornecedor,
    não do código. Períodos de 30 ou 90 dias na tela do Clarity cobrem 3 dias; a
    resposta traz `days` com o que realmente veio e um `warning`. Histórico mais
