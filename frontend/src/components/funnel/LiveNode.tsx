@@ -44,7 +44,7 @@ function LiveNodeBase({ id, data, selected }: NodeProps<LiveNodeData>) {
     // Wrapper SEM overflow-hidden: o número grande vive fora do card. Ele é
     // `absolute`, então não entra no tamanho medido pelo React Flow — as
     // âncoras das setas continuam nas bordas do card, não do número.
-    <div className="relative w-[240px]">
+    <div className="relative w-[180px]">
       {/* Número grande de pessoas ao vivo. O lado (cima/baixo) vem pronto do
           canvas, que sabe onde estão os outros cards. */}
       <div
@@ -91,7 +91,7 @@ function LiveNodeBase({ id, data, selected }: NodeProps<LiveNodeData>) {
 
       <div
         className={cn(
-          "group relative w-[240px] overflow-hidden rounded-xl border shadow-xl transition-all",
+          "group relative w-[180px] overflow-hidden rounded-xl border shadow-xl transition-all",
         "bg-slate-900/90 backdrop-blur border-red-500/50",
         // Com gente na página, o card acende: halo vermelho proporcional ao
         // volume. Vazio fica apagado, para o olho achar sozinho onde tem fluxo.
@@ -134,7 +134,7 @@ function LiveNodeBase({ id, data, selected }: NodeProps<LiveNodeData>) {
       </div>
 
       {/* Print + partículas de pessoas ao vivo */}
-      <div className="relative aspect-[16/10] bg-slate-950">
+      <div className="relative aspect-[9/16] bg-slate-950">
         {isSubFunnel ? (
           <div className="flex h-full flex-col items-center justify-center gap-1 bg-cyan-500/10 px-3 text-center">
             <Package size={22} className="text-cyan-400" />

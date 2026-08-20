@@ -34,8 +34,9 @@ export type AtelierNodeData = FunnelStep & {
   /** Página que encerra a medição de conversão de compra. */
   isGoal?: boolean;
   /** "dark" no ateliê, "light" nos previews. A GEOMETRIA é idêntica nos dois:
-   *  mesma largura e mesmas alturas internas, para o espaçamento salvo no
-   *  ateliê aparecer igual em todo lugar. */
+   *  mesma largura e mesmas alturas internas (print em formato retrato,
+   *  como a tela de um celular), para o espaçamento salvo no ateliê
+   *  aparecer igual em todo lugar. */
   variant?: "dark" | "light" | "live";
   /** Resumo do funil de upsell embutido, quando `type === "sub_funnel"`. */
   subFunnel?: { name: string; stepCount: number } | null;
@@ -62,7 +63,7 @@ export function AtelierNode({ id, data, selected }: NodeProps<AtelierNodeData>) 
   return (
     <div
       className={cn(
-        "group relative w-[240px] overflow-hidden rounded-xl border shadow-xl transition-all",
+        "group relative w-[180px] overflow-hidden rounded-xl border shadow-xl transition-all",
         light ? "bg-card" : "bg-slate-900/90 backdrop-blur",
         live && "bg-slate-900/90 backdrop-blur border-blue-500/50",
         selected
@@ -127,7 +128,7 @@ export function AtelierNode({ id, data, selected }: NodeProps<AtelierNodeData>) 
       {/* Print da página */}
       <div
         className={cn(
-          "relative aspect-[16/10]",
+          "relative aspect-[9/16]",
           light ? "bg-muted" : "bg-slate-950"
         )}
       >

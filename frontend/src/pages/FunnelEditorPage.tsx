@@ -71,11 +71,12 @@ import type {
 const nodeTypes = { atelier: AtelierNode };
 const edgeTypes = { atelier: AtelierEdge };
 
-// Caixa de colisão de um card: a largura é fixa (w-[240px] + borda + ring), a
-// altura é variável (print com aspect 16/10 + cabeçalho + rodapé + ring). Usamos
-// um valor GENEROSO — errar para cima garante "nunca sobrepor", que é a regra.
-const NODE_WIDTH = 246;
-const NODE_HEIGHT = 232;
+// Caixa de colisão de um card: a largura é fixa (w-[180px] + borda + ring), a
+// altura é variável (print com aspect 9/16, formato celular, + cabeçalho +
+// rodapé + ring). Usamos um valor GENEROSO — errar para cima garante "nunca
+// sobrepor", que é a regra.
+const NODE_WIDTH = 186;
+const NODE_HEIGHT = 400;
 
 /**
  * Empurra `desired` para fora de qualquer caixa em `others`, mantendo-o o mais
