@@ -172,10 +172,22 @@ class ScreenshotService:
         Returns: {"ok": True, "playerId": str} ou {"ok": False, "reason": str}
         """
         try:
+            # User-Agent de navegador de verdade: identificar-se como bot
+            # ("FunneltronBot/1.0") fazia páginas atrás de Cloudflare/anti-bot
+            # comum responderem 403 — mesmo sendo o dono lendo a própria
+            # página de vendas, não um scraper de terceiro.
             async with httpx.AsyncClient(
                 timeout=15.0,
                 follow_redirects=True,
-                headers={"User-Agent": "Mozilla/5.0 (compatible; FunneltronBot/1.0)"},
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/131.0.0.0 Safari/537.36"
+                    ),
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+                },
             ) as client:
                 response = await client.get(url)
                 if response.status_code != 200:
