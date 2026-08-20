@@ -93,7 +93,7 @@ export function PeriodPicker({
             onChange(todayRange());
           }}
           className={cn(
-            "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+            "rounded-md px-2.5 py-2 text-xs font-medium transition-colors",
             todayActive
               ? "bg-primary text-primary-foreground"
               : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -110,7 +110,7 @@ export function PeriodPicker({
               onChange(p.value);
             }}
             className={cn(
-              "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+              "rounded-md px-2.5 py-2 text-xs font-medium transition-colors",
               !custom && value === p.value
                 ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -124,7 +124,7 @@ export function PeriodPicker({
           onClick={() => setOpen((o) => !o)}
           title="Escolher datas"
           className={cn(
-            "flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+            "flex items-center gap-1 rounded-md px-2.5 py-2 text-xs font-medium transition-colors",
             customActive
               ? "bg-primary text-primary-foreground"
               : "text-muted-foreground hover:bg-muted hover:text-foreground"
