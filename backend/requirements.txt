@@ -14,4 +14,10 @@ pydantic-settings>=2.5
 httpx>=0.27
 python-multipart>=0.0.12
 Pillow>=11
-playwright>=1.48
+# Travado no exato: a imagem base (mcr.microsoft.com/playwright/python:v1.48.0-jammy)
+# só tem os binários do Chromium da versão 1.48.0 pré-instalados. Com
+# `>=1.48` o pip puxava a última versão (1.58 e subindo) e o pacote python
+# não achava o executável do navegador — captura de print e "Sincronizar"
+# quebravam em produção, mesmo funcionando local (onde o venv tinha
+# `playwright install` rodado manualmente para a versão nova).
+playwright==1.48.0
