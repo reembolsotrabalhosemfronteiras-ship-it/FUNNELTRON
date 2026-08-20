@@ -5,7 +5,13 @@
 # Chromium — que **não roda** em função serverless (Vercel/Netlify).
 
 # --- Etapa 1: build do frontend --------------------------------------------
-FROM node:20-slim AS frontend
+# node:22 (não 20): @supabase/* e @testing-library/jest-dom já exigem Node
+# >=22 no package.json deles — com 20 o `npm ci` só emitia um warning
+# (EBADENGINE), mas a mudança recente no lockfile (gerado com npm 11/Node 24
+# local) ficou incompatível com o npm 10.8.2 que vem no node:20-slim e o
+# build parava em "Missing: esbuild@... from lock file". Alinhar a versão do
+# Node do build com o que gerou o lockfile resolve os dois problemas juntos.
+FROM node:22-slim AS frontend
 
 WORKDIR /app/frontend
 
