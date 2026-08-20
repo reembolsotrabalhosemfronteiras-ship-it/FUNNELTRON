@@ -158,6 +158,10 @@ def get_overview_metrics(
     """
     Métricas agregadas de todos os funis (visão executiva).
 
+    `totalVisitors` é gente DIFERENTE que entrou (soma dos visitantes da
+    primeira etapa de cada funil, pelo rastreador) — não pageview somado de
+    toda etapa, que conta a mesma pessoa várias vezes.
+
     Returns:
         {
             "totalFunnels": int,
@@ -169,6 +173,13 @@ def get_overview_metrics(
     """
     try:
         start_date, end_date = parse_period(period, from_date, to_date)
+        start_ts = datetime.fromisoformat(start_date).replace(
+            tzinfo=timezone.utc
+        ).isoformat()
+        end_ts = (
+            datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc)
+            + timedelta(days=1)
+        ).isoformat()
 
         # Busca funis do usuário
         funnels_query = supabase.table("funnels").select("id, status").eq(
@@ -179,9 +190,8 @@ def get_overview_metrics(
             funnels_query = funnels_query.eq("status", status_filter)
 
         funnels = funnels_query.execute()
-        funnel_ids = [f["id"] for f in funnels.data]
 
-        if not funnel_ids:
+        if not funnels.data:
             return {
                 "totalFunnels": 0,
                 "activeFunnels": 0,
@@ -190,15 +200,13 @@ def get_overview_metrics(
                 "averageConversionRate": None
             }
 
-        # Busca métricas agregadas
-        metrics = supabase.table("step_metrics").select(
-            "visitors, conversions"
-        ).in_("funnel_id", funnel_ids).gte(
-            "date", start_date
-        ).lte("date", end_date).execute()
-
-        total_visitors = sum(m["visitors"] for m in metrics.data)
-        total_conversions = sum(m["conversions"] for m in metrics.data)
+        admin = get_supabase_admin()
+        total_visitors = 0
+        total_conversions = 0
+        for f in funnels.data:
+            totals = _tracker_funnel_totals(f["id"], start_ts, end_ts, admin)
+            total_visitors += totals["entry"]
+            total_conversions += totals["exit"]
 
         avg_rate = None
         if total_visitors > 0:
@@ -219,6 +227,43 @@ def get_overview_metrics(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro ao buscar métricas: {str(e)}"
         )
+
+
+def _tracker_funnel_totals(funnel_id: str, start_ts: str, end_ts: str, admin) -> dict:
+    """
+    "Visitas" de um funil pelo rastreador = pessoas DIFERENTES que entraram
+    (visitantes da primeira etapa, por sessão), não a soma de toda página
+    vista em toda etapa — isso é volume de acesso, não gente. Também devolve
+    quantos chegaram na última etapa, pra conversão de funil ponta a ponta.
+
+    Mesma fonte (`tracker_snapshots`) e mesma regra de ordenação
+    (`order_index`) que `_tracker_step_metrics` usa por etapa — aqui só
+    resume pro funil inteiro.
+    """
+    steps = admin.table("funnel_steps").select("id, order_index").eq(
+        "funnel_id", funnel_id
+    ).order("order_index").execute().data or []
+
+    if not steps:
+        return {"entry": 0, "exit": 0}
+
+    snaps = admin.table("tracker_snapshots").select("payload").eq(
+        "funnel_id", funnel_id
+    ).eq("bucket", "day").gte("period_start", start_ts).lt(
+        "period_start", end_ts
+    ).execute()
+
+    by_step: dict = {}
+    for row in snaps.data or []:
+        for step_id, count in ((row.get("payload") or {}).get("byStep") or {}).items():
+            if step_id == "unmapped":
+                continue
+            by_step[step_id] = by_step.get(step_id, 0) + int(count)
+
+    return {
+        "entry": by_step.get(steps[0]["id"], 0),
+        "exit": by_step.get(steps[-1]["id"], 0),
+    }
 
 
 def _tracker_step_metrics(
@@ -258,9 +303,16 @@ def _tracker_step_metrics(
             )
         funnel = funnel_result.data[0]
 
-        steps = supabase.table("funnel_steps").select("id, type").eq(
-            "funnel_id", funnel_id
-        ).execute().data or []
+        steps = supabase.table("funnel_steps").select(
+            "id, type, order_index"
+        ).eq("funnel_id", funnel_id).order("order_index").execute().data or []
+
+        edges = supabase.table("funnel_edges").select(
+            "source_step_id, target_step_id, condition"
+        ).eq("funnel_id", funnel_id).eq("condition", "default").execute().data or []
+        default_target_by_source = {
+            e["source_step_id"]: e["target_step_id"] for e in edges
+        }
 
         start_date, end_date = parse_period(period, from_date, to_date)
         start_ts = datetime.fromisoformat(start_date).replace(
@@ -299,27 +351,41 @@ def _tracker_step_metrics(
             goal_step = next((s for s in steps if s.get("type") == "thank_you"), None)
             goal_step_id = goal_step["id"] if goal_step else None
 
-        conversions_total = 0
-        if goal_step_id:
-            sales = admin.table("live_sales").select("id").eq(
-                "funnel_id", funnel_id
-            ).eq("status", "paid").gte(
-                "created_at", start_ts
-            ).lt("created_at", end_ts).execute()
-            conversions_total = len(sales.data or [])
+        # Quem manda pra quem, no sentido inverso (destino -> origem): dá pra
+        # achar de qual etapa anterior cada etapa recebeu gente, sem
+        # depender da ordem em `steps` (um funil com ramificação não é uma
+        # linha reta).
+        source_by_target = {
+            target: source for source, target in default_target_by_source.items()
+        }
 
         result = []
-        for step in steps:
+        for i, step in enumerate(steps):
             visitors = by_step.get(step["id"], 0)
-            conversions = conversions_total if step["id"] == goal_step_id else 0
-            rate = round((conversions / visitors) * 100, 1) if visitors else 0.0
+            prev_step_id = source_by_target.get(step["id"])
+            prev_visitors = by_step.get(prev_step_id, 0) if prev_step_id else None
+
+            if prev_visitors is None:
+                # Sem etapa anterior conhecida (primeira do funil, ou órfã por
+                # causa de uma edição do desenho): conversão de página não se
+                # aplica, só "chegou" ou não.
+                rate = 100.0 if visitors > 0 else 0.0
+            elif prev_visitors == 0:
+                rate = 0.0
+            else:
+                rate = round((visitors / prev_visitors) * 100, 1)
+
             result.append({
                 "id": f"{step['id']}:{start_date}:{end_date}",
                 "funnel_id": funnel_id,
                 "step_id": step["id"],
                 "date": end_date,
                 "visitors": visitors,
-                "conversions": conversions,
+                # "Conversões" = quantos chegaram nesta etapa vindos da
+                # anterior (página → página), não venda — a conversão de
+                # compra é medida à parte, por `conversion_goal_step_id` +
+                # `live_sales`, e não depende deste campo.
+                "conversions": visitors,
                 "conversion_rate": rate,
                 "source": "tracker",
             })
@@ -346,6 +412,11 @@ def get_funnels_ranking(
     """
     Ranking de funis por taxa de conversão.
 
+    `visitors` = gente diferente que entrou (primeira etapa); `conversions` =
+    quantos chegaram na última — a mesma conversão ponta a ponta que o resto
+    do app usa (`computeStats` no frontend), não uma média de conversões por
+    etapa somadas.
+
     Returns:
         [
             {
@@ -360,24 +431,26 @@ def get_funnels_ranking(
     """
     try:
         start_date, end_date = parse_period(period, from_date, to_date)
+        start_ts = datetime.fromisoformat(start_date).replace(
+            tzinfo=timezone.utc
+        ).isoformat()
+        end_ts = (
+            datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc)
+            + timedelta(days=1)
+        ).isoformat()
 
         # Busca funis
         funnels = supabase.table("funnels").select("*").eq(
             "user_id", current_user.id
         ).execute()
 
+        admin = get_supabase_admin()
         result = []
 
         for funnel in funnels.data:
-            # Busca métricas do funil
-            metrics = supabase.table("step_metrics").select(
-                "visitors, conversions"
-            ).eq("funnel_id", funnel["id"]).gte(
-                "date", start_date
-            ).lte("date", end_date).execute()
-
-            total_visitors = sum(m["visitors"] for m in metrics.data)
-            total_conversions = sum(m["conversions"] for m in metrics.data)
+            totals = _tracker_funnel_totals(funnel["id"], start_ts, end_ts, admin)
+            total_visitors = totals["entry"]
+            total_conversions = totals["exit"]
 
             conv_rate = None
             if total_visitors > 0:
@@ -562,6 +635,272 @@ def get_funnel_metrics(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro ao buscar métricas: {str(e)}"
+        )
+
+
+@router.get("/funnels/{funnel_id}/time-on-page")
+def get_time_on_page(
+    funnel_id: str,
+    period: Optional[str] = "30d",
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_db)
+):
+    """
+    Tempo médio que as pessoas ficam em cada página, do NOSSO rastreador.
+
+    O rastreador não grava um "saiu às Xh" — só "entrou às Xh" (uma linha em
+    `live_page_entries` por troca de URL). Mas isso já basta: numa mesma
+    sessão, o tempo na página A é a diferença entre "entrou na A" e "entrou
+    na B" (a próxima). A ÚLTIMA página de cada sessão fica de fora da conta —
+    não tem próxima entrada pra saber quando ela saiu de lá (pode ter fechado
+    a aba, pode ter ficado o dia todo lendo).
+
+    Returns:
+        [{"stepId": str, "avgSeconds": float, "samples": int}]
+    """
+    try:
+        funnel = supabase.table("funnels").select("id").eq(
+            "id", funnel_id
+        ).eq("user_id", current_user.id).execute()
+
+        if not funnel.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Funil não encontrado"
+            )
+
+        start_date, end_date = parse_period(period, from_date, to_date)
+        start_ts = datetime.fromisoformat(start_date).replace(
+            tzinfo=timezone.utc
+        ).isoformat()
+        end_ts = (
+            datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc)
+            + timedelta(days=1)
+        ).isoformat()
+
+        # Admin, mesma pegadinha de sempre: `live_page_entries` tem RLS e o
+        # client comum devolve vazio em silêncio. A permissão já foi checada
+        # acima (o funil é deste usuário).
+        entries = get_supabase_admin().table("live_page_entries").select(
+            "session_id, step_id, entered_at"
+        ).eq("funnel_id", funnel_id).gte(
+            "entered_at", start_ts
+        ).lt("entered_at", end_ts).order("session_id").order(
+            "entered_at"
+        ).execute()
+
+        by_session: dict = {}
+        for e in entries.data or []:
+            sid = e.get("session_id")
+            if not sid:
+                continue
+            by_session.setdefault(sid, []).append(e)
+
+        sums: dict = {}
+        counts: dict = {}
+        for rows in by_session.values():
+            for i in range(len(rows) - 1):
+                current = rows[i]
+                step_id = current.get("step_id")
+                if not step_id:
+                    continue
+                started = datetime.fromisoformat(current["entered_at"])
+                ended = datetime.fromisoformat(rows[i + 1]["entered_at"])
+                seconds = (ended - started).total_seconds()
+                # Heartbeat fora de ordem ou dado sujo não vira "tempo
+                # negativo" nem infla a média com uma sessão esquecida aberta
+                # por horas — descarta em vez de distorcer o resto.
+                if seconds <= 0 or seconds > 3600:
+                    continue
+                sums[step_id] = sums.get(step_id, 0.0) + seconds
+                counts[step_id] = counts.get(step_id, 0) + 1
+
+        return [
+            {
+                "stepId": step_id,
+                "avgSeconds": round(sums[step_id] / counts[step_id], 1),
+                "samples": counts[step_id],
+            }
+            for step_id in sums
+        ]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar tempo por página: {str(e)}"
+        )
+
+
+@router.get("/funnels/{funnel_id}/trend")
+def get_funnel_trend(
+    funnel_id: str,
+    source: Optional[str] = "clarity",
+    period: Optional[str] = "30d",
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_db)
+):
+    """
+    Conversão de funil dia a dia (primeira etapa até a última), não só o
+    total acumulado do período — para ver se uma mudança na página melhorou
+    ou piorou algo, e não confundir isso com uma variação normal de tráfego.
+
+    Returns:
+        [{ "date": "2026-08-01", "visitors": int, "conversions": int, "rate": float|None }]
+    """
+    try:
+        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
+            "user_id", current_user.id
+        ).execute()
+        if not funnel.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Funil não encontrado"
+            )
+
+        steps = supabase.table("funnel_steps").select("id, order_index").eq(
+            "funnel_id", funnel_id
+        ).order("order_index").execute().data or []
+        if len(steps) < 2:
+            return []
+
+        first_step_id = steps[0]["id"]
+        last_step_id = steps[-1]["id"]
+        start_date, end_date = parse_period(period, None, None)
+
+        if source == "tracker":
+            start_ts = datetime.fromisoformat(start_date).replace(
+                tzinfo=timezone.utc
+            ).isoformat()
+            end_ts = (
+                datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc)
+                + timedelta(days=1)
+            ).isoformat()
+
+            admin = get_supabase_admin()
+            snaps = admin.table("tracker_snapshots").select(
+                "period_start, payload"
+            ).eq("funnel_id", funnel_id).eq("bucket", "day").gte(
+                "period_start", start_ts
+            ).lt("period_start", end_ts).order("period_start").execute()
+
+            by_date: dict = {}
+            for row in snaps.data or []:
+                dia = str(row["period_start"])[:10]
+                by_step = (row.get("payload") or {}).get("byStep") or {}
+                bucket = by_date.setdefault(dia, {"first": 0, "last": 0})
+                bucket["first"] += int(by_step.get(first_step_id, 0))
+                bucket["last"] += int(by_step.get(last_step_id, 0))
+
+            return [
+                {
+                    "date": dia,
+                    "visitors": v["first"],
+                    "conversions": v["last"],
+                    "rate": round((v["last"] / v["first"]) * 100, 1) if v["first"] else None,
+                }
+                for dia, v in sorted(by_date.items())
+            ]
+
+        # Clarity/VTurb: já vem com uma linha por (step, date, source).
+        rows = supabase.table("step_metrics").select(
+            "step_id, date, visitors"
+        ).eq("funnel_id", funnel_id).in_(
+            "step_id", [first_step_id, last_step_id]
+        ).gte("date", start_date).lte("date", end_date).execute().data or []
+
+        by_date: dict = {}
+        for r in rows:
+            bucket = by_date.setdefault(str(r["date"]), {"first": 0, "last": 0})
+            key = "first" if r["step_id"] == first_step_id else "last"
+            bucket[key] += r["visitors"] or 0
+
+        return [
+            {
+                "date": dia,
+                "visitors": v["first"],
+                "conversions": v["last"],
+                "rate": round((v["last"] / v["first"]) * 100, 1) if v["first"] else None,
+            }
+            for dia, v in sorted(by_date.items())
+        ]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar tendência do funil: {str(e)}"
+        )
+
+
+@router.get("/funnels/{funnel_id}/ticket")
+def get_funnel_ticket(
+    funnel_id: str,
+    period: Optional[str] = "30d",
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_db)
+):
+    """
+    Ticket médio real do funil, das vendas importadas (UTMify) ou recebidas
+    por webhook (`live_sales`, status pago). Sem isso, "quanto essa queda
+    custou" seria número inventado — aqui é a média do que o funil de fato
+    vendeu no período. `avgTicket` vem `None` quando não há venda registrada:
+    a tela mostra "—", nunca assume um valor.
+
+    Returns: { "avgTicket": float|None, "salesCount": int }
+    """
+    try:
+        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
+            "user_id", current_user.id
+        ).execute()
+        if not funnel.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Funil não encontrado"
+            )
+
+        start_date, end_date = parse_period(period, None, None)
+
+        imported = supabase.table("sales").select("gross_value").eq(
+            "funnel_id", funnel_id
+        ).eq("status", "approved").gte("date", start_date).lte(
+            "date", end_date
+        ).execute().data or []
+
+        values = [float(s["gross_value"]) for s in imported if s.get("gross_value") is not None]
+
+        if not values:
+            start_ts = datetime.fromisoformat(start_date).replace(
+                tzinfo=timezone.utc
+            ).isoformat()
+            end_ts = (
+                datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc)
+                + timedelta(days=1)
+            ).isoformat()
+            admin = get_supabase_admin()
+            paid = admin.table("live_sales").select("amount").eq(
+                "funnel_id", funnel_id
+            ).eq("status", "paid").gte("created_at", start_ts).lt(
+                "created_at", end_ts
+            ).execute().data or []
+            values = [float(s["amount"]) for s in paid if s.get("amount") is not None]
+
+        if not values:
+            return {"avgTicket": None, "salesCount": 0}
+
+        return {
+            "avgTicket": round(sum(values) / len(values), 2),
+            "salesCount": len(values),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar ticket médio: {str(e)}"
         )
 
 

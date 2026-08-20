@@ -61,14 +61,23 @@ export interface SourceSelectorProps {
   value: DataSource;
   onChange: (value: DataSource) => void;
   className?: string;
+  /**
+   * Some para telas onde Clarity nunca deveria ser fonte PRINCIPAL (troca o
+   * cálculo inteiro por dado do Clarity) — só faz sentido como comparação.
+   * "Comparar" continua disponível; some é só o botão "Clarity" sozinho.
+   */
+  hideClarityOption?: boolean;
 }
 
-export function SourceSelector({ value, onChange, className }: SourceSelectorProps) {
+export function SourceSelector({ value, onChange, className, hideClarityOption }: SourceSelectorProps) {
+  const options = hideClarityOption
+    ? OPTIONS.filter((o) => o.value !== "clarity")
+    : OPTIONS;
   return (
     <div className={cn("flex items-center gap-2", className)}>
       <span className="text-xs text-muted-foreground">Fonte</span>
       <div className="flex items-center gap-0.5 rounded-md bg-muted/50 p-0.5">
-        {OPTIONS.map((opt) => (
+        {options.map((opt) => (
           <button
             key={opt.value}
             type="button"

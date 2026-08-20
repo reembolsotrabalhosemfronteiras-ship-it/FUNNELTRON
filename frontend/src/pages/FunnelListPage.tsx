@@ -17,10 +17,11 @@ import {
   listSteps,
   getMetrics,
   getVslInsights,
+  getFunnelTicket,
 } from "@/api/client";
 import type { Funnel, FunnelKind, FunnelStatus, PeriodInput } from "@/types";
 import { useNewFunnel } from "@/components/funnel/NewFunnelProvider";
-import { summarizeVsl, type VslSummary } from "@/lib/funnelStats";
+import { computeStats, summarizeVsl, type VslSummary } from "@/lib/funnelStats";
 import { cn } from "@/lib/cn";
 import { conversionColor } from "@/lib/conversion";
 import { MetricLabel } from "@/components/common/MetricLabel";
@@ -46,6 +47,8 @@ interface FunnelStats {
    * mostrar 0% faria um funil sadio parecer quebrado.
    */
   endToEnd: number | null;
+  /** Quantas vendas pagas saíram deste funil no período (não é %, é contagem). */
+  salesCount: number;
   /** Um funil pode ter várias VSLs — aqui vai o resumo delas. */
   vsl: VslSummary;
 }
@@ -102,25 +105,32 @@ export function FunnelListPage() {
 
     Promise.all(
       funnels.map(async (f) => {
-        const [metrics, steps, vslAll] = await Promise.all([
-          getMetrics(f.id, source, period),
+        const [metrics, steps, vslAll, ticket] = await Promise.all([
+          // Rastreador é sempre a fonte principal aqui — "source" só decide
+          // se a comparação com Clarity é usada (ver `endToEnd`/glossário),
+          // nunca troca o cálculo de visitas/conversão de baixo dos cards.
+          getMetrics(f.id, "tracker", period),
           listSteps(f.id),
           vslDaTela,
+          getFunnelTicket(f.id, period),
         ]);
-        const visitors = metrics.reduce((s, m) => s + m.visitors, 0);
-        const conversions = metrics.reduce((s, m) => s + m.conversions, 0);
-        const entry = Math.max(0, ...metrics.map((m) => m.visitors));
-        const exit = metrics.find(
-          (m) => steps.find((s) => s.id === m.stepId)?.type === "thank_you"
-        );
+        // Mesmo cálculo da tela de Métricas (computeStats, lib/funnelStats):
+        // primeira/última etapa por orderIndex e resolveGoalStep() para a
+        // página-meta. Antes esta tela recalculava sozinha — "entrada" era o
+        // MAIOR número de visitantes entre as etapas (podia ser uma do meio)
+        // e "saída" era só a primeira etapa do tipo "obrigado", ignorando a
+        // página-meta escolhida no funil — dois números com o mesmo nome
+        // ("Conversão de funil") que discordavam entre esta tela e a de
+        // Métricas para o mesmo funil no mesmo período.
+        const s = computeStats(f, steps, metrics, ticket.salesCount);
         return [
           f.id,
           {
-            visitors,
-            conversions,
-            rate: visitors > 0 ? (conversions / visitors) * 100 : 0,
-            endToEnd:
-              entry > 0 && exit ? (exit.visitors / entry) * 100 : null,
+            visitors: s.visitors,
+            conversions: s.conversions,
+            rate: s.avgRate,
+            endToEnd: s.purchaseRate,
+            salesCount: ticket.salesCount,
             vsl: summarizeVsl(vslAll.filter((v) => v.funnelId === f.id)),
           } satisfies FunnelStats,
         ] as const;
@@ -261,7 +271,7 @@ export function FunnelListPage() {
             ))}
           </div>
 
-          <SourceSelector value={source} onChange={setSource} />
+          <SourceSelector value={source} onChange={setSource} hideClarityOption />
           <PeriodPicker value={period} onChange={setPeriod} align="start" />
 
           <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
@@ -425,22 +435,21 @@ function FunnelCardItem({
       value: (stats?.visitors ?? 0).toLocaleString("pt-BR"),
     },
     {
-      key: "conversions",
-      metric: "conversions",
-      value: (stats?.conversions ?? 0).toLocaleString("pt-BR"),
-      tone: "text-success",
-    },
-    {
       key: "rate",
       metric: "avgRate",
+      // Primeira página até a última, num número só: taxa + quantas pessoas
+      // isso representa. Duas fichas com o mesmo rótulo "Conv. funil" (uma
+      // com a contagem, outra com a taxa) confundiam mais do que ajudavam.
       value: pct(stats?.rate),
       rate: stats?.rate ?? null,
     },
     {
       key: "endToEnd",
       metric: "endToEnd",
-      value: pct(stats?.endToEnd),
-      rate: stats?.endToEnd ?? null,
+      // Não é a taxa de compra — é quantas VENDAS pagas saíram deste funil
+      // no período, a pergunta que esse card existe pra responder.
+      value: (stats?.salesCount ?? 0).toLocaleString("pt-BR"),
+      tone: "text-success",
     },
   ];
 
@@ -477,7 +486,7 @@ function FunnelCardItem({
             {funnel.baseUrl}
           </p>
 
-          <div className="grid grid-cols-4 gap-2 text-center">
+          <div className="grid grid-cols-3 gap-2 text-center">
             {tiles.map((t) => (
               <div
                 key={t.key}

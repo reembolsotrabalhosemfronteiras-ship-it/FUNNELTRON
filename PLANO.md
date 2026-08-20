@@ -562,6 +562,17 @@ uma origem, sem CORS.
 12. **Contas de teste no banco** — `qa@funneltron-local.app`, `perf.ui@funneltron-smoke.app` e vários
    `smoke.*@funneltron-smoke.app` criados durante a verificação. Podem ser
    apagadas no painel do Supabase → Authentication → Users.
+13. **`FunnelListPage` recalculava sozinha** — corrigido: agora usa `computeStats`
+   (mesma função da tela de Métricas) em vez de reinventar entrada/saída. Achado
+   ao auditar consistência de métrica entre telas: ainda não foi feita uma
+   varredura completa de todas as páginas — só as que citam
+   `visitors`/`conversions`/taxa foram checadas (`LivePage` e `FunnelEditorPage`
+   já usavam fonte comum, `pageToPageRate`/dados agregados do backend).
+14. **"Conversão por origem/dispositivo" não foi implementada** — proposta no
+   mockup de design aprovado, mas exige agrupar `tracker_snapshots` por
+   UTM/dispositivo no backend (endpoint novo); ficou fora desta rodada por
+   escopo. Trend diário e valor perdido (R$) na maior queda já estão na tela de
+   Métricas, usando `/metrics/funnels/{id}/trend` e `/metrics/funnels/{id}/ticket`.
 
 ---
 

@@ -10,6 +10,7 @@ import {
   GitCompare,
   Globe,
   Trophy,
+  Clock,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -42,7 +43,14 @@ import { cn } from "@/lib/cn";
 import { conversionBar, conversionColor } from "@/lib/conversion";
 import { MetricLabel } from "@/components/common/MetricLabel";
 import { metricLabel, type MetricKey } from "@/lib/metricGlossary";
-import { computeStats, summarizeVsl, type VslSummary } from "@/lib/funnelStats";
+import {
+  computeStats,
+  summarizeVsl,
+  enrichVslConversion,
+  estimateVslConversionFromTracker,
+  type VslSummary,
+  type TrackerVslEstimate,
+} from "@/lib/funnelStats";
 import { FunnelCanvas } from "@/components/funnel";
 import {
   getFunnel,
@@ -51,9 +59,12 @@ import {
   listEdges,
   getMetrics,
   getClarityMetrics,
-  getVturbMetrics,
   getVslInsights,
+  getFunnelTrend,
+  getFunnelTicket,
+  getTimeOnPage,
 } from "@/api/client";
+import type { StepTimeOnPage } from "@/api/client";
 import type {
   Funnel,
   FunnelStep,
@@ -61,6 +72,8 @@ import type {
   StepMetric,
   PeriodInput,
   VslInsight,
+  FunnelTrendPoint,
+  FunnelTicket,
 } from "@/types";
 
 /** Cores estáveis por posição na comparação. */
@@ -72,10 +85,21 @@ interface FunnelBundle {
   edges: FunnelEdge[];
   metrics: StepMetric[];
   vsl: VslSummary;
+  /** Vendas pagas confirmadas no período — a única fonte válida de "comprou". */
+  salesCount: number;
+  /**
+   * Clarity só entra aqui pra COMPARAR, nunca pra substituir o rastreador
+   * como fonte principal — antes "source=clarity" trocava TODO o cálculo
+   * (visitas, conversão, tudo) pelo dado do Clarity, e "Comparar" nem
+   * buscava as duas fontes de verdade, só herdava esse mesmo comportamento
+   * do Clarity sozinho. `null` fora do modo Comparar, ou quando o token
+   * Clarity não está configurado.
+   */
+  clarityMetrics: StepMetric[] | null;
 }
 
 /**
- * As quatro coisas que só existem por funil.
+ * As coisas que só existem por funil.
  *
  * `vslAll` chega pronto de fora, e não é buscado aqui: a chamada não depende do
  * funil, então fazê-la dentro baixava a MESMA resposta uma vez por funil para
@@ -87,28 +111,54 @@ async function loadBundle(
   source: DataSource,
   period: PeriodInput
 ): Promise<FunnelBundle> {
-  const [funnel, steps, edges, metrics] = await Promise.all([
+  const [funnel, steps, edges, metrics, ticket, clarityMetrics] = await Promise.all([
     getFunnel(id),
     listSteps(id),
     listEdges(id),
-    getMetrics(id, source, period),
+    // O rastreador é SEMPRE a fonte principal, não importa o que "source"
+    // diga — Clarity só aparece como comparação (ver `clarityMetrics`
+    // abaixo), nunca troca o cálculo de baixo dos números principais.
+    getMetrics(id, "tracker", period),
+    getFunnelTicket(id, period),
+    source === "compare"
+      ? getMetrics(id, "clarity", period).catch(() => null)
+      : Promise.resolve(null),
   ]);
+  const vslForFunnel = enrichVslConversion(
+    vslAll.filter((v) => v.funnelId === id),
+    steps,
+    edges,
+    metrics
+  );
   return {
     funnel,
     steps,
     edges,
     metrics,
-    vsl: summarizeVsl(vslAll.filter((v) => v.funnelId === id)),
+    vsl: summarizeVsl(vslForFunnel),
+    salesCount: ticket.salesCount,
+    clarityMetrics: clarityMetrics && clarityMetrics.length > 0 ? clarityMetrics : null,
   };
 }
 
 function totals(b: FunnelBundle) {
-  const s = computeStats(b.funnel, b.steps, b.metrics);
-  return { ...s, endToEnd: s.purchaseRate };
+  const s = computeStats(b.funnel, b.steps, b.metrics, b.salesCount);
+  const clarity = b.clarityMetrics
+    ? computeStats(b.funnel, b.steps, b.clarityMetrics)
+    : null;
+  return { ...s, endToEnd: s.purchaseRate, clarity };
 }
 
 const pct = (n: number | null | undefined) =>
   n == null ? "—" : `${n.toFixed(1)}%`;
+
+/** "1m 23s" — segundos crus não dizem nada de cara acima de um minuto. */
+const fmtDuration = (seconds: number | null | undefined) => {
+  if (seconds == null) return "—";
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+};
 
 /**
  * A passagem do fluxo principal onde o funil mais perde gente. É o número que
@@ -221,7 +271,7 @@ export function MetricsPage() {
         }
         actions={
           <div className="flex flex-wrap items-start justify-end gap-2">
-            <SourceSelector value={source} onChange={setSource} />
+            <SourceSelector value={source} onChange={setSource} hideClarityOption />
             <PeriodPicker value={period} onChange={setPeriod} />
             {routeId && (
               <Link to={`/funnel/${routeId}`}>
@@ -373,8 +423,13 @@ function GlobalView({ bundles }: { bundles: FunnelBundle[] }) {
   const visitors = rows.reduce((s, r) => s + r.visitors, 0);
   const conversions = rows.reduce((s, r) => s + r.conversions, 0);
   // Taxa geral é ponderada pelo volume — média simples daria peso igual a um
-  // funil de 200 visitas e a um de 20.000.
-  const weightedRate = visitors > 0 ? (conversions / visitors) * 100 : 0;
+  // funil de 200 visitas e a um de 20.000. E pondera pela ENTRADA de cada
+  // funil (primeira página), não pelo `visitors` somado ali em cima — esse
+  // soma toda página vista em todas as etapas, uma base bem maior que quem
+  // de fato entrou, e a taxa saía artificialmente pequena (comparando
+  // "chegou no fim" com "todo pageview do funil inteiro").
+  const totalEntry = rows.reduce((s, r) => s + r.entry, 0);
+  const weightedRate = totalEntry > 0 ? (conversions / totalEntry) * 100 : 0;
   const simpleAvg =
     rows.length > 0 ? rows.reduce((s, r) => s + r.avgRate, 0) / rows.length : 0;
 
@@ -386,7 +441,7 @@ function GlobalView({ bundles }: { bundles: FunnelBundle[] }) {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <KpiCard metric="visitors" value={visitors.toLocaleString("pt-BR")} hint={`Somando ${rows.length} funis`} icon={<Users className="text-blue-500" size={24} />} tone="text-blue-500" />
         <KpiCard metric="conversions" value={conversions.toLocaleString("pt-BR")} hint="Total no período" icon={<Target className="text-success" size={24} />} tone="text-success" />
-        <KpiCard metric="weightedRate" value={pct(weightedRate)} hint="Ponderada por volume" icon={<TrendingUp className="text-warning" size={24} />} tone="text-warning" />
+        <KpiCard metric="weightedRate" value={pct(weightedRate)} hint={`Ponderada por entrada · ${totalEntry.toLocaleString("pt-BR")} entraram`} icon={<TrendingUp className="text-warning" size={24} />} tone="text-warning" />
         <KpiCard metric="simpleAvg" value={pct(simpleAvg)} hint="Média simples entre funis" icon={<Activity className="text-primary" size={24} />} tone="text-primary" />
       </div>
 
@@ -909,22 +964,41 @@ function SingleFunnelView({
   source: DataSource;
 }) {
   const { funnel, steps, edges, metrics } = bundle;
-  const [selectedStep, setSelectedStep] = useState<string | null>(null);
   const [clarity, setClarity] = useState<any>(null);
-  const [vturb, setVturb] = useState<any>(null);
+  const [trend, setTrend] = useState<FunnelTrendPoint[]>([]);
+  const [ticket, setTicket] = useState<FunnelTicket | null>(null);
+  const [timeOnPage, setTimeOnPage] = useState<StepTimeOnPage[]>([]);
+
+  // `getVturbMetrics` era mockado incondicionalmente (nunca chamava a API
+  // real, nem em produção — `// TODO: implementar com token VTurb real`) e
+  // devolvia sempre os MESMOS números fixos. O card "Métricas VTurb" agora
+  // usa `bundle.vsl`, que já é dado real (tabela `vsl_insights`, a mesma
+  // fonte do card "Conversão das VSLs" acima dele).
+  const vturb =
+    bundle.vsl.count > 0
+      ? {
+          totalViews: bundle.vsl.totalViews,
+          completions: bundle.vsl.items.reduce((s, v) => s + v.completions, 0),
+          engagementRate: bundle.vsl.avgEngagement ?? 0,
+        }
+      : null;
 
   useEffect(() => {
-    setSelectedStep(null);
     Promise.all([
       getClarityMetrics(funnel.id, period),
-      getVturbMetrics(funnel.id, period),
-    ]).then(([c, v]) => {
+      getFunnelTrend(funnel.id, source, period),
+      getFunnelTicket(funnel.id, period),
+      getTimeOnPage(funnel.id, period),
+    ]).then(([c, tr, tk, top]) => {
       setClarity(c);
-      setVturb(v);
+      setTrend(tr);
+      setTicket(tk);
+      setTimeOnPage(top);
     });
-  }, [funnel.id, period]);
+  }, [funnel.id, period, source]);
 
   const t = totals(bundle);
+  const trackerVsl = estimateVslConversionFromTracker(steps, edges, metrics);
 
   // Conversão página → página: de quem chegou na origem, quantos chegaram no
   // destino. Usar `conversions` da origem daria 100% sempre.
@@ -939,6 +1013,8 @@ function SingleFunnelView({
       return {
         from: sourceStep?.label ?? edge.sourceStepId,
         to: targetStep?.label ?? edge.targetStepId,
+        sourceStepId: edge.sourceStepId,
+        targetStepId: edge.targetStepId,
         rate:
           sourceMetric.visitors > 0
             ? (targetMetric.visitors / sourceMetric.visitors) * 100
@@ -956,34 +1032,72 @@ function SingleFunnelView({
   const mainPath = flow.filter((c) => !c.isBranch);
   const branchPath = flow.filter((c) => c.isBranch);
 
-  const stepData = selectedStep
-    ? steps.find((s) => s.id === selectedStep)
-    : null;
-  const stepMetric = selectedStep
-    ? metrics.find((m) => m.stepId === selectedStep)
-    : null;
-
   return (
     <main className="space-y-6 p-4">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-5">
-        <KpiCard metric="visitors" value={t.visitors.toLocaleString("pt-BR")} hint="Total no período" icon={<Users className="text-blue-500" size={24} />} tone="text-blue-500" />
-        <KpiCard metric="conversions" value={t.conversions.toLocaleString("pt-BR")} hint="Avanços entre páginas" icon={<Target className="text-success" size={24} />} tone="text-success" />
-        <KpiCard metric="avgRate" value={pct(t.avgRate)} hint="Média das passagens" icon={<TrendingUp className="text-warning" size={24} />} tone="text-warning" />
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-6">
         <KpiCard
-          metric="vslConversion"
-          value={pct(bundle.vsl.avgConversion)}
+          metric="visitors"
+          value={t.visitors.toLocaleString("pt-BR")}
           hint={
-            bundle.vsl.count === 0
-              ? "Nenhuma VSL neste funil"
-              : bundle.vsl.count === 1
-              ? "1 VSL"
-              : `Média ponderada de ${bundle.vsl.count} VSLs`
+            t.clarity
+              ? `Rastreador · Clarity: ${t.clarity.visitors.toLocaleString("pt-BR")}`
+              : "Pessoas diferentes que entraram"
           }
-          icon={<span className="text-2xl leading-none">🎬</span>}
-          tone="text-purple-600"
+          icon={<Users className="text-blue-500" size={24} />}
+          tone="text-blue-500"
         />
-        <KpiCard metric="endToEnd" value={pct(t.endToEnd)} hint={t.endToEnd == null ? "Sem página de obrigado" : "Entrada até a compra"} icon={<Activity className="text-primary" size={24} />} tone="text-primary" />
+        <KpiCard metric="conversions" value={t.conversions.toLocaleString("pt-BR")} hint="Chegaram na última página" icon={<Target className="text-success" size={24} />} tone="text-success" />
+        <KpiCard
+          metric="avgRate"
+          value={pct(t.avgRate)}
+          hint={
+            t.clarity
+              ? `Rastreador · Clarity: ${pct(t.clarity.avgRate)}`
+              : `${t.visitors.toLocaleString("pt-BR")} entraram → ${t.conversions.toLocaleString("pt-BR")} chegaram no fim`
+          }
+          icon={<TrendingUp className="text-warning" size={24} />}
+          tone="text-warning"
+        />
+        <VslConversionCard vturb={bundle.vsl} tracker={trackerVsl} />
+        <KpiCard metric="endToEnd" value={pct(t.endToEnd)} hint={t.endToEnd == null ? "Sem entrada no período" : "Vendas pagas ÷ entrada"} icon={<Activity className="text-primary" size={24} />} tone="text-primary" />
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp size={18} className="text-primary" />
+            Conversão de funil dia a dia
+          </CardTitle>
+          <CardDescription>
+            Primeira página até a última, por dia — mostra se uma mudança melhorou ou piorou algo, não só o total acumulado do período
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {trend.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              Sem dados diários suficientes neste período.
+            </p>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={trend}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                <YAxis unit="%" tick={{ fontSize: 11 }} domain={[0, 100]} />
+                <Tooltip formatter={(v: number) => `${v}%`} />
+                <Line
+                  type="monotone"
+                  dataKey="rate"
+                  name="Conversão de funil"
+                  stroke="#2563eb"
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  connectNulls
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -1099,115 +1213,69 @@ function SingleFunnelView({
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle>Etapas do Funil</CardTitle>
-            <CardDescription>Selecione para ver detalhes</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {steps.map((step) => {
-              const metric = metrics.find((m) => m.stepId === step.id);
+      <Card>
+        <CardHeader>
+          <CardTitle>Etapas do Funil</CardTitle>
+          <CardDescription>
+            De etapa em etapa: quem chegou, quem seguiu, quem abandonou — e
+            quanto tempo ficou na página de origem antes de decidir
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {mainPath.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              Sem passagens medidas neste período.
+            </p>
+          ) : (
+            mainPath.map((c, i) => {
+              const top = timeOnPage.find((t) => t.stepId === c.sourceStepId);
               return (
-                <button
-                  key={step.id}
-                  onClick={() => setSelectedStep(step.id)}
-                  className={cn(
-                    "w-full rounded-lg border p-3 text-left transition-all",
-                    selectedStep === step.id
-                      ? "border-primary bg-primary/10 shadow-sm"
-                      : "border-border bg-muted/30 hover:bg-muted/50"
-                  )}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium">{step.label}</p>
-                      <p className="text-xs text-muted-foreground">{step.type}</p>
+                <div key={i} className="space-y-2 rounded-lg bg-muted/30 p-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="truncate font-medium">{c.from}</span>
+                      <span className="shrink-0 text-muted-foreground">→</span>
+                      <span className="truncate font-medium">{c.to}</span>
                     </div>
-                    {metric && (
-                      <Badge
-                        variant={
-                          metric.conversionRate >= 80
-                            ? "success"
-                            : metric.conversionRate >= 50
-                            ? "warning"
-                            : "danger"
-                        }
-                      >
-                        {metric.conversionRate.toFixed(1)}%
-                      </Badge>
-                    )}
+                    <Badge
+                      variant={c.rate >= 80 ? "success" : c.rate >= 50 ? "warning" : "danger"}
+                      className="shrink-0 font-semibold"
+                    >
+                      {c.rate.toFixed(1)}%
+                    </Badge>
                   </div>
-                </button>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={cn("h-full rounded-full transition-all", conversionBar(c.rate))}
+                      style={{ width: `${Math.min(100, c.rate)}%` }}
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+                    <span>{c.sourceVisitors.toLocaleString("pt-BR")} chegaram</span>
+                    <span>·</span>
+                    <span className="font-medium text-foreground">
+                      {c.targetVisitors.toLocaleString("pt-BR")} seguiram
+                    </span>
+                    {c.lost > 0 && (
+                      <>
+                        <span>·</span>
+                        <span className="font-medium text-danger">
+                          {c.lost.toLocaleString("pt-BR")} abandonaram
+                        </span>
+                      </>
+                    )}
+                    <span>·</span>
+                    <span className="inline-flex items-center gap-1 text-purple-600">
+                      <Clock size={12} />
+                      {fmtDuration(top?.avgSeconds)} em média em "{c.from}"
+                    </span>
+                  </div>
+                </div>
               );
-            })}
-          </CardContent>
-        </Card>
-
-        {stepData && stepMetric ? (
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle>{stepData.label}</CardTitle>
-              <CardDescription>
-                Tipo: {stepData.type} · Fonte: {stepMetric.source.toUpperCase()}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="rounded-lg bg-blue-500/10 p-4 text-center">
-                  <Users className="mx-auto mb-2 text-blue-500" size={20} />
-                  <p className="text-2xl font-bold">
-                    {stepMetric.visitors.toLocaleString("pt-BR")}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Visitantes</p>
-                </div>
-                <div className="rounded-lg bg-success/10 p-4 text-center">
-                  <Target className="mx-auto mb-2 text-success" size={20} />
-                  <p className="text-2xl font-bold">
-                    {stepMetric.conversions.toLocaleString("pt-BR")}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Conversões</p>
-                </div>
-                <div className="rounded-lg bg-warning/10 p-4 text-center">
-                  <TrendingUp className="mx-auto mb-2 text-warning" size={20} />
-                  <p
-                    className="text-2xl font-bold"
-                    style={{ color: conversionColor(stepMetric.conversionRate) }}
-                  >
-                    {stepMetric.conversionRate.toFixed(1)}%
-                  </p>
-                  <MetricLabel
-                    metric="pageToPage"
-                    className="text-xs text-muted-foreground"
-                  >
-                    Conversão de funil
-                  </MetricLabel>
-                </div>
-              </div>
-              <div className="border-t border-border pt-4">
-                <p className="mb-2 text-sm font-medium">URL da página</p>
-                <a
-                  href={stepData.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="break-all text-sm text-primary hover:underline"
-                >
-                  {stepData.url}
-                </a>
-              </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="flex items-center justify-center lg:col-span-2">
-            <CardContent className="py-12 text-center">
-              <Activity size={48} className="mx-auto mb-3 text-muted-foreground" />
-              <p className="text-muted-foreground">
-                Selecione uma etapa para ver os detalhes
-              </p>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+            })
+          )}
+        </CardContent>
+      </Card>
 
       <VslSection bundle={bundle} />
 
@@ -1239,7 +1307,7 @@ function SingleFunnelView({
         <SourceCard
           title="Métricas VTurb"
           emoji="🎬"
-          description="Conversão de VSL"
+          description="Views e engajamento do player (a conversão real está no card 'Conversão das VSLs' acima)"
           badge="VTurb"
           data={vturb}
           accent
@@ -1247,9 +1315,37 @@ function SingleFunnelView({
             ["Views totais", vturb?.totalViews?.toLocaleString("pt-BR")],
             ["Completaram VSL", vturb?.completions?.toLocaleString("pt-BR")],
             ["Engajamento", `${vturb?.engagementRate?.toFixed(1) ?? 0}%`],
-            ["Conversão VSL", `${vturb?.conversionRate?.toFixed(1) ?? 0}%`],
           ]}
           empty="Configure o token VTurb em Configurações"
+          // Os números acima são o total do funil inteiro — com mais de uma
+          // VSL não dava pra saber de qual vídeo eram. Aqui embaixo, um por
+          // um.
+          footer={
+            bundle.vsl.count > 0 ? (
+              <div className="space-y-1.5 border-t border-border pt-3">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Por vídeo
+                </p>
+                {bundle.vsl.items.map((v) => {
+                  const step = steps.find((s) => s.id === v.stepId);
+                  return (
+                    <div
+                      key={v.stepId}
+                      className="flex items-center justify-between gap-2 text-xs"
+                    >
+                      <span className="truncate text-muted-foreground">
+                        {step?.label ?? v.name}
+                      </span>
+                      <span className="shrink-0 tabular-nums">
+                        {v.views.toLocaleString("pt-BR")} views ·{" "}
+                        {v.engagementRate.toFixed(0)}% engajamento
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : undefined
+          }
         />
       </div>
     </main>
@@ -1336,23 +1432,40 @@ function VslSection({ bundle }: { bundle: FunnelBundle }) {
             : null;
 
           const viewers = vslMetric?.visitors ?? 0;
-          // "Chegou no botão" = assistiu até o pitch. Sem dado do player,
-          // usamos as conversões da própria etapa como proxy declarado.
-          const reachedButton = vslMetric?.conversions ?? 0;
           const clicked = nextMetric?.visitors ?? 0;
-
-          const toButton = viewers > 0 ? (reachedButton / viewers) * 100 : null;
-          const buttonToNext =
-            reachedButton > 0 ? (clicked / reachedButton) * 100 : null;
           const endToEnd = viewers > 0 ? (clicked / viewers) * 100 : null;
+
+          // "Chegou no botão" só existe de verdade com o VTurb ligado (é o
+          // player que sabe em que instante do vídeo o botão aparece). Sem
+          // isso não tem como estimar — mostrar 0% ali seria inventar um
+          // dado que a gente não tem, e a única coisa real que dá pra medir
+          // é o fim a fim: quem abriu o vídeo até quem seguiu pra próxima
+          // página.
+          const reachedButton = insight
+            ? Math.round((insight.engagementRate / 100) * viewers)
+            : null;
+          const toButton =
+            insight && viewers > 0 ? insight.engagementRate : null;
+          const buttonToNext =
+            reachedButton && reachedButton > 0
+              ? (clicked / reachedButton) * 100
+              : null;
 
           const stages = [
             { label: "Abriram o vídeo", value: viewers, rate: 100 },
-            { label: "Chegaram no botão", value: reachedButton, rate: toButton },
+            ...(insight
+              ? [
+                  {
+                    label: "Chegaram no botão",
+                    value: reachedButton ?? 0,
+                    rate: toButton,
+                  },
+                ]
+              : []),
             {
               label: nextStep ? `Foram para ${nextStep.label}` : "Clicaram",
               value: clicked,
-              rate: endToEnd,
+              rate: insight ? buttonToNext : endToEnd,
             },
           ];
 
@@ -1391,36 +1504,58 @@ function VslSection({ bundle }: { bundle: FunnelBundle }) {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">
-                    vídeo → botão
-                  </span>
-                  <Badge
-                    variant={
-                      (toButton ?? 0) >= 80
-                        ? "success"
-                        : (toButton ?? 0) >= 50
-                        ? "warning"
-                        : "danger"
-                    }
-                    className="font-semibold"
-                  >
-                    {pct(toButton)}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">
-                    botão → próxima
-                  </span>
-                  <Badge
-                    variant={
-                      (buttonToNext ?? 0) >= 80
-                        ? "success"
-                        : (buttonToNext ?? 0) >= 50
-                        ? "warning"
-                        : "danger"
-                    }
-                    className="font-semibold"
-                  >
-                    {pct(buttonToNext)}
-                  </Badge>
+                  {insight ? (
+                    <>
+                      <span className="text-xs text-muted-foreground">
+                        vídeo → botão
+                      </span>
+                      <Badge
+                        variant={
+                          (toButton ?? 0) >= 80
+                            ? "success"
+                            : (toButton ?? 0) >= 50
+                            ? "warning"
+                            : "danger"
+                        }
+                        className="font-semibold"
+                      >
+                        {pct(toButton)}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        botão → próxima
+                      </span>
+                      <Badge
+                        variant={
+                          (buttonToNext ?? 0) >= 80
+                            ? "success"
+                            : (buttonToNext ?? 0) >= 50
+                            ? "warning"
+                            : "danger"
+                        }
+                        className="font-semibold"
+                      >
+                        {pct(buttonToNext)}
+                      </Badge>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-xs text-muted-foreground">
+                        vídeo → próxima página
+                      </span>
+                      <Badge
+                        variant={
+                          (endToEnd ?? 0) >= 80
+                            ? "success"
+                            : (endToEnd ?? 0) >= 50
+                            ? "warning"
+                            : "danger"
+                        }
+                        className="font-semibold"
+                      >
+                        {pct(endToEnd)}
+                      </Badge>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -1452,9 +1587,9 @@ function VslSection({ bundle }: { bundle: FunnelBundle }) {
               </div>
 
               <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-                "Chegaram no botão" usa as conversões registradas na etapa. Com
-                o VTurb ligado, esse número passa a vir do player — quantos
-                assistiram até o instante em que o botão aparece.
+                {insight
+                  ? "\"Chegaram no botão\" vem do player VTurb — quantos assistiram até o instante em que o botão aparece."
+                  : "Sem o VTurb ligado não dá pra saber quantos chegaram no botão do vídeo — só quantos abriram a página e quantos seguiram para a próxima. Ligue o VTurb em Configurações para esse detalhe."}
               </p>
             </div>
           );
@@ -1489,6 +1624,81 @@ function KpiCard({
             <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
           </div>
           {icon}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Convite de "Conversão de funil da VSL" com DUAS fontes que nunca deviam
+ * ser somadas nem exibidas separadas em cards diferentes brigando por
+ * espaço: o VTurb (real, mas só existe se o player_id da etapa estiver
+ * configurado) e a estimativa do rastreador (sempre existe, mas é só
+ * "abriu a página do vídeo até a próxima página", não engajamento real).
+ * Um botão troca a visualização em vez de duplicar o card.
+ */
+function VslConversionCard({
+  vturb,
+  tracker,
+}: {
+  vturb: VslSummary;
+  tracker: TrackerVslEstimate;
+}) {
+  const [view, setView] = useState<"vturb" | "tracker">(
+    vturb.count > 0 ? "vturb" : "tracker"
+  );
+
+  const value = view === "vturb" ? pct(vturb.avgConversion) : pct(tracker.avgConversion);
+  const hint =
+    view === "vturb"
+      ? vturb.count === 0
+        ? "Sem dado do VTurb"
+        : vturb.count === 1
+        ? "1 VSL · VTurb"
+        : `Média ponderada de ${vturb.count} VSLs · VTurb`
+      : tracker.count === 0
+      ? "Nenhuma VSL com tráfego"
+      : `Estimado do rastreador · ${tracker.count} VSL${tracker.count > 1 ? "s" : ""}`;
+
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <MetricLabel metric="vslConversion" className="text-sm text-muted-foreground">
+              Conversão de funil da VSL
+            </MetricLabel>
+            <p className={cn("text-2xl font-bold", view === "vturb" ? "text-purple-600" : "text-purple-400")}>
+              {value}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
+          </div>
+          <span className="text-2xl leading-none">
+            {view === "vturb" ? "🎬" : "📡"}
+          </span>
+        </div>
+        <div className="mt-3 flex items-center gap-1 rounded-md bg-muted/50 p-0.5 text-xs">
+          <button
+            type="button"
+            onClick={() => setView("vturb")}
+            className={cn(
+              "flex-1 rounded px-2 py-1 font-medium transition-colors",
+              view === "vturb" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            VTurb
+          </button>
+          <button
+            type="button"
+            onClick={() => setView("tracker")}
+            className={cn(
+              "flex-1 rounded px-2 py-1 font-medium transition-colors",
+              view === "tracker" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Rastreador
+          </button>
         </div>
       </CardContent>
     </Card>

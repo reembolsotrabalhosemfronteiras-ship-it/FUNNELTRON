@@ -130,6 +130,20 @@ export interface OverviewMetrics {
   estRevenue: number;
 }
 
+/** Um ponto da conversão de funil dia a dia — primeira etapa até a última. */
+export interface FunnelTrendPoint {
+  date: string;
+  visitors: number;
+  conversions: number;
+  rate: number | null;
+}
+
+/** Ticket médio real do funil, das vendas registradas — nunca inventado. */
+export interface FunnelTicket {
+  avgTicket: number | null;
+  salesCount: number;
+}
+
 export type Period = "7d" | "30d" | "90d" | "all";
 
 /** Intervalo escolhido a dedo. Datas em ISO curto: "2026-08-16". */

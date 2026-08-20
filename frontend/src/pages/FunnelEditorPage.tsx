@@ -30,6 +30,7 @@ import {
   Save,
   Flag,
   Undo2,
+  LayoutGrid,
 } from "lucide-react";
 import {
   AtelierNode,
@@ -38,6 +39,7 @@ import {
   type AtelierNodeData,
 } from "@/components/funnel/AtelierNode";
 import { AtelierEdge } from "@/components/funnel/AtelierEdge";
+import { spreadSteps } from "@/lib/canvasLayout";
 import { cn } from "@/lib/cn";
 import { conversionColor, pageToPageRate } from "@/lib/conversion";
 import {
@@ -571,6 +573,30 @@ function Atelier({ funnelId }: { funnelId: string }) {
     [patchStep, steps]
   );
 
+  // "Organizar automaticamente": mesma regra de espaçamento que a
+  // visualização (página do funil, métricas, ao vivo) já usa pra nunca
+  // deixar cards colados — só que aqui persiste no desenho salvo, porque o
+  // ateliê é o que o dono edita, e não faz sentido só arrumar pra leitura e
+  // deixar bagunçado no editor. Preserva a forma que o usuário desenhou
+  // (coluna continua coluna, ramificação continua do lado), só afasta o que
+  // está encostado.
+  const autoLayout = useCallback(() => {
+    undoStack.current.push(snapshotPositions(steps));
+    if (undoStack.current.length > 50) undoStack.current.shift();
+    redoStack.current = [];
+    setHistoryDepth(undoStack.current.length);
+
+    const positions = spreadSteps(steps);
+    setSteps((prev) =>
+      prev.map((s) =>
+        positions[s.id]
+          ? { ...s, positionX: positions[s.id].x, positionY: positions[s.id].y }
+          : s
+      )
+    );
+    setDirty(true);
+  }, [steps, snapshotPositions]);
+
   const applySnapshot = useCallback((snap: PositionSnapshot) => {
     setSteps((prev) =>
       prev.map((s) =>
@@ -709,6 +735,7 @@ function Atelier({ funnelId }: { funnelId: string }) {
         onBack={leaveAtelier}
         onSave={save}
         onStatusChange={setStatus}
+        onAutoLayout={autoLayout}
       />
 
       <Palette onAdd={(type) => {
@@ -766,6 +793,7 @@ function TopBar({
   onBack,
   onSave,
   onStatusChange,
+  onAutoLayout,
 }: {
   funnel: Funnel | null;
   dirty: boolean;
@@ -778,6 +806,7 @@ function TopBar({
   onBack: () => void;
   onSave: () => void;
   onStatusChange: (status: FunnelStatus) => void;
+  onAutoLayout: () => void;
 }) {
   const savedLabel = savedAt
     ? `salvo ${new Date(savedAt).toLocaleTimeString("pt-BR", {
@@ -809,6 +838,14 @@ function TopBar({
           )}
         >
           <Undo2 size={16} />
+        </button>
+
+        <button
+          onClick={onAutoLayout}
+          title="Organizar automaticamente: afasta cards colados, sem mudar a forma que você desenhou"
+          className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
+        >
+          <LayoutGrid size={16} />
         </button>
 
         <div className="h-5 w-px bg-slate-700" />

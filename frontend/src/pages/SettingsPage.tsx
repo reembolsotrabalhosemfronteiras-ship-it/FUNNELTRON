@@ -15,6 +15,8 @@ import { SlugRulesCard } from "@/components/settings/SlugRulesCard";
 
 export function SettingsPage() {
   const [saving, setSaving] = useState(false);
+  const [savingField, setSavingField] = useState<"vturb" | "webhook" | null>(null);
+  const [savedField, setSavedField] = useState<"vturb" | "webhook" | null>(null);
   const [testing, setTesting] = useState<"vturb" | "clarity" | null>(null);
   const [testResult, setTestResult] = useState<{ provider: string; ok: boolean; message: string } | null>(null);
   const [showVturb, setShowVturb] = useState(false);
@@ -46,6 +48,20 @@ export function SettingsPage() {
     setSaving(true);
     await saveCredentials(form);
     setSaving(false);
+  };
+
+  // Salvar por card: cada integração é sua própria linha no banco
+  // (`saveCredentials` já só manda os campos preenchidos), então dá pra
+  // salvar o VTurb sem esperar o usuário mexer no Clarity ou no webhook —
+  // antes só existia UM botão "Salvar Configurações" lá embaixo, e editar só
+  // o token do VTurb exigia rolar a página inteira pra confirmar.
+  const handleSaveField = async (field: "vturb" | "webhook") => {
+    setSavingField(field);
+    setSavedField(null);
+    await saveCredentials(form);
+    setSavingField(null);
+    setSavedField(field);
+    setTimeout(() => setSavedField((f) => (f === field ? null : f)), 2000);
   };
 
   const handleTest = async (provider: "vturb" | "clarity") => {
@@ -128,6 +144,20 @@ export function SettingsPage() {
               </div>
 
               <div className="flex items-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => handleSaveField("vturb")}
+                  disabled={savingField === "vturb"}
+                >
+                  {savingField === "vturb" ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : savedField === "vturb" ? (
+                    <CheckCircle2 size={14} />
+                  ) : (
+                    <Save size={14} />
+                  )}
+                  {savedField === "vturb" ? "Salvo" : "Salvar"}
+                </Button>
                 <Button
                   variant="outline"
                   onClick={() => handleTest("vturb")}
@@ -345,6 +375,22 @@ export function SettingsPage() {
                 Ele vem dentro de cada chamada, não em um header — deixe em
                 branco para aceitar qualquer chamada.
               </p>
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => handleSaveField("webhook")}
+                  disabled={savingField === "webhook"}
+                >
+                  {savingField === "webhook" ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : savedField === "webhook" ? (
+                    <CheckCircle2 size={14} />
+                  ) : (
+                    <Save size={14} />
+                  )}
+                  {savedField === "webhook" ? "Salvo" : "Salvar"}
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

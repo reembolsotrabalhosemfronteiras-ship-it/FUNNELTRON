@@ -8,6 +8,8 @@ import type {
   OverviewMetrics,
   PeriodInput,
   FunnelStatus,
+  FunnelTrendPoint,
+  FunnelTicket,
 } from "@/types";
 import { isDateRange } from "@/types";
 import type { SlugTypeRule } from "@/lib/urlImport";
@@ -526,6 +528,87 @@ export async function getVslInsights(
       views: Math.round(periodScale(period, v.views)),
     }))
   );
+}
+
+/**
+ * Conversão de funil dia a dia (primeira etapa até a última) — para ver se
+ * uma mudança na página melhorou ou piorou algo, em vez de só o total
+ * acumulado do período.
+ */
+export async function getFunnelTrend(
+  funnelId: string,
+  source: DataSource,
+  period: PeriodInput
+): Promise<FunnelTrendPoint[]> {
+  if (!USE_MOCK) {
+    const parts = [periodQuery(period)];
+    if (source === "tracker") parts.push("source=tracker");
+    return apiGet(`/api/metrics/funnels/${funnelId}/trend?${parts.join("&")}`).then(
+      okJson
+    );
+  }
+  // Série determinística a partir do id do funil, para o gráfico não pular
+  // toda vez que a tela recarrega.
+  const days = periodDays(period);
+  let seed = 0;
+  for (const c of funnelId) seed += c.charCodeAt(0);
+  const base = 55 + (seed % 25);
+  const points: FunnelTrendPoint[] = [];
+  const today = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const wobble = Math.sin((seed + i) * 0.7) * 8;
+    const rate = Math.max(20, Math.min(95, base + wobble));
+    const visitors = Math.round(80 + ((seed + i * 13) % 140));
+    points.push({
+      date: d.toISOString().slice(0, 10),
+      visitors,
+      conversions: Math.round((visitors * rate) / 100),
+      rate: Math.round(rate * 10) / 10,
+    });
+  }
+  return delay(points, 400);
+}
+
+/** Ticket médio real do funil — `null` sem venda registrada, nunca inventado. */
+export async function getFunnelTicket(
+  funnelId: string,
+  period: PeriodInput
+): Promise<FunnelTicket> {
+  if (!USE_MOCK)
+    return apiGet(
+      `/api/metrics/funnels/${funnelId}/ticket?${periodQuery(period)}`
+    ).then(okJson);
+  let seed = 0;
+  for (const c of funnelId) seed += c.charCodeAt(0);
+  return delay({
+    avgTicket: Math.round((97 + (seed % 300)) * 100) / 100,
+    salesCount: Math.round(periodScale(period, 12 + (seed % 20))),
+  });
+}
+
+export interface StepTimeOnPage {
+  stepId: string;
+  avgSeconds: number;
+  samples: number;
+}
+
+/**
+ * Tempo médio na página, calculado a partir de QUANDO cada sessão trocou de
+ * URL (não existe um dado direto de "ficou N segundos" — ver o comentário no
+ * endpoint). Só o rastreador próprio sabe disso; Clarity/VTurb não entram
+ * aqui.
+ */
+export async function getTimeOnPage(
+  funnelId: string,
+  period: PeriodInput
+): Promise<StepTimeOnPage[]> {
+  if (!USE_MOCK)
+    return apiGet(
+      `/api/metrics/funnels/${funnelId}/time-on-page?${periodQuery(period)}`
+    ).then(okJson);
+  return delay([]);
 }
 
 // --- Screenshots ---
@@ -1050,19 +1133,6 @@ export async function captureTrackerSnapshot(
   ).then(okJson);
 }
 
-// --- VTurb API (mock por enquanto, substituir quando tiver token real) ---
-export async function getVturbMetrics(
-  funnelId: string,
-  period: PeriodInput
-): Promise<any> {
-  // TODO: implementar com token VTurb real quando disponível
-  return delay({
-    totalViews: Math.round(periodScale(period, 8500)),
-    completions: Math.round(periodScale(period, 5200)),
-    engagementRate: 62.4,
-    conversionRate: 38.9,
-  });
-}
 
 // --- Aba "Ao Vivo" ---
 

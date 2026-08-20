@@ -24,32 +24,33 @@ export interface MetricDef {
 export const METRIC_GLOSSARY = {
   visitors: {
     label: "Visitas",
-    what: "Quantas pessoas passaram pelas páginas deste funil no período.",
-    how: "Soma dos visitantes de todas as etapas.",
+    what: "Quantas pessoas DIFERENTES entraram neste funil no período.",
+    how: "Visitantes da primeira página (entrada), por sessão.",
     caveat:
-      "Quem passa por 3 páginas conta 3 vezes — é volume de acesso, não pessoas únicas.",
+      "É gente, não pageview — quem vê 5 páginas do mesmo funil conta uma vez só.",
   },
   conversions: {
     label: "Conversões de funil",
     short: "Conv. funil",
-    what: "Quantas vezes alguém avançou de uma página para a próxima.",
-    how: "Soma das conversões de todas as etapas.",
-    caveat: "É avanço dentro do funil, não venda.",
+    what: "Quantas pessoas chegaram na última página do funil desenhado.",
+    how: "Visitantes da última etapa, na ordem do funil.",
+    caveat: "É chegar na última página, não venda.",
   },
   avgRate: {
-    label: "Conversão de funil (média)",
+    label: "Conversão de funil",
     short: "Conv. funil",
-    what: "Em média, que fatia de quem chega numa página segue para a próxima.",
-    how: "Conversões ÷ visitas, somando todas as etapas do funil.",
+    what: "De quem entrou na primeira página, quantos chegaram na última.",
+    how: "Visitantes da última página ÷ visitantes da primeira página.",
     caveat:
-      "Não é a conversão do funil inteiro nem venda — é a média das passagens entre páginas.",
+      "Ponta a ponta do funil desenhado — não é venda (isso é conversão de compra) nem a passagem de uma página específica para a seguinte (isso é conversão de página, no diagrama).",
   },
   endToEnd: {
     label: "Conversão de compra",
     short: "Conv. compra",
-    what: "De quem entrou no funil, quantos chegaram a comprar.",
-    how: "Visitantes da página de obrigado ÷ visitantes da primeira página.",
-    caveat: "Precisa de uma etapa do tipo Obrigado para ser calculada.",
+    what: "De quem entrou no funil, quantos REALMENTE compraram.",
+    how: "Vendas pagas confirmadas por webhook ÷ visitantes da primeira página.",
+    caveat:
+      "Exige venda paga no webhook — visitar a página de obrigado sem pagar não conta como compra.",
   },
   weightedRate: {
     label: "Conversão de funil geral",
@@ -68,6 +69,15 @@ export const METRIC_GLOSSARY = {
   steps: {
     label: "Etapas",
     what: "Quantas páginas compõem este funil.",
+  },
+  lostValue: {
+    label: "Valor perdido na maior queda",
+    short: "Valor perdido",
+    what: "Quanto dinheiro as pessoas que abandonaram na pior passagem do funil representam, pelo ticket médio real das vendas do período.",
+    how: "Pessoas perdidas na pior passagem × ticket médio das vendas do período.",
+    caveat:
+      "Fica em branco sem venda registrada no período — sem ticket real, o valor seria inventado.",
+    example: "6.280 pessoas perdidas × R$ 97 de ticket médio = R$ 609.160.",
   },
   pageToPage: {
     label: "Conversão de funil (página a página)",

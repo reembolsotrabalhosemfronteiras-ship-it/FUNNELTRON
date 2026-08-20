@@ -11,6 +11,20 @@ const WINDOW_OPTIONS = [
   { label: "24 horas", value: 1440 },
 ] as const;
 
+/**
+ * "últimos N min" vira ilegível a partir de 60 (ninguém lê "últimos 1440
+ * min" como um dia) — usa o mesmo rótulo do seletor ("1 hora", "24 horas")
+ * em vez de re-formatar o número cru em cada tela que mostra a janela.
+ */
+export function windowLabel(minutes: number): string {
+  const found = WINDOW_OPTIONS.find((o) => o.value === minutes);
+  if (found) return found.label;
+  if (minutes < 60) return `${minutes} min`;
+  const hours = minutes / 60;
+  const rounded = Math.round(hours * 10) / 10;
+  return `${rounded}h`;
+}
+
 export interface TimeWindowPickerProps {
   value: number;
   onChange: (value: number) => void;

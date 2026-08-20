@@ -9,7 +9,7 @@ import {
   RefreshCw,
   ChevronRight,
 } from "lucide-react";
-import { groupVslByFunnel } from "@/lib/funnelStats";
+import { groupVslByFunnel, enrichVslConversion } from "@/lib/funnelStats";
 import {
   ResponsiveContainer,
   BarChart,
@@ -35,6 +35,9 @@ import {
   getOverview,
   getFunnelRanking,
   getVslInsights,
+  listSteps,
+  listEdges,
+  getMetrics,
 } from "@/api/client";
 import type {
   OverviewMetrics,
@@ -59,10 +62,34 @@ export function DashboardPage() {
   useEffect(() => {
     setLoading(true);
     Promise.all([getOverview(period), getFunnelRanking(period), getVslInsights(period)])
-      .then(([o, r, v]) => {
+      .then(async ([o, r, v]) => {
         setOverview(o);
         setRanking(r);
-        setVsl(v);
+
+        // O backend manda `conversionRate` como cópia de `engagementRate`
+        // ("Simplificado" — ele não conhece a próxima etapa do funil). Sem
+        // isso o Dashboard mostrava "conversão" que era, na prática, o
+        // mesmo número do engajamento logo ao lado — dois rótulos, um dado
+        // só. Busca steps/edges/métricas de cada funil com VSL e substitui
+        // pela conversão real (visitantes da próxima página ÷ views).
+        const funnelIds = [...new Set(v.map((i) => i.funnelId))];
+        const perFunnel = await Promise.all(
+          funnelIds.map(async (id) => {
+            const [steps, edges, metrics] = await Promise.all([
+              listSteps(id),
+              listEdges(id),
+              getMetrics(id, "tracker", period),
+            ]);
+            return [id, { steps, edges, metrics }] as const;
+          })
+        );
+        const byFunnel = Object.fromEntries(perFunnel);
+        const enriched = v.map((item) => {
+          const f = byFunnel[item.funnelId];
+          if (!f) return item;
+          return enrichVslConversion([item], f.steps, f.edges, f.metrics)[0];
+        });
+        setVsl(enriched);
       })
       .finally(() => setLoading(false));
   }, [period]);

@@ -37,7 +37,7 @@ import type {
 } from "@/api/client";
 import { LiveFunnelCanvas } from "@/components/funnel/LiveFunnelCanvas";
 import { LiveTabs, type LiveTab } from "@/components/live/LiveTabs";
-import { TimeWindowPicker } from "@/components/live/TimeWindowPicker";
+import { TimeWindowPicker, windowLabel } from "@/components/live/TimeWindowPicker";
 import { ClarityLiveView } from "@/components/live/ClarityLiveView";
 import { SourceSelector, useDataSource } from "@/components/common/SourceSelector";
 import { ConversionBar } from "@/components/live/ConversionBar";
@@ -101,9 +101,15 @@ function useLiveFunnel(
 
   useEffect(() => {
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     setStructure(null);
     setStructureLoading(true);
-    (async () => {
+
+    // Uma falha de rede passageira (comum em dev) não pode prender a tela em
+    // "Sem dados." pra sempre — esse efeito só roda de novo quando o
+    // funnelId muda, então sem retentativa o único jeito de sair daqui era
+    // recarregar a página inteira à mão.
+    const load = async (attempt: number) => {
       try {
         const [f, s, e] = await Promise.all([
           getFunnel(funnelId),
@@ -114,14 +120,23 @@ function useLiveFunnel(
         const stepLabels: Record<string, string> = {};
         s.forEach((st) => (stepLabels[st.id] = st.label));
         setStructure({ funnel: f, steps: s, edges: e, stepLabels });
+        setStructureLoading(false);
       } catch (err) {
         console.error("Erro ao carregar o funil:", err);
-      } finally {
-        if (!cancelled) setStructureLoading(false);
+        if (cancelled) return;
+        if (attempt < 3) {
+          retryTimer = setTimeout(() => load(attempt + 1), 1500 * (attempt + 1));
+        } else {
+          setStructureLoading(false);
+        }
       }
-    })();
+    };
+
+    load(0);
+
     return () => {
       cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
     };
   }, [funnelId]);
 
@@ -219,6 +234,35 @@ function FunnelLiveView({
     [data]
   );
 
+  // Mesmo resumo de 5 cards da vista Geral, só que de UM funil - pra não
+  // precisar trocar de aba pra ver "quanto esse funil especifico fez" sem
+  // abrir o card de conversão lá embaixo.
+  const summary = useMemo(() => {
+    if (!data?.conversion) {
+      return { visitors: 0, funnelArrivals: 0, funnelRate: 0, conversions: 0, rate: 0, revenue: 0, paid: 0 };
+    }
+    const conv = data.conversion;
+    const lastStep = conv.stepRates[conv.stepRates.length - 1];
+    const funnelArrivals = lastStep?.visitors ?? 0;
+    let revenue = 0;
+    let paid = 0;
+    data.sales.forEach((s) => {
+      if (s.status === "paid") {
+        revenue += s.amount;
+        paid += 1;
+      }
+    });
+    return {
+      visitors: conv.visitors,
+      funnelArrivals,
+      funnelRate: conv.visitors > 0 ? (funnelArrivals / conv.visitors) * 100 : 0,
+      conversions: conv.conversions,
+      rate: conv.rate,
+      revenue,
+      paid,
+    };
+  }, [data]);
+
   const trackerMissing = data
     ? data.liveFlow.every((l) => l.online === 0)
     : false;
@@ -228,6 +272,15 @@ function FunnelLiveView({
 
   return (
     <div className="space-y-6">
+      {/* Resumo (mesmos 5 cards da vista Geral, só que deste funil) */}
+      <section className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
+        <SummaryCard label="Pessoas agora" value={totalOnline.toLocaleString("pt-BR")} icon={<Users size={16} className="text-red-500" />} />
+        <SummaryCard label="Entraram (janela)" value={summary.visitors.toLocaleString("pt-BR")} icon={<Users size={16} className="text-red-400" />} />
+        <SummaryCard label="Conv. funil" value={summary.funnelArrivals.toLocaleString("pt-BR")} sub={`${summary.funnelRate.toFixed(1)}% chegaram no fim`} icon={<LayoutGrid size={16} className="text-warning" />} />
+        <SummaryCard label="Conv. compra" value={summary.conversions.toLocaleString("pt-BR")} sub={`${summary.rate.toFixed(1)}%`} icon={<LayoutGrid size={16} className="text-emerald-500" />} />
+        <SummaryCard label="Receita (pagas)" value={`R$ ${summary.revenue.toLocaleString("pt-BR")}`} sub={`${summary.paid} pagas`} icon={<Zap size={16} className="text-purple-500" />} />
+      </section>
+
       {/* Canvas fixo e centralizado */}
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2">
@@ -303,7 +356,7 @@ function FunnelLiveView({
               </h3>
             </div>
             <span className="text-[10px] text-muted-foreground">
-              últimos {salesWindow} min · mais recente no topo
+              últimos {windowLabel(salesWindow)} · mais recente no topo
             </span>
           </div>
           <PageEntriesFeed
@@ -366,7 +419,7 @@ function FunnelLiveView({
                   </div>
                   <p className="text-[10px] text-muted-foreground mt-2 flex items-center gap-1">
                     <Clock size={10} />
-                    Entraram nos últimos {vsl.windowMinutes} min
+                    Entraram nos últimos {windowLabel(vsl.windowMinutes)}
                   </p>
                 </CardContent>
               </Card>
@@ -494,10 +547,17 @@ function GeneralLiveView({
     let online = 0;
     let revenue = 0;
     let paid = 0;
+    // Chegaram no fim = soma de quem chegou na ULTIMA etapa de cada funil
+    // (ao vivo, janela selecionada) - a mesma conta que cada card individual
+    // de funil ja mostra, so que somada. E uma conversao DIFERENTE de
+    // "Conv. compra" ali do lado, que e venda paga, nao chegar no fim.
+    let funnelArrivals = 0;
     Object.values(byFunnel).forEach((v) => {
       visitors += v.conv.visitors;
       conversions += v.conv.conversions;
       online += v.totalOnline;
+      const lastStep = v.conv.stepRates[v.conv.stepRates.length - 1];
+      funnelArrivals += lastStep?.visitors ?? 0;
       v.sales.forEach((s) => {
         if (s.status === "paid") {
           revenue += s.amount;
@@ -511,6 +571,8 @@ function GeneralLiveView({
       online,
       revenue,
       paid,
+      funnelArrivals,
+      funnelRate: visitors > 0 ? (funnelArrivals / visitors) * 100 : 0,
       rate: visitors > 0 ? (conversions / visitors) * 100 : 0,
     };
   }, [byFunnel]);
@@ -526,24 +588,29 @@ function GeneralLiveView({
   return (
     <div className="space-y-6">
       {/* Resumo agregado */}
-      <section className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <section className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
         <SummaryCard label="Pessoas agora" value={totals.online.toLocaleString("pt-BR")} icon={<Users size={16} className="text-red-500" />} />
         <SummaryCard label="Entraram (janela)" value={totals.visitors.toLocaleString("pt-BR")} icon={<Users size={16} className="text-red-400" />} />
-        <SummaryCard label="Conversões" value={totals.conversions.toLocaleString("pt-BR")} sub={`${totals.rate.toFixed(1)}%`} icon={<LayoutGrid size={16} className="text-emerald-500" />} />
+        <SummaryCard label="Conv. funil" value={totals.funnelArrivals.toLocaleString("pt-BR")} sub={`${totals.funnelRate.toFixed(1)}% chegaram no fim`} icon={<LayoutGrid size={16} className="text-warning" />} />
+        <SummaryCard label="Conv. compra" value={totals.conversions.toLocaleString("pt-BR")} sub={`${totals.rate.toFixed(1)}%`} icon={<LayoutGrid size={16} className="text-emerald-500" />} />
         <SummaryCard label="Receita (pagas)" value={`R$ ${totals.revenue.toLocaleString("pt-BR")}`} sub={`${totals.paid} pagas`} icon={<Zap size={16} className="text-purple-500" />} />
       </section>
 
       {/* Conversão por funil */}
       <section className="space-y-3">
         <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
-          Conversão por funil ({convWindow} min)
+          Conversão por funil ({windowLabel(convWindow)})
         </h3>
         <div className="grid gap-4 lg:grid-cols-2">
           {funnels.map((f) => {
             const v = byFunnel[f.id];
             if (!v) return null;
             return (
-              <ConversionBar key={f.id} data={{ ...v.conv, windowMinutes: convWindow }} />
+              <ConversionBar
+                key={f.id}
+                data={{ ...v.conv, windowMinutes: convWindow }}
+                funnelName={f.name}
+              />
             );
           })}
         </div>
