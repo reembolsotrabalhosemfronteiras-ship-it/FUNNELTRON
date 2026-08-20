@@ -31,6 +31,7 @@ import {
   Flag,
   Undo2,
   LayoutGrid,
+  Wand2,
 } from "lucide-react";
 import {
   AtelierNode,
@@ -54,6 +55,7 @@ import {
   listEdges,
   getMetrics,
   captureScreenshot,
+  findVturbPlayerId,
   saveFunnelLayout,
 } from "@/api/client";
 import type {
@@ -159,6 +161,8 @@ function Atelier({ funnelId }: { funnelId: string }) {
   const [edgeMenu, setEdgeMenu] = useState<string | null>(null);
   const [capturingIds, setCapturingIds] = useState<string[]>([]);
   const [captureError, setCaptureError] = useState<string | null>(null);
+  // Progresso do "capturar tudo": null = parado, {done, total} enquanto roda.
+  const [captureAllProgress, setCaptureAllProgress] = useState<{ done: number; total: number } | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -359,6 +363,31 @@ function Atelier({ funnelId }: { funnelId: string }) {
     },
     [patchStep]
   );
+
+  // "Capturar tudo": mesma captura de cada etapa, uma atrás da outra em lotes
+  // de 3 (o backend só processa 3 por vez de qualquer forma - client.ts
+  // captureScreenshot -> POST /screenshots -> screenshot_service com
+  // semáforo de 3). Sequencial em vez de todas de uma vez evita abrir 20
+  // Chromiums ao mesmo tempo no servidor e disparar timeout em cascata.
+  const grabAllScreenshots = useCallback(async () => {
+    const targets = steps.filter((s) => s.url && s.url.trim());
+    if (targets.length === 0) return;
+
+    setCaptureError(null);
+    setCaptureAllProgress({ done: 0, total: targets.length });
+
+    const BATCH = 3;
+    for (let i = 0; i < targets.length; i += BATCH) {
+      const batch = targets.slice(i, i + BATCH);
+      await Promise.all(batch.map((s) => grabScreenshot(s.id, s.url)));
+      setCaptureAllProgress({
+        done: Math.min(i + BATCH, targets.length),
+        total: targets.length,
+      });
+    }
+
+    setCaptureAllProgress(null);
+  }, [steps, grabScreenshot]);
 
   // --- Ações sobre setas ---------------------------------------------------
 
@@ -736,6 +765,8 @@ function Atelier({ funnelId }: { funnelId: string }) {
         onSave={save}
         onStatusChange={setStatus}
         onAutoLayout={autoLayout}
+        onCaptureAll={grabAllScreenshots}
+        captureAllProgress={captureAllProgress}
       />
 
       <Palette onAdd={(type) => {
@@ -794,6 +825,8 @@ function TopBar({
   onSave,
   onStatusChange,
   onAutoLayout,
+  onCaptureAll,
+  captureAllProgress,
 }: {
   funnel: Funnel | null;
   dirty: boolean;
@@ -807,6 +840,8 @@ function TopBar({
   onSave: () => void;
   onStatusChange: (status: FunnelStatus) => void;
   onAutoLayout: () => void;
+  onCaptureAll: () => void;
+  captureAllProgress: { done: number; total: number } | null;
 }) {
   const savedLabel = savedAt
     ? `salvo ${new Date(savedAt).toLocaleTimeString("pt-BR", {
@@ -846,6 +881,29 @@ function TopBar({
           className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
         >
           <LayoutGrid size={16} />
+        </button>
+
+        <button
+          onClick={onCaptureAll}
+          disabled={captureAllProgress !== null}
+          title="Capturar print de todas as páginas com URL preenchida"
+          className={cn(
+            "flex items-center gap-1.5 rounded-lg p-1.5 text-[11px] font-medium transition-colors",
+            captureAllProgress !== null
+              ? "cursor-not-allowed text-slate-600"
+              : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
+          )}
+        >
+          {captureAllProgress !== null ? (
+            <>
+              <Loader2 size={16} className="animate-spin" />
+              <span>
+                Capturando {captureAllProgress.done}/{captureAllProgress.total}…
+              </span>
+            </>
+          ) : (
+            <Camera size={16} />
+          )}
         </button>
 
         <div className="h-5 w-px bg-slate-700" />
@@ -1090,6 +1148,26 @@ function Inspector({
   onDelete: () => void;
   onClose: () => void;
 }) {
+  const [vturbLookup, setVturbLookup] = useState<{ loading: boolean; error: string | null }>({
+    loading: false,
+    error: null,
+  });
+
+  const grabVturbId = useCallback(async () => {
+    if (!step.url.trim()) return;
+    setVturbLookup({ loading: true, error: null });
+    const result = await findVturbPlayerId(step.url.trim());
+    if (result.ok && result.playerId) {
+      onPatch({ playerId: result.playerId });
+      setVturbLookup({ loading: false, error: null });
+    } else {
+      setVturbLookup({
+        loading: false,
+        error: result.reason ?? "Não achei o player VTurb nessa página.",
+      });
+    }
+  }, [step.url, onPatch]);
+
   // Colar print direto (Ctrl+V) enquanto o painel estiver aberto.
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -1248,18 +1326,38 @@ function Inspector({
             <label className="mb-1 block text-[11px] text-slate-400">
               Player ID do VTurb
             </label>
-            <input
-              value={step.playerId ?? ""}
-              placeholder="ex: 64f1a2b3c4d5e6f7"
-              onChange={(e) =>
-                onPatch({ playerId: e.target.value.trim() || null })
-              }
-              className="w-full rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-sky-500"
-            />
+            <div className="flex gap-1.5">
+              <input
+                value={step.playerId ?? ""}
+                placeholder="ex: 64f1a2b3c4d5e6f7"
+                onChange={(e) =>
+                  onPatch({ playerId: e.target.value.trim() || null })
+                }
+                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-sky-500"
+              />
+              <button
+                type="button"
+                onClick={grabVturbId}
+                disabled={!step.url.trim() || vturbLookup.loading}
+                title="Puxar o player ID sozinho, lendo o embed do VTurb na página"
+                className="flex shrink-0 items-center gap-1 rounded-lg bg-purple-600 px-2.5 text-xs font-medium text-white transition-colors hover:bg-purple-500 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-500"
+              >
+                {vturbLookup.loading ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <Wand2 size={12} />
+                )}
+              </button>
+            </div>
             <p className="mt-1 text-[10px] leading-snug text-slate-500">
               Sem isso a página "Ao Vivo" não mostra quem está assistindo esta
               VSL agora.
             </p>
+            {vturbLookup.error && (
+              <p className="mt-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[10px] leading-snug text-amber-300">
+                {vturbLookup.error}
+              </p>
+            )}
           </div>
         )}
 

@@ -6,7 +6,16 @@ import { Card, CardContent } from "@/components/common/Card";
 import { Button } from "@/components/common/Button";
 import { Spinner } from "@/components/common/Spinner";
 import { FunnelCanvas } from "@/components/funnel";
-import { getFunnel, listSteps, listEdges, getMetrics, syncMetrics } from "@/api/client";
+import {
+  getFunnel,
+  listSteps,
+  listEdges,
+  getMetrics,
+  syncMetrics,
+  captureScreenshot,
+  findVturbPlayerId,
+  saveStep,
+} from "@/api/client";
 import type { Funnel, FunnelStep, FunnelEdge, StepMetric } from "@/types";
 import { cn } from "@/lib/cn";
 import { SourceSelector, useDataSource } from "@/components/common/SourceSelector";
@@ -74,12 +83,40 @@ export function FunnelViewPage() {
     return () => clearInterval(i);
   }, [isPolling, refreshMetrics]);
 
+  // Além das métricas, "Sincronizar" também atualiza print e player id do
+  // VTurb de cada etapa com URL — sem isso o usuário tinha que abrir o
+  // Ateliê e refazer isso etapa por etapa toda vez que a VSL mudava.
+  const syncScreenshotsAndPlayerIds = useCallback(
+    async (funnelId: string, currentSteps: FunnelStep[]) => {
+      const targets = currentSteps.filter((s) => s.url && s.url.trim());
+      const updated = await Promise.all(
+        targets.map(async (s) => {
+          const shot = await captureScreenshot(s.url, s.id);
+          let playerId = s.playerId;
+          if (!playerId) {
+            const lookup = await findVturbPlayerId(s.url);
+            if (lookup.ok && lookup.playerId) playerId = lookup.playerId;
+          }
+          const screenshotUrl = shot.ok ? shot.screenshotUrl ?? s.screenshotUrl : s.screenshotUrl;
+          if (screenshotUrl === s.screenshotUrl && playerId === s.playerId) return s;
+          return saveStep(funnelId, { ...s, screenshotUrl, playerId });
+        })
+      );
+      if (updated.length === 0) return;
+      setSteps((prev) =>
+        prev.map((s) => updated.find((u) => u.id === s.id) ?? s)
+      );
+    },
+    []
+  );
+
   const handleSync = async () => {
     if (!id) return;
     setSyncing(true);
     // O rastreador não tem o que "sincronizar" — ele já grava sozinho.
     // Sincronizar é só coisa de Clarity/VTurb (puxada manual sob cota).
     if (source !== "tracker") await syncMetrics(id);
+    await syncScreenshotsAndPlayerIds(id, steps);
     const m = await fetchMetrics(id);
     setMetrics(m);
     setSyncing(false);

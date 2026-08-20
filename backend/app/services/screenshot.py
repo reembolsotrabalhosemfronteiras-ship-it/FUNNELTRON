@@ -13,6 +13,7 @@ Antes só existia o caminho 2, o que deixava o botão "capturar print" morto
 para quem não assina o serviço: ele respondia sempre "não configurado".
 """
 import asyncio
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -155,6 +156,56 @@ class ScreenshotService:
                               "Crie-o (público) no painel → Storage.",
                 }
             return {"ok": False, "reason": f"Print capturado, mas não consegui guardar: {message[:160]}"}
+
+
+    # -- VTurb player id -----------------------------------------------------
+
+    async def find_vturb_player_id(self, url: str) -> dict:
+        """
+        Baixa o HTML da página e procura o player id do VTurb sozinho, pros
+        casos comuns de embed:
+
+        1. `<vturb-smartplayer id="vid-<ID>" ...>` (custom element, o mais comum)
+        2. `.../players/<ID>/...` no `src` do script do player
+        3. `id="vid-<ID>"` solto, quando o embed não usa o custom element
+
+        Returns: {"ok": True, "playerId": str} ou {"ok": False, "reason": str}
+        """
+        try:
+            async with httpx.AsyncClient(
+                timeout=15.0,
+                follow_redirects=True,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; FunneltronBot/1.0)"},
+            ) as client:
+                response = await client.get(url)
+                if response.status_code != 200:
+                    return {
+                        "ok": False,
+                        "reason": f"A página respondeu HTTP {response.status_code}",
+                    }
+                html = response.text
+        except httpx.TimeoutException:
+            return {"ok": False, "reason": "Timeout ao abrir a página."}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "reason": f"Não consegui abrir a página: {str(exc)[:180]}"}
+
+        patterns = [
+            r"vturb-smartplayer[^>]*id=[\"']vid-([a-f0-9]{10,})[\"']",
+            r"converteai\.net/[^\"']*/players/([a-f0-9]{10,})/",
+            r"id=[\"']vid-([a-f0-9]{10,})[\"']",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, html, re.IGNORECASE)
+            if match:
+                return {"ok": True, "playerId": match.group(1)}
+
+        return {
+            "ok": False,
+            "reason": "Não achei nenhum player VTurb nessa página. Confira se a URL "
+                      "está certa e se o vídeo já está publicado (o embed às vezes "
+                      "só aparece depois de um scroll/clique, e a busca só lê o HTML "
+                      "que já vem pronto).",
+        }
 
 
 # Instância global

@@ -663,6 +663,43 @@ export async function captureScreenshot(
   }
 }
 
+export interface VturbLookupResult {
+  ok: boolean;
+  playerId?: string;
+  reason?: string;
+}
+
+/**
+ * Lê o HTML da página e tenta achar o player id do VTurb sozinho (procura o
+ * embed `<vturb-smartplayer>` ou o script do player). Poupa ter que abrir
+ * "Ver código-fonte" e caçar o id na mão toda vez que uma VSL nova entra no
+ * funil.
+ */
+export async function findVturbPlayerId(url: string): Promise<VturbLookupResult> {
+  if (USE_MOCK) {
+    return delay(
+      {
+        ok: false,
+        reason: "Busca automática precisa do backend ligado (VITE_USE_MOCK=false).",
+      },
+      400
+    );
+  }
+
+  try {
+    const r = await apiSend(`/api/screenshots/vturb-player-id`, "POST", { url });
+    if (!r.ok) {
+      return { ok: false, reason: `Backend respondeu ${r.status}` };
+    }
+    return await r.json();
+  } catch {
+    return {
+      ok: false,
+      reason: "Não consegui falar com o backend. Confira se ele está de pé.",
+    };
+  }
+}
+
 // --- Importações de relatório de vendas ---
 export interface SalesImport {
   id: string;

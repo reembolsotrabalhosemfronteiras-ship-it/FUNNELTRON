@@ -12,6 +12,10 @@ class ScreenshotRequest(BaseModel):
     step_id: str
 
 
+class VturbLookupRequest(BaseModel):
+    url: HttpUrl
+
+
 @router.post("")
 async def capture_screenshot(
     request: ScreenshotRequest,
@@ -39,6 +43,27 @@ async def capture_screenshot(
 
         return result
 
+    except Exception as e:
+        return {
+            "ok": False,
+            "reason": f"Erro inesperado: {str(e)}"
+        }
+
+
+@router.post("/vturb-player-id")
+async def find_vturb_player_id(
+    request: VturbLookupRequest,
+    current_user = Depends(get_current_user)
+):
+    """
+    Lê a página e tenta achar o player id do VTurb sozinho, pra não precisar
+    caçar no código-fonte manualmente cada vez que uma VSL é cadastrada.
+
+    Returns:
+        {"ok": True, "playerId": "..."} ou {"ok": False, "reason": "..."}
+    """
+    try:
+        return await screenshot_service.find_vturb_player_id(str(request.url))
     except Exception as e:
         return {
             "ok": False,
