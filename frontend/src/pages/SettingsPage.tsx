@@ -6,13 +6,11 @@ import {
   Eye,
   EyeSlash as EyeOff,
   CircleNotch as Loader2,
+  VideoCamera,
+  ChartLine,
+  WebhooksLogo,
 } from "@phosphor-icons/react";
 import { Header } from "@/components/common/Header";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/common/Card";
-import { Button } from "@/components/common/Button";
-import { Input, Label } from "@/components/common/Input";
-import { Select } from "@/components/common/Select";
-import { Badge } from "@/components/common/Badge";
 import { getCredentials, saveCredentials, testConnection, listFunnels } from "@/api/client";
 import type { IntegrationCredentials } from "@/api/client";
 import type { Funnel } from "@/types";
@@ -20,14 +18,76 @@ import { cn } from "@/lib/cn";
 import { TrackerCard } from "@/components/settings/TrackerCard";
 import { SlugRulesCard } from "@/components/settings/SlugRulesCard";
 
-// `{click_id}` é o placeholder oficial da PerfectPay (lista de parâmetros
-// disponíveis na configuração de webhook dela): ela substitui isso pelo
+// `{click_id}` é o placeholder oficial da PerfectPay: ela substitui isso pelo
 // valor do parâmetro `click_id` que estava na URL do checkout na hora da
-// compra — o mesmo id de sessão que o tracker.js já propaga pelos links do
-// funil. Sem esse pedaço na URL, a venda continua sendo salva, só sem
-// step/sessão associados.
+// compra — o mesmo id de sessão que o tracker.js já propaga pelos links.
 function perfectPayWebhookUrl(funnelId: string): string {
   return `${window.location.origin}/api/live/webhook/perfectpay/${funnelId}?click_id={click_id}`;
+}
+
+/** Card no estilo do mockup: título + ícone + tag, corpo livre. */
+function SettingsCard({
+  icon,
+  title,
+  tag,
+  tagClass = "tag-neutral",
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  tag: string;
+  tagClass?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="card elev-sm !p-[18px]">
+      <div className="mb-3.5 flex items-center justify-between gap-3">
+        <p className="card-title flex items-center gap-2">
+          {icon}
+          {title}
+        </p>
+        <span className={cn("tag shrink-0", tagClass)}>{tag}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function SecretInput({
+  value,
+  onChange,
+  placeholder,
+  show,
+  onToggle,
+  readOnly,
+}: {
+  value: string;
+  onChange?: (v: string) => void;
+  placeholder?: string;
+  show: boolean;
+  onToggle: () => void;
+  readOnly?: boolean;
+}) {
+  return (
+    <div className="relative">
+      <input
+        className="input pr-10"
+        type={show ? "text" : "password"}
+        value={value}
+        readOnly={readOnly}
+        onChange={onChange ? (e) => onChange(e.target.value) : undefined}
+        placeholder={placeholder}
+      />
+      <button
+        type="button"
+        onClick={onToggle}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+        aria-label={show ? "Ocultar" : "Mostrar"}
+      >
+        {show ? <EyeOff size={16} /> : <Eye size={16} />}
+      </button>
+    </div>
+  );
 }
 
 export function SettingsPage() {
@@ -39,10 +99,17 @@ export function SettingsPage() {
   const [showVturb, setShowVturb] = useState(false);
   const [showClarity, setShowClarity] = useState(false);
   const [showWebhook, setShowWebhook] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [funnels, setFunnels] = useState<Funnel[]>([]);
-  // PerfectPay não sabe o que é um "funil" — cada um precisa da própria URL de
-  // webhook, com o funnel_id embutido no link, não configurável em um campo só.
   const [webhookFunnelId, setWebhookFunnelId] = useState<string>("");
+
+  const [form, setForm] = useState<IntegrationCredentials>({
+    vturbToken: "",
+    vturbTier: "pro",
+    clarityToken: "",
+    webhookSecret: "",
+    webhookUrl: "/api/live/webhook",
+  });
 
   useEffect(() => {
     listFunnels()
@@ -53,13 +120,12 @@ export function SettingsPage() {
       .catch((err) => console.error("Erro ao carregar funis:", err));
   }, []);
 
-  const [form, setForm] = useState<IntegrationCredentials>({
-    vturbToken: "",
-    vturbTier: "pro",
-    clarityToken: "",
-    webhookSecret: "",
-    webhookUrl: "/api/live/webhook",
-  });
+  // Puxa o que já está salvo (tokens vêm mascarados do backend).
+  useEffect(() => {
+    getCredentials()
+      .then((c) => c && setForm((f) => ({ ...f, ...c })))
+      .catch(() => {});
+  }, []);
 
   const handleSave = async () => {
     setSaving(true);
@@ -67,11 +133,6 @@ export function SettingsPage() {
     setSaving(false);
   };
 
-  // Salvar por card: cada integração é sua própria linha no banco
-  // (`saveCredentials` já só manda os campos preenchidos), então dá pra
-  // salvar o VTurb sem esperar o usuário mexer no Clarity ou no webhook —
-  // antes só existia UM botão "Salvar Configurações" lá embaixo, e editar só
-  // o token do VTurb exigia rolar a página inteira pra confirmar.
   const handleSaveField = async (field: "vturb" | "webhook") => {
     setSavingField(field);
     setSavedField(null);
@@ -83,9 +144,6 @@ export function SettingsPage() {
 
   const handleTest = async (provider: "vturb" | "clarity") => {
     setTesting(provider);
-    // Salva ANTES de testar. O teste roda no backend, que lê o token do banco —
-    // testar sem salvar respondia "credenciais não configuradas" mesmo com o
-    // token correto digitado na tela, que é o erro mais confuso possível.
     try {
       await saveCredentials(form);
       const result = await testConnection(provider);
@@ -100,342 +158,253 @@ export function SettingsPage() {
     setTesting(null);
   };
 
+  const copyWebhook = () => {
+    if (!webhookFunnelId) return;
+    navigator.clipboard?.writeText(perfectPayWebhookUrl(webhookFunnelId));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const TestBanner = ({ provider }: { provider: string }) =>
+    testResult?.provider === provider ? (
+      <div
+        className={cn(
+          "mt-3 flex items-center gap-2 rounded-md p-3 text-sm",
+          testResult.ok
+            ? "border border-success/30 bg-success/10 text-success"
+            : "border border-danger/30 bg-danger/10 text-danger"
+        )}
+      >
+        {testResult.ok ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+        {testResult.message}
+      </div>
+    ) : null;
+
   return (
     <div className="min-h-screen bg-background">
       <Header title="Configurações" subtitle="Integrações e tokens de API" />
 
-      <main className="p-4 max-w-3xl mx-auto space-y-6">
+      <main className="flex flex-col gap-[18px] p-4 md:px-7 md:py-6 max-w-[760px]">
         {/* VTurb */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <span className="text-2xl">🎬</span>
-                  VTurb Analytics
-                </CardTitle>
-                <CardDescription>
-                  Integração para conversão de VSL. Requer token de API do painel VTurb.
-                </CardDescription>
-              </div>
-              <Badge variant="info">VSL</Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="md:col-span-2">
-                <Label>X-Api-Token</Label>
-                <div className="relative mt-1">
-                  <Input
-                    type={showVturb ? "text" : "password"}
-                    value={form.vturbToken}
-                    onChange={(e) => setForm({ ...form, vturbToken: e.target.value })}
-                    placeholder="Insira seu token de API"
-                    className="pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowVturb(!showVturb)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showVturb ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Encontre em: painel VTurb → Configurações → API Keys
-                </p>
-              </div>
+        <SettingsCard
+          icon={<VideoCamera size={18} style={{ color: "var(--c-vsl)" }} />}
+          title="VTurb Analytics"
+          tag="VSL"
+          tagClass="tag-accent-2"
+        >
+          <div className="field mb-3">
+            <label>X-Api-Token</label>
+            <SecretInput
+              value={form.vturbToken}
+              onChange={(v) => setForm({ ...form, vturbToken: v })}
+              placeholder="Insira seu token de API"
+              show={showVturb}
+              onToggle={() => setShowVturb(!showVturb)}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Encontre em: painel VTurb → Configurações → API Keys
+            </p>
+          </div>
 
-              <div>
-                <Label>Tier (Rate Limit)</Label>
-                <Select
-                  value={form.vturbTier}
-                  onChange={(e) => setForm({ ...form, vturbTier: e.target.value as any })}
-                  className="mt-1"
-                >
-                  <option value="basic">Basic (60 req/min)</option>
-                  <option value="pro">Pro (120 req/min)</option>
-                  <option value="scale">Scale (300 req/min)</option>
-                  <option value="enterprise">Enterprise (800 req/min)</option>
-                </Select>
-              </div>
+          <div className="field mb-3">
+            <label>Tier (rate limit)</label>
+            <select
+              className="input"
+              value={form.vturbTier}
+              onChange={(e) => setForm({ ...form, vturbTier: e.target.value as IntegrationCredentials["vturbTier"] })}
+            >
+              <option value="basic">Basic (60 req/min)</option>
+              <option value="pro">Pro (120 req/min)</option>
+              <option value="scale">Scale (300 req/min)</option>
+              <option value="enterprise">Enterprise (800 req/min)</option>
+            </select>
+          </div>
 
-              <div className="flex items-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => handleSaveField("vturb")}
-                  disabled={savingField === "vturb"}
-                >
-                  {savingField === "vturb" ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : savedField === "vturb" ? (
-                    <CheckCircle2 size={14} />
-                  ) : (
-                    <Save size={14} />
-                  )}
-                  {savedField === "vturb" ? "Salvo" : "Salvar"}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => handleTest("vturb")}
-                  disabled={testing === "vturb" || !form.vturbToken}
-                >
-                  {testing === "vturb" ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <CheckCircle2 size={14} />
-                  )}
-                  Testar
-                </Button>
-              </div>
-            </div>
-
-            {testResult?.provider === "vturb" && (
-              <div
-                className={cn(
-                  "flex items-center gap-2 text-sm p-3 rounded-md",
-                  testResult.ok
-                    ? "bg-success/10 text-success border border-success/30"
-                    : "bg-danger/10 text-danger border border-danger/30"
-                )}
-              >
-                {testResult.ok ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-                {testResult.message}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          <div className="flex gap-2">
+            <button
+              className="btn btn-secondary"
+              onClick={() => handleSaveField("vturb")}
+              disabled={savingField === "vturb"}
+            >
+              {savingField === "vturb" ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : savedField === "vturb" ? (
+                <CheckCircle2 size={14} />
+              ) : (
+                <Save size={14} />
+              )}
+              {savedField === "vturb" ? "Salvo" : "Salvar"}
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => handleTest("vturb")}
+              disabled={testing === "vturb" || !form.vturbToken}
+            >
+              {testing === "vturb" ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+              Testar
+            </button>
+          </div>
+          <TestBanner provider="vturb" />
+        </SettingsCard>
 
         {/* Clarity */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <span className="text-2xl">📊</span>
-                  Microsoft Clarity
-                </CardTitle>
-                <CardDescription>
-                  Sessões e engajamento por página. Uma credencial só: o token de
-                  API do projeto.
-                </CardDescription>
-              </div>
-              <Badge variant="info">Conversão Real</Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-4">
-              <div>
-                <Label>Token de API</Label>
-                <div className="relative mt-1">
-                  <Input
-                    type={showClarity ? "text" : "password"}
-                    value={form.clarityToken}
-                    onChange={(e) => setForm({ ...form, clarityToken: e.target.value })}
-                    placeholder="eyJhbGciOiJSUzI1NiIsImtpZCI6..."
-                    className="pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowClarity(!showClarity)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showClarity ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  O token já é do projeto — não existe Client ID, Client Secret
-                  nem Project ID para preencher aqui.
-                </p>
-              </div>
+        <SettingsCard
+          icon={<ChartLine size={18} className="text-primary" />}
+          title="Microsoft Clarity"
+          tag="Conversão real"
+          tagClass="tag-accent"
+        >
+          <div className="field mb-3">
+            <label>Token de API</label>
+            <SecretInput
+              value={form.clarityToken}
+              onChange={(v) => setForm({ ...form, clarityToken: v })}
+              placeholder="eyJhbGciOiJSUzI1NiIsImtpZCI6..."
+              show={showClarity}
+              onToggle={() => setShowClarity(!showClarity)}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              O token já é do projeto — não existe Client ID, Client Secret nem Project ID aqui.
+            </p>
+          </div>
 
-              <div className="flex items-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => handleTest("clarity")}
-                  disabled={testing === "clarity" || !form.clarityToken}
-                >
-                  {testing === "clarity" ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <CheckCircle2 size={14} />
-                  )}
-                  Salvar e testar
-                </Button>
-              </div>
-            </div>
+          <button
+            className="btn btn-secondary"
+            onClick={() => handleTest("clarity")}
+            disabled={testing === "clarity" || !form.clarityToken}
+          >
+            {testing === "clarity" ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+            Salvar e testar
+          </button>
+          <TestBanner provider="clarity" />
 
-            {testResult?.provider === "clarity" && (
-              <div
-                className={cn(
-                  "flex items-center gap-2 text-sm p-3 rounded-md",
-                  testResult.ok
-                    ? "bg-success/10 text-success border border-success/30"
-                    : "bg-danger/10 text-danger border border-danger/30"
-                )}
+          <div className="mt-3 rounded-md bg-neutral-900/50 p-3 text-xs text-muted-foreground">
+            <strong>Como configurar:</strong>
+            <ol className="mt-2 list-inside list-decimal space-y-1">
+              <li>No painel do Clarity: Configurações → Configurações do projeto → API</li>
+              <li>Clique em "Gerar novo token de API"</li>
+              <li>Copie o token na hora — o Clarity não mostra de novo</li>
+              <li>Cole aqui e clique em "Salvar e testar"</li>
+            </ol>
+            <p className="mt-2">
+              O Clarity permite <strong>10 consultas por dia</strong> e no máximo os{" "}
+              <strong>últimos 3 dias</strong> por consulta. Cada teste gasta uma.
+            </p>
+          </div>
+        </SettingsCard>
+
+        {/* Webhook de venda */}
+        <SettingsCard
+          icon={<WebhooksLogo size={18} className="text-primary" />}
+          title="Webhook de venda"
+          tag="PerfectPay"
+        >
+          <p className="card-body mb-3">
+            Cada funil tem sua própria URL — a PerfectPay não sabe o que é um "funil", então o
+            link já vem com o funil embutido.
+          </p>
+
+          <div className="field mb-3">
+            <label>Funil</label>
+            <select
+              className="input"
+              value={webhookFunnelId}
+              onChange={(e) => setWebhookFunnelId(e.target.value)}
+              disabled={funnels.length === 0}
+            >
+              {funnels.length === 0 ? (
+                <option value="">Nenhum funil cadastrado</option>
+              ) : (
+                funnels.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
+          <div className="field mb-3">
+            <label>URL do webhook (cole na PerfectPay)</label>
+            <div className="flex items-center gap-2">
+              <input
+                className="input font-mono text-xs"
+                readOnly
+                value={webhookFunnelId ? perfectPayWebhookUrl(webhookFunnelId) : ""}
+              />
+              <button
+                className="btn btn-secondary btn-sm shrink-0"
+                disabled={!webhookFunnelId}
+                onClick={copyWebhook}
               >
-                {testResult.ok ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-                {testResult.message}
-              </div>
-            )}
-
-            <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
-              <strong>Como configurar:</strong>
-              <ol className="list-decimal list-inside mt-2 space-y-1">
-                <li>No painel do Clarity, abra Configurações → Configurações do projeto → API</li>
-                <li>Clique em "Gerar novo token de API"</li>
-                <li>Copie o token na hora — o Clarity não mostra ele de novo</li>
-                <li>Cole aqui e clique em "Salvar e testar"</li>
-              </ol>
-              <p className="mt-2">
-                O Clarity permite <strong>10 consultas por dia</strong> e exporta
-                no máximo os <strong>últimos 3 dias</strong> por consulta. Cada
-                teste gasta uma dessas consultas.
-              </p>
+                {copied ? <CheckCircle2 size={13} /> : null}
+                {copied ? "Copiado" : "Copiar"}
+              </button>
             </div>
-          </CardContent>
-        </Card>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Cole exatamente essa URL na integração de webhook do produto, formato "Postback:
+              PerfectPay". O <code>{"{click_id}"}</code> no final já vem pronto — não mexa nele.
+            </p>
+          </div>
 
-        {/* Webhook de Venda (PerfectPay) */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <span className="text-2xl">💳</span>
-                  Webhook de Venda
-                </CardTitle>
-                <CardDescription>
-                  Cada funil tem sua própria URL — a PerfectPay não sabe o que é
-                  um "funil", então o link já vem com o funil embutido.
-                </CardDescription>
-              </div>
-              <Badge variant="info">PerfectPay</Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label>Funil</Label>
-              <Select
-                value={webhookFunnelId}
-                onChange={(e) => setWebhookFunnelId(e.target.value)}
-                className="mt-1"
-                disabled={funnels.length === 0}
-              >
-                {funnels.length === 0 ? (
-                  <option value="">Nenhum funil cadastrado</option>
-                ) : (
-                  funnels.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.name}
-                    </option>
-                  ))
-                )}
-              </Select>
-            </div>
+          <div className="field">
+            <label>Public token</label>
+            <SecretInput
+              value={form.webhookSecret}
+              onChange={(v) => setForm({ ...form, webhookSecret: v })}
+              placeholder="Cole o Public token da PerfectPay"
+              show={showWebhook}
+              onToggle={() => setShowWebhook(!showWebhook)}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              O mesmo <strong>Public token</strong> da tela de webhook da PerfectPay (campo
+              "Segurança"). Deixe em branco para aceitar qualquer chamada.
+            </p>
+          </div>
+          <div className="mt-3 flex justify-end">
+            <button
+              className="btn btn-secondary"
+              onClick={() => handleSaveField("webhook")}
+              disabled={savingField === "webhook"}
+            >
+              {savingField === "webhook" ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : savedField === "webhook" ? (
+                <CheckCircle2 size={14} />
+              ) : (
+                <Save size={14} />
+              )}
+              {savedField === "webhook" ? "Salvo" : "Salvar"}
+            </button>
+          </div>
+        </SettingsCard>
 
-            <div>
-              <Label>URL do Webhook (cole na PerfectPay)</Label>
-              <div className="flex items-center gap-2 mt-1">
-                <Input
-                  type="text"
-                  readOnly
-                  value={webhookFunnelId ? perfectPayWebhookUrl(webhookFunnelId) : ""}
-                  className="font-mono text-xs bg-muted/40"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={!webhookFunnelId}
-                  onClick={() => {
-                    navigator.clipboard?.writeText(perfectPayWebhookUrl(webhookFunnelId));
-                  }}
-                >
-                  Copiar
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Cole exatamente essa URL na integração de webhook do produto
-                correspondente a este funil, com "Formato postback:
-                PerfectPay". O <code>{"{click_id}"}</code> no final já vem
-                pronto — é o que faz o sistema saber de qual sessão/etapa
-                cada venda veio; não precisa mexer nele.
-              </p>
-            </div>
-
-            <div>
-              <Label>Public token</Label>
-              <div className="relative mt-1">
-                <Input
-                  type={showWebhook ? "text" : "password"}
-                  value={form.webhookSecret}
-                  onChange={(e) => setForm({ ...form, webhookSecret: e.target.value })}
-                  placeholder="Cole o Public token da PerfectPay"
-                  className="pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowWebhook(!showWebhook)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showWebhook ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Copie o mesmo <strong>Public token</strong> que aparece na tela
-                de configuração do webhook, na PerfectPay (campo "Segurança").
-                Ele vem dentro de cada chamada, não em um header — deixe em
-                branco para aceitar qualquer chamada.
-              </p>
-              <div className="flex justify-end">
-                <Button
-                  variant="outline"
-                  onClick={() => handleSaveField("webhook")}
-                  disabled={savingField === "webhook"}
-                >
-                  {savingField === "webhook" ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : savedField === "webhook" ? (
-                    <CheckCircle2 size={14} />
-                  ) : (
-                    <Save size={14} />
-                  )}
-                  {savedField === "webhook" ? "Salvo" : "Salvar"}
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Rastreador */}
-        {/* O endereço tem que ser ABSOLUTO: o snippet é colado nas páginas do
-            funil, em outro domínio. Relativo ("/tracker.js"), o navegador
-            procuraria o arquivo no site de vendas e não acharia nada — o
-            rastreador ficaria mudo sem nenhum erro visível.
-            `VITE_API_ORIGIN` só é necessário se a API morar fora daqui. */}
-        <TrackerCard
-          apiOrigin={import.meta.env.VITE_API_ORIGIN || window.location.origin}
-        />
+        {/* Rastreador próprio (snippet) */}
+        <TrackerCard apiOrigin={import.meta.env.VITE_API_ORIGIN || window.location.origin} />
 
         {/* Tipo de página por slug */}
         <SlugRulesCard />
 
-        {/* Salvar */}
-        <div className="flex justify-end gap-3">
-          <Button variant="ghost" onClick={() => setForm({
-            vturbToken: "",
-            vturbTier: "pro",
-            clarityToken: "",
-            webhookSecret: "",
-            webhookUrl: "/api/live/webhook",
-          })}>
+        {/* Salvar tudo */}
+        <div className="flex justify-end gap-2">
+          <button
+            className="btn btn-ghost"
+            onClick={() =>
+              setForm({
+                vturbToken: "",
+                vturbTier: "pro",
+                clarityToken: "",
+                webhookSecret: "",
+                webhookUrl: "/api/live/webhook",
+              })
+            }
+          >
             Limpar
-          </Button>
-          <Button onClick={handleSave} disabled={saving}>
+          </button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
             {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            Salvar Configurações
-          </Button>
+            Salvar configurações
+          </button>
         </div>
       </main>
     </div>

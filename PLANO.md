@@ -1,7 +1,7 @@
 # PLANO — FUNNELTRON
 
 Arquivo de contexto vivo do projeto. **Atualizado ao fim de cada tarefa.**
-Última atualização: 2026-08-31
+Última atualização: 2026-08-31 (redesign pixel-match em andamento)
 
 ---
 
@@ -382,6 +382,7 @@ isso, rodar o import duas vezes no mesmo dia dobra o número.
 | 95 | **`/code-review max` nos itens 90-94 achou 6 problemas reais, todos corrigidos.** (a) A busca da etapa-meta de conversão do rastreador confiava cegamente em `conversion_goal_step_id` mesmo quando a etapa apontada não existia mais (funil reeditado no ateliê) — vendas pagas eram calculadas certas e não apareciam em etapa nenhuma. Ganhou a mesma defesa que `resolveGoalStep()` (frontend) já tinha. (b) `getSlugRules()` devolvia `null` tanto pra "nunca personalizou" quanto pra "a busca falhou" — clicar "Salvar" depois de uma falha de rede sobrescrevia regras salvas de verdade com os padrões, sem aviso. Agora lança em vez de engolir; o card mostra erro com botão de tentar de novo e trava o Salvar enquanto isso. (c) O polling em segundo plano de Métricas/Funil parava de tentar COMEÇAR um novo intervalo com a aba escondida, mas nunca parava um intervalo que já tinha começado — ficava atualizando escondido. Passaram a usar o mesmo padrão `isPolling` (estado, reage a `visibilitychange`) que o Ao Vivo já usava certo. (d) A etapa de entrada da conversão ao vivo mostrava "0 visitantes, 100%" numa janela sem tráfego nenhum. (e) As chamadas ao VTurb por VSL rodavam uma de cada vez; viraram `asyncio.gather`, em paralelo. (f) As três telas de métrica repetiam o mesmo `source === "tracker" ? ... : ...` escolhendo entre duas rotas — virou UM endpoint (`GET /api/metrics/funnels/{id}?source=`), decidindo do lado do servidor; a rota `/tracker/{funnel_id}` foi removida e o frontend ganhou uma função só, `getMetrics()` | `routers/metrics.py`, `routers/live.py`, `api/client.ts`, `SlugRulesCard.tsx`, `NewFunnelDialog.tsx`, `MetricsPage.tsx`, `FunnelViewPage.tsx`, `FunnelListPage.tsx`, `FunnelEditorPage.tsx` |
 | 96 | **Redesign visual "Nocturne" (pasta `FRONTENDNOVO`) aplicado ao front todo.** Camada de design system em `index.css` (`.btn` contorno / `.card` / `.tag` / `.seg` / `.table` / `.field`, tokens `--color-*` e `--c-*` mapeados nas CSS vars HSL que já existiam — light e dark seguem funcionando). Todos os ícones migrados de `lucide-react` → `@phosphor-icons/react` (lucide removido). Nova página `/overview` ("Visão dos funis") listando o fluxo de cada funil. Dashboard repaginado (KPIs com kicker, ranking em barras coloridas, tabela `.table`). Nenhuma função removida — só troca de casca; `tsc`, `vitest` 8/8 e `vite build` passam, QA visual das 8 telas + ateliê em modo mock. Branch `redesign-nocturne`. | `index.css`, `Sidebar.tsx`, `LoginPage.tsx`, `DashboardPage.tsx`, `FunnelOverviewPage.tsx`, `lib/series.ts`, `components/live/BrazilLiveMap.tsx`, + ~20 arquivos de troca de ícone |
 | 97 | **`BrazilLiveMap`** — componente do mapa do Brasil ao vivo (d3-geo + world-atlas, tudo empacotado, sem CDN) portado do mockup. **Ainda não plugado** no Ao Vivo: o rastreador/back não capturam geolocalização (IP → cidade/UF). Fica pronto pra quando esse dado existir. | `components/live/BrazilLiveMap.tsx` |
+| 98 | **Deploy do redesign na Railway** — merge `redesign-nocturne` → `main`, push, Railway reconstruiu pelo Dockerfile. Verificado no ar (`funneltron-production.up.railway.app`): login repaginado, bundle do commit `1dc5a79`, `smoke_test.py` 44/44 contra o backend de produção. | — |
 
 ### ✅ O rastreador ao vivo estava quebrado em silêncio — RESOLVIDO
 
@@ -449,6 +450,31 @@ corretos no banco (4 etapas / 3 setas). Ainda assim, vale um olhar no Chrome
 real. `npx tsc --noEmit` passa limpo.
 
 ### ❌ Fila
+
+#### Redesign — pixel-match do mockup (em andamento, branch `redesign-nocturne`)
+
+Pedido do usuário (2026-08-31): as telas devem ficar **100% iguais** ao mockup
+`FRONTENDNOVO/Funnel Analytics Redesign.dc.html` (design feito no Claude Design).
+
+| Tela | Estado |
+|---|---|
+| Login, Sidebar, Dashboard, Visão dos funis | ✅ batendo com o mockup |
+| **Métricas** | ⏳ reconstruir global/single/compare exatamente como o mockup (faixa de seleção, KPIs com delta, canvas do funil, "queda etapa a etapa", "tempo médio na página", verdict card da comparação, tabela métrica-a-métrica, cards, sobreposto) |
+| **Ao Vivo** | ⏳ 5 cards de resumo, card do mapa, "conversão por funil", banner de fluxo, feed de entradas/vendas/VSL — tudo no layout do mockup |
+| **Ateliê** | ⏳ toolbar, paleta, legenda de setas, inspetor no estilo do mockup |
+| **Importações** | ⏳ dropzone + prévia + guardadas no layout do mockup |
+| **Configurações** | ⏳ visual do mockup (3 cards) **+ manter/expor todas as funções reais** que o mockup corta: seletor de tier do VTurb, mostrar/ocultar senha, botões testar, webhook por funil, Public token, `TrackerCard`, `SlugRulesCard`, push. Criar botões pra chamar o que faltar. |
+
+**Mapa do Brasil ao vivo** — `BrazilLiveMap.tsx` está pronto mas **não plugado**:
+falta o backend capturar geolocalização (IP → cidade/UF) no rastreador
+(`/api/live/track`) e devolver as praças em `/api/live`. Arrumar **depois** do
+pixel-match das telas.
+
+**Bug de backend achado no QA (2026-08-31):** `/api/metrics/overview` e
+`/api/metrics/funnels/ranking` dão **500 intermitente** em produção —
+`{"detail":"...: Server disconnected"}`, o cliente Supabase do backend perde a
+conexão. Não é do frontend (o Dashboard já trata e cai pra zero). Investigar
+pool/retry do `supabase-py` no Railway.
 
 #### Página de Métricas — bloco financeiro
 
