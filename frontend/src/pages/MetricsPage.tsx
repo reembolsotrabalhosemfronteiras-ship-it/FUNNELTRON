@@ -329,46 +329,30 @@ function FunnelStrip({
   const isGlobal = selectedIds.length === 0;
 
   return (
-    <div className="border-b border-border bg-card/50 px-4 py-3">
-      <div className="mb-2 flex items-center gap-2">
-        <p className="text-xs font-medium text-muted-foreground">
-          Visão global, um funil, ou vários para comparar
-        </p>
+    <div className="border-b border-border bg-card px-4 py-4 md:px-7">
+      <p className="mb-2 flex items-center gap-2 text-[11.5px] text-muted-foreground">
+        Visão global, um funil, ou vários para comparar
         {selectedIds.length > 1 && (
-          <Badge variant="info" className="gap-1">
+          <span className="tag tag-accent gap-1">
             <GitCompare size={11} />
             {selectedIds.length} em comparação
-          </Badge>
+          </span>
         )}
-      </div>
+      </p>
 
       <div className="flex flex-wrap gap-2">
         <button
           onClick={onGlobal}
           className={cn(
-            "flex min-w-[160px] items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition-all",
-            isGlobal
-              ? "border-primary bg-primary/5 shadow-sm"
-              : "border-border bg-card hover:border-muted-foreground/40 hover:bg-muted/40"
+            "flex items-center gap-2 rounded-md border px-3 py-2 text-left transition-colors",
+            isGlobal ? "border-primary bg-primary/15" : "border-border bg-card hover:bg-muted/40"
           )}
         >
-          <span
-            className={cn(
-              "flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors",
-              isGlobal ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
-            )}
-          >
-            <Globe size={16} />
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-medium">Global</span>
-            <span className="block text-xs text-muted-foreground">
-              todos os {funnels.length} funis
-            </span>
-          </span>
+          <Globe size={16} className="text-primary" />
+          <span className="text-[12.5px] font-semibold">Global</span>
+          <span className="text-[11px] text-muted-foreground">todos os {funnels.length} funis</span>
         </button>
 
-        <span className="mx-1 my-1 w-px bg-border" />
         {funnels.map((f) => {
           const index = selectedIds.indexOf(f.id);
           const active = index >= 0;
@@ -377,31 +361,21 @@ function FunnelStrip({
               key={f.id}
               onClick={() => onToggle(f.id)}
               className={cn(
-                "flex min-w-[160px] items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition-all",
-                active
-                  ? "border-primary bg-primary/5 shadow-sm"
-                  : "border-border bg-card hover:border-muted-foreground/40 hover:bg-muted/40"
+                "flex items-center gap-2 rounded-md border px-3 py-2 text-left transition-colors",
+                active ? "border-primary bg-primary/15" : "border-border bg-card hover:bg-muted/40"
               )}
             >
               <span
-                className="h-8 w-1 shrink-0 rounded-full transition-colors"
+                className="h-2 w-2 shrink-0 rounded-full"
                 style={{
                   backgroundColor: active
                     ? COMPARE_COLORS[index % COMPARE_COLORS.length]
-                    : "hsl(var(--border))",
+                    : "hsl(var(--muted-foreground))",
                 }}
               />
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-medium">
-                  {f.name}
-                </span>
-                <span className="block text-xs text-muted-foreground">
-                  {f.status === "active"
-                    ? "Ativo"
-                    : f.status === "testing"
-                    ? "Em teste"
-                    : "Desativo"}
-                </span>
+              <span className="whitespace-nowrap text-[12.5px] font-semibold">{f.name}</span>
+              <span className="text-[11px] text-muted-foreground">
+                {f.status === "active" ? "Ativo" : f.status === "testing" ? "Em teste" : "Desativo"}
               </span>
             </button>
           );
@@ -483,71 +457,38 @@ function GlobalView({ bundles }: { bundles: FunnelBundle[] }) {
           <CardDescription>Ordenado pela conversão de funil</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-sm">
+          <table className="table" style={{ minWidth: 560 }}>
             <thead>
-              <tr className="border-b border-border text-muted-foreground">
-                <th className="py-2 text-left font-medium">Funil</th>
-                <th className="py-2 text-right font-medium">
-                  <MetricLabel metric="visitors">Visitas</MetricLabel>
-                </th>
-                <th className="py-2 text-right font-medium">
-                  <MetricLabel metric="conversions">Conversões de funil</MetricLabel>
-                </th>
-                <th className="py-2 text-right font-medium">
-                  <MetricLabel metric="avgRate">Conversão de funil</MetricLabel>
-                </th>
-                <th className="py-2 text-right font-medium">
-                  <MetricLabel metric="endToEnd">Conversão de compra</MetricLabel>
-                </th>
-                <th className="py-2 text-right font-medium">
-                  <MetricLabel metric="steps">Etapas</MetricLabel>
-                </th>
+              <tr>
+                <th>Funil</th>
+                <th className="text-right"><MetricLabel metric="visitors">Visitas</MetricLabel></th>
+                <th className="text-right"><MetricLabel metric="conversions">Conversões de funil</MetricLabel></th>
+                <th className="text-right"><MetricLabel metric="avgRate">Conversão de funil</MetricLabel></th>
+                <th className="text-right"><MetricLabel metric="endToEnd">Conversão de compra</MetricLabel></th>
+                <th className="text-right"><MetricLabel metric="steps">Etapas</MetricLabel></th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id} className="border-b border-border/60">
-                  <td className="py-2.5">
-                    <Link
-                      to={`/funnel/${r.id}/metrics`}
-                      className="font-medium hover:text-primary hover:underline"
-                    >
+                <tr key={r.id}>
+                  <td>
+                    <Link to={`/funnel/${r.id}/metrics`} className="text-primary hover:underline">
                       {r.name}
                     </Link>
                   </td>
-                  <td className="py-2.5 text-right tabular-nums">
-                    {r.visitors.toLocaleString("pt-BR")}
-                  </td>
-                  <td className="py-2.5 text-right tabular-nums">
-                    {r.conversions.toLocaleString("pt-BR")}
-                  </td>
-                  <td
-                    className="py-2.5 text-right font-semibold tabular-nums"
-                    style={{ color: conversionColor(r.avgRate) }}
-                  >
+                  <td className="text-right tabular-nums">{r.visitors.toLocaleString("pt-BR")}</td>
+                  <td className="text-right tabular-nums">{r.conversions.toLocaleString("pt-BR")}</td>
+                  <td className="text-right font-semibold tabular-nums" style={{ color: conversionColor(r.avgRate) }}>
                     {r.avgRate.toFixed(1)}%
                   </td>
                   <td
-                    className={cn(
-                      "py-2.5 text-right tabular-nums",
-                      r.endToEnd == null && "text-muted-foreground"
-                    )}
-                    style={
-                      r.endToEnd != null
-                        ? { color: conversionColor(r.endToEnd) }
-                        : undefined
-                    }
-                    title={
-                      r.endToEnd == null
-                        ? "Sem página de obrigado neste funil"
-                        : undefined
-                    }
+                    className={cn("text-right tabular-nums", r.endToEnd == null && "text-muted-foreground")}
+                    style={r.endToEnd != null ? { color: conversionColor(r.endToEnd) } : undefined}
+                    title={r.endToEnd == null ? "Sem página de obrigado neste funil" : undefined}
                   >
                     {pct(r.endToEnd)}
                   </td>
-                  <td className="py-2.5 text-right tabular-nums text-muted-foreground">
-                    {r.steps}
-                  </td>
+                  <td className="text-right tabular-nums text-muted-foreground">{r.steps}</td>
                 </tr>
               ))}
             </tbody>
@@ -749,19 +690,14 @@ function ComparisonView({ bundles }: { bundles: FunnelBundle[] }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          <table className="w-full min-w-[520px] text-sm">
+          <table className="table" style={{ minWidth: 520 }}>
             <thead>
-              <tr className="border-b border-border">
-                <th className="py-2 text-left font-medium text-muted-foreground">
-                  Métrica
-                </th>
+              <tr>
+                <th>Métrica</th>
                 {rows.map((r) => (
-                  <th key={r.id} className="py-2 text-right font-medium">
+                  <th key={r.id} className="text-right">
                     <span className="flex items-center justify-end gap-1.5">
-                      <span
-                        className="h-2 w-2 rounded-full"
-                        style={{ backgroundColor: r.color }}
-                      />
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: r.color }} />
                       {r.name}
                     </span>
                   </th>
@@ -770,7 +706,6 @@ function ComparisonView({ bundles }: { bundles: FunnelBundle[] }) {
             </thead>
             <tbody>
               {KPIS.map((kpi) => {
-                // Ausência de dado não disputa "melhor valor".
                 const values = rows
                   .map((r) => r[kpi.key] as number | null)
                   .filter((v): v is number => v != null);
@@ -781,18 +716,10 @@ function ComparisonView({ bundles }: { bundles: FunnelBundle[] }) {
                       : Math.min(...values)
                     : null;
                 return (
-                  <tr
-                    key={String(kpi.key)}
-                    className={cn(
-                      "border-b border-border/60",
-                      kpi.neutral && "text-muted-foreground"
-                    )}
-                  >
-                    <td className="py-2.5 text-muted-foreground">
+                  <tr key={String(kpi.key)} className={cn(kpi.neutral && "text-muted-foreground")}>
+                    <td className="text-muted-foreground">
                       {kpi.metric ? (
-                        <MetricLabel metric={kpi.metric}>
-                          {metricLabel(kpi.metric)}
-                        </MetricLabel>
+                        <MetricLabel metric={kpi.metric}>{metricLabel(kpi.metric)}</MetricLabel>
                       ) : (
                         kpi.label
                       )}
@@ -805,14 +732,15 @@ function ComparisonView({ bundles }: { bundles: FunnelBundle[] }) {
                         <td
                           key={r.id}
                           className={cn(
-                            "py-2.5 text-right tabular-nums",
-                            isBest && "font-bold text-success",
+                            "text-right tabular-nums",
+                            isBest && "font-bold",
                             v == null && "text-muted-foreground"
                           )}
+                          style={isBest ? { color: "var(--c-high)" } : undefined}
                         >
                           <span className="inline-flex items-center justify-end gap-1">
                             {kpi.format(v)}
-                            {isBest && <Trophy size={11} className="text-success" />}
+                            {isBest && <Trophy size={11} style={{ color: "var(--c-high)" }} />}
                           </span>
                         </td>
                       );
@@ -1567,20 +1495,18 @@ function KpiCard({
   tone: string;
 }) {
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <MetricLabel metric={metric} className="text-sm text-muted-foreground">
-              {metricLabel(metric)}
-            </MetricLabel>
-            <p className={cn("text-2xl font-bold", tone)}>{value}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
-          </div>
-          {icon}
-        </div>
-      </CardContent>
-    </Card>
+    <div className="card elev-sm">
+      <div className="flex items-start justify-between">
+        <MetricLabel metric={metric} className="card-kicker">
+          {metricLabel(metric)}
+        </MetricLabel>
+        {icon}
+      </div>
+      <p className={cn("mt-1.5 font-semibold", tone)} style={{ fontSize: 24 }}>
+        {value}
+      </p>
+      <p className="text-[11.5px] text-muted-foreground">{hint}</p>
+    </div>
   );
 }
 
@@ -1632,27 +1558,15 @@ function VslConversionCard({
             {view === "vturb" ? "🎬" : "📡"}
           </span>
         </div>
-        <div className="mt-3 flex items-center gap-1 rounded-md bg-muted/50 p-0.5 text-xs">
-          <button
-            type="button"
-            onClick={() => setView("vturb")}
-            className={cn(
-              "flex-1 rounded px-2 py-1 font-medium transition-colors",
-              view === "vturb" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
+        <div className="seg mt-3 w-full">
+          <label className="seg-opt flex-1 justify-center" onClick={() => setView("vturb")}>
+            <input type="radio" name="vslview" readOnly checked={view === "vturb"} />
             VTurb
-          </button>
-          <button
-            type="button"
-            onClick={() => setView("tracker")}
-            className={cn(
-              "flex-1 rounded px-2 py-1 font-medium transition-colors",
-              view === "tracker" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
+          </label>
+          <label className="seg-opt flex-1 justify-center" onClick={() => setView("tracker")}>
+            <input type="radio" name="vslview" readOnly checked={view === "tracker"} />
             Rastreador
-          </button>
+          </label>
         </div>
       </CardContent>
     </Card>
