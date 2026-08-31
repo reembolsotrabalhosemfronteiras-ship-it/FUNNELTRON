@@ -2,16 +2,16 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   ArrowLeft,
-  TrendingUp,
+  TrendUp as TrendingUp,
   Users,
   Target,
-  BarChart3,
-  Activity,
-  GitCompare,
+  ChartBar as BarChart3,
+  Pulse as Activity,
+  GitDiff as GitCompare,
   Globe,
   Trophy,
   Clock,
-} from "lucide-react";
+} from "@phosphor-icons/react";
 import {
   ResponsiveContainer,
   LineChart,

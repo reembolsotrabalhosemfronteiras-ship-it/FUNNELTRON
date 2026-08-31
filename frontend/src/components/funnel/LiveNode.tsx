@@ -1,6 +1,11 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "reactflow";
-import { ImageOff, Pencil, ExternalLink, Package } from "lucide-react";
+import {
+  ImageBroken as ImageOff,
+  PencilSimple as Pencil,
+  ArrowSquareOut as ExternalLink,
+  Package,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import { STEP_TYPE_LABEL, STEP_TYPE_ICON } from "./AtelierNode";
 import type { FunnelStep, StepType } from "@/types";

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarDays } from "lucide-react";
+import { CalendarBlank as CalendarDays } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import {
   isDateRange,

@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  Upload,
-  FileSpreadsheet,
-  Trash2,
-  AlertTriangle,
-  CheckCircle2,
-  FileWarning,
-} from "lucide-react";
+  UploadSimple as Upload,
+  FileCsv as FileSpreadsheet,
+  Trash as Trash2,
+  Warning as AlertTriangle,
+  CheckCircle as CheckCircle2,
+  WarningCircle as FileWarning,
+} from "@phosphor-icons/react";
 import { Header } from "@/components/common/Header";
 import {
   Card,

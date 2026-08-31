@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Search, GitBranch, ArrowDownWideNarrow, Pencil, Copy, Trash2 } from "lucide-react";
+import {
+  Plus,
+  MagnifyingGlass as Search,
+  FlowArrow as GitBranch,
+  ArrowsDownUp as ArrowDownWideNarrow,
+  PencilSimple as Pencil,
+  Copy,
+  Trash as Trash2,
+} from "@phosphor-icons/react";
 import { Header } from "@/components/common/Header";
 import { Card, CardContent } from "@/components/common/Card";
 import { StatusBadge } from "@/components/common/Badge";

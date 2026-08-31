@@ -1,4 +1,4 @@
-import { Clock, AlertTriangle } from "lucide-react";
+import { Clock, Warning as AlertTriangle } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import type { AsOf } from "@/api/client";
 

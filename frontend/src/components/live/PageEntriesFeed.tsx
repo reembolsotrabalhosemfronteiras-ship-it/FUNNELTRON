@@ -1,4 +1,4 @@
-import { Monitor, Smartphone } from "lucide-react";
+import { Monitor, DeviceMobile as Smartphone } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import type { LivePageEntry } from "@/api/client";
 import { Card, CardContent } from "@/components/common/Card";

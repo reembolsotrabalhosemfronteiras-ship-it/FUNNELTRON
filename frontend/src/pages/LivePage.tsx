@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
-  Zap,
+  Lightning as Zap,
   Users,
-  AlertCircle,
+  WarningCircle as AlertCircle,
   Clock,
-  GitBranch,
-  LayoutGrid,
-} from "lucide-react";
+  FlowArrow as GitBranch,
+  SquaresFour as LayoutGrid,
+} from "@phosphor-icons/react";
 import { Header } from "@/components/common/Header";
 import { Card, CardContent } from "@/components/common/Card";
 import { Button } from "@/components/common/Button";
@@ -417,20 +417,12 @@ function FunnelLiveView({
           <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
             Vendas (webhook)
           </h3>
-          <div className="flex items-center gap-1 rounded-md bg-muted/50 p-0.5">
+          <div className="seg">
             {(["all", "paid", "pending"] as SaleFilter[]).map((f) => (
-              <button
-                key={f}
-                onClick={() => setSaleFilter(f)}
-                className={cn(
-                  "rounded px-2.5 py-1 text-xs font-medium transition-colors",
-                  saleFilter === f
-                    ? "bg-card shadow-sm text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
+              <label key={f} className="seg-opt" onClick={() => setSaleFilter(f)}>
+                <input type="radio" name="salefilter" readOnly checked={saleFilter === f} />
                 {f === "all" ? "Todas" : f === "paid" ? "Pagas" : "Pendentes"}
-              </button>
+              </label>
             ))}
           </div>
         </div>
@@ -669,20 +661,12 @@ function GeneralLiveView({
           <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
             Vendas (webhook) — todos os funis
           </h3>
-          <div className="flex items-center gap-1 rounded-md bg-muted/50 p-0.5">
+          <div className="seg">
             {(["all", "paid", "pending"] as SaleFilter[]).map((fl) => (
-              <button
-                key={fl}
-                onClick={() => setSaleFilter(fl)}
-                className={cn(
-                  "rounded px-2.5 py-1 text-xs font-medium transition-colors",
-                  saleFilter === fl
-                    ? "bg-card shadow-sm text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
+              <label key={fl} className="seg-opt" onClick={() => setSaleFilter(fl)}>
+                <input type="radio" name="salefilterall" readOnly checked={saleFilter === fl} />
                 {fl === "all" ? "Todas" : fl === "paid" ? "Pagas" : "Pendentes"}
-              </button>
+              </label>
             ))}
           </div>
         </div>
@@ -704,16 +688,14 @@ function SummaryCard({
   icon: React.ReactNode;
 }) {
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="mb-2 flex items-center gap-2 text-muted-foreground">
-          {icon}
-          <span className="text-[11px] uppercase tracking-wide">{label}</span>
-        </div>
-        <p className="text-2xl font-bold">{value}</p>
-        {sub && <p className="text-[11px] text-muted-foreground">{sub}</p>}
-      </CardContent>
-    </Card>
+    <div className="card elev-sm">
+      <div className="mb-1.5 flex items-center gap-2 text-muted-foreground">
+        {icon}
+        <span className="text-[10.5px] uppercase tracking-wide">{label}</span>
+      </div>
+      <p className="text-[23px] font-bold">{value}</p>
+      {sub && <p className="text-[11px] text-muted-foreground">{sub}</p>}
+    </div>
   );
 }
 

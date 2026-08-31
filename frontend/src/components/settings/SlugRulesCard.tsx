@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Trash2, Save, Loader2, CheckCircle2, RotateCcw, AlertTriangle } from "lucide-react";
+import {
+  Plus,
+  Trash as Trash2,
+  FloppyDisk as Save,
+  CircleNotch as Loader2,
+  CheckCircle as CheckCircle2,
+  ArrowCounterClockwise as RotateCcw,
+  Warning as AlertTriangle,
+} from "@phosphor-icons/react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/common/Card";
 import { Button } from "@/components/common/Button";
 import { Input } from "@/components/common/Input";

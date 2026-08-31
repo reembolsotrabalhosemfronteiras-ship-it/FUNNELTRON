@@ -1,7 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Copy, Check, Loader2, ExternalLink, AlertTriangle } from "lucide-react";
+import {
+  Copy,
+  Check,
+  CircleNotch as Loader2,
+  ArrowSquareOut as ExternalLink,
+  Warning as AlertTriangle,
+} from "@phosphor-icons/react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/common/Card";
 import { Button } from "@/components/common/Button";
 import { Label } from "@/components/common/Input";

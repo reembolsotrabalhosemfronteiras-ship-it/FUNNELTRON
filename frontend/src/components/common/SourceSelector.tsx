@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Database, Cloud, Columns2 } from "lucide-react";
+import { Database, Cloud, Columns as Columns2 } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import {
   DATA_SOURCE_LABELS,

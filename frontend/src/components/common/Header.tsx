@@ -5,7 +5,7 @@ import {
   useContext,
   ReactNode,
 } from "react";
-import { Sun, Moon, Menu, ChevronDown } from "lucide-react";
+import { Sun, Moon, List as Menu, CaretDown as ChevronDown } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import { Button } from "./Button";
 import { Modal } from "./Modal";

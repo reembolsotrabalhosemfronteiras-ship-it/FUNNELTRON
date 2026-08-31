@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, RefreshCw, Edit, Settings, BarChart3 } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowClockwise as RefreshCw,
+  PencilSimple as Edit,
+  Gear as Settings,
+  ChartBar as BarChart3,
+} from "@phosphor-icons/react";
 import { Header } from "@/components/common/Header";
 import { Card, CardContent } from "@/components/common/Card";
 import { Button } from "@/components/common/Button";

@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { Save, CheckCircle2, AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react";
+import {
+  FloppyDisk as Save,
+  CheckCircle as CheckCircle2,
+  WarningCircle as AlertCircle,
+  Eye,
+  EyeSlash as EyeOff,
+  CircleNotch as Loader2,
+} from "@phosphor-icons/react";
 import { Header } from "@/components/common/Header";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/common/Card";
 import { Button } from "@/components/common/Button";

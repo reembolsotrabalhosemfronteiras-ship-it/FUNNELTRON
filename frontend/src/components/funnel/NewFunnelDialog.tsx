@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import {
-  Sparkles,
+  Sparkle as Sparkles,
   Package,
-  ClipboardList,
+  ClipboardText as ClipboardList,
   ArrowLeft,
-  Loader2,
+  CircleNotch as Loader2,
   X,
-  AlertTriangle,
-} from "lucide-react";
+  Warning as AlertTriangle,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import { STEP_TYPE_LABEL } from "./AtelierNode";
 import {

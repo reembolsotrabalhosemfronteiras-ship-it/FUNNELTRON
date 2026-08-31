@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Zap, X } from "lucide-react";
+import { Lightning as Zap, X } from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import { onPushMessage, resumePushIfEnabled, type PushMessage } from "@/lib/push";
 

@@ -1,5 +1,10 @@
 import { Handle, Position, type NodeProps } from "reactflow";
-import { ImageOff, Pencil, ExternalLink, Package } from "lucide-react";
+import {
+  ImageBroken as ImageOff,
+  PencilSimple as Pencil,
+  ArrowSquareOut as ExternalLink,
+  Package,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import { conversionChip } from "@/lib/conversion";
 import type { FunnelStep, StepMetric, StepType } from "@/types";

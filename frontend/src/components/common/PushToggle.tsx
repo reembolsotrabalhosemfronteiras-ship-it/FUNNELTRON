@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bell, BellRing } from "lucide-react";
+import { Bell, BellRinging as BellRing } from "@phosphor-icons/react";
 import { Button } from "./Button";
 import {
   disablePush,

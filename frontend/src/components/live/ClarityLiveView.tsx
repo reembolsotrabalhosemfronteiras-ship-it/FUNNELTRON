@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Cloud, Users, Eye, Timer, UserCheck } from "lucide-react";
+import { Cloud, Users, Eye, Timer, UserCheck } from "@phosphor-icons/react";
 import { Card, CardContent } from "@/components/common/Card";
 import { Spinner } from "@/components/common/Spinner";
 import { AsOfBadge, ClarityDelayNotice } from "@/components/common/AsOfBadge";
