@@ -62,3 +62,4 @@ htmlcov/
 # Local storage
 .cache/
 .gstack/
+frontend/node_modules_broken/

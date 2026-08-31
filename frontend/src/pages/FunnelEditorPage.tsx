@@ -1168,31 +1168,34 @@ function Inspector({
   };
 
   return (
-    <aside className="absolute right-4 top-4 z-20 flex max-h-[calc(100vh-2rem)] w-[290px] flex-col overflow-y-auto rounded-xl border border-slate-700 bg-slate-900/95 shadow-2xl backdrop-blur">
-      <div className="flex items-center justify-between border-b border-slate-700 px-3 py-2.5">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+    <aside
+      className="absolute right-4 top-4 z-20 flex max-h-[calc(100vh-2rem)] w-[292px] flex-col overflow-y-auto rounded-md border"
+      style={{ borderColor: "var(--color-divider)", background: "var(--color-surface)", boxShadow: "var(--shadow-lg)" }}
+    >
+      <div
+        className="sticky top-0 flex items-center justify-between border-b px-3 py-2.5"
+        style={{ borderColor: "var(--color-divider)", background: "var(--color-surface)" }}
+      >
+        <span className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
           Esta página
         </span>
-        <button
-          onClick={onClose}
-          className="rounded p-0.5 text-slate-500 hover:bg-slate-800 hover:text-slate-200"
-        >
+        <button onClick={onClose} className="btn btn-ghost !px-1.5 !py-0.5">
           <X size={14} />
         </button>
       </div>
 
       <div className="space-y-3.5 p-3">
-        <div>
-          <label className="mb-1 block text-[11px] text-slate-400">Nome</label>
+        <div className="field">
+          <label>Nome</label>
           <input
+            className="input"
             value={step.label}
             onChange={(e) => onPatch({ label: e.target.value })}
-            className="w-full rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-500"
           />
         </div>
 
         <div>
-          <label className="mb-1 block text-[11px] text-slate-400">
+          <label className="mb-1.5 block text-[11px] text-muted-foreground">
             O que é esta página
           </label>
           <div className="grid grid-cols-2 gap-1.5">
@@ -1200,12 +1203,12 @@ function Inspector({
               <button
                 key={type}
                 onClick={() => onPatch({ type })}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] transition-colors",
-                  step.type === type
-                    ? "border-sky-500 bg-sky-500/15 text-sky-200"
-                    : "border-slate-700 bg-slate-800/50 text-slate-400 hover:border-slate-500 hover:text-slate-200"
-                )}
+                className="flex items-center gap-1.5 rounded-sm border px-2 py-1.5 text-[10.5px] transition-colors"
+                style={{
+                  background: step.type === type ? "var(--color-accent-900)" : "var(--color-neutral-900)",
+                  borderColor: step.type === type ? "hsl(var(--primary))" : "var(--color-divider)",
+                  color: step.type === type ? "var(--color-accent-300)" : "hsl(var(--muted-foreground))",
+                }}
               >
                 <span className="leading-none">{STEP_TYPE_ICON[type]}</span>
                 {STEP_TYPE_LABEL[type]}
@@ -1216,7 +1219,7 @@ function Inspector({
 
         {step.type === "sub_funnel" ? (
           <div>
-            <label className="mb-1 block text-[11px] text-slate-400">
+            <label className="mb-1 block text-[11px] text-muted-foreground">
               Qual funil de upsell embutir
             </label>
             {upsellFunnels.length === 0 ? (
@@ -1257,7 +1260,7 @@ function Inspector({
           </div>
         ) : (
         <div>
-          <label className="mb-1 block text-[11px] text-slate-400">
+          <label className="mb-1 block text-[11px] text-muted-foreground">
             URL da página
           </label>
           <input
@@ -1270,12 +1273,12 @@ function Inspector({
                 onCapture(e.target.value);
               }
             }}
-            className="w-full rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-sky-500"
+            className="input"
           />
           <button
             onClick={() => onCapture(step.url)}
             disabled={!step.url.trim() || capturing}
-            className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-lg bg-sky-600 px-2 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-500"
+            className="btn btn-primary btn-block mt-1.5"
           >
             {capturing ? (
               <>
@@ -1300,7 +1303,7 @@ function Inspector({
 
         {step.type === "vsl" && (
           <div>
-            <label className="mb-1 block text-[11px] text-slate-400">
+            <label className="mb-1 block text-[11px] text-muted-foreground">
               Player ID do VTurb
             </label>
             <div className="flex gap-1.5">
@@ -1310,14 +1313,15 @@ function Inspector({
                 onChange={(e) =>
                   onPatch({ playerId: e.target.value.trim() || null })
                 }
-                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-sky-500"
+                className="input"
               />
               <button
                 type="button"
                 onClick={grabVturbId}
                 disabled={!step.url.trim() || vturbLookup.loading}
                 title="Puxar o player ID sozinho, lendo o embed do VTurb na página"
-                className="flex shrink-0 items-center gap-1 rounded-lg bg-purple-600 px-2.5 text-xs font-medium text-white transition-colors hover:bg-purple-500 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-500"
+                className="btn btn-secondary shrink-0"
+                style={{ borderColor: "var(--c-vsl)", color: "var(--color-accent-2-300)" }}
               >
                 {vturbLookup.loading ? (
                   <Loader2 size={12} className="animate-spin" />
@@ -1339,7 +1343,7 @@ function Inspector({
         )}
 
         <div>
-          <label className="mb-1 block text-[11px] text-slate-400">
+          <label className="mb-1 block text-[11px] text-muted-foreground">
             Print da página
           </label>
           <div
