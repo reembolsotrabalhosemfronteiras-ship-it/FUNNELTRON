@@ -459,11 +459,11 @@ Pedido do usuário (2026-08-31): as telas devem ficar **100% iguais** ao mockup
 | Tela | Estado |
 |---|---|
 | Login, Sidebar, Dashboard, Visão dos funis | ✅ batendo com o mockup |
-| **Métricas** | ⏳ reconstruir global/single/compare exatamente como o mockup (faixa de seleção, KPIs com delta, canvas do funil, "queda etapa a etapa", "tempo médio na página", verdict card da comparação, tabela métrica-a-métrica, cards, sobreposto) |
-| **Ao Vivo** | ⏳ 5 cards de resumo, card do mapa, "conversão por funil", banner de fluxo, feed de entradas/vendas/VSL — tudo no layout do mockup |
-| **Ateliê** | ⏳ toolbar, paleta, legenda de setas, inspetor no estilo do mockup |
-| **Importações** | ⏳ dropzone + prévia + guardadas no layout do mockup |
-| **Configurações** | ⏳ visual do mockup (3 cards) **+ manter/expor todas as funções reais** que o mockup corta: seletor de tier do VTurb, mostrar/ocultar senha, botões testar, webhook por funil, Public token, `TrackerCard`, `SlugRulesCard`, push. Criar botões pra chamar o que faltar. |
+| **Configurações** | ✅ cards no estilo do mockup + **todas** as funções reais mantidas (tier VTurb, mostrar/ocultar senha, testar, webhook por funil, Public token, TrackerCard, SlugRulesCard, salvar-tudo) |
+| **Importações** | ✅ warning card + dropzone + prévia `.table` + guardadas |
+| **Métricas** | 🟡 faixa de seleção (chips), KPIs (card-kicker), tabelas `.table`, `<Card>` com visual Nocturne — **visão global pronta**. Falta pixel-match de: single (seg "Período atual / Atual x anterior" — precisa de métrica de período anterior no backend), compare (verdict card com troféu, seg Tabela/Cards/Sobreposto) |
+| **Ateliê** | 🟡 toolbar, paleta, legenda de setas em token. Falta: `EdgeTypeMenu` e `Inspector` ainda com `slate-*` hardcoded; nós do canvas (`AtelierNode`) sem o wireframe `StepSketch` |
+| **Ao Vivo** | 🟡 cards de resumo (`.card`), filtros de venda (`.seg`), `<Card>` Nocturne. Falta: card do mapa do Brasil (bloqueado por geolocalização), layout exato de "conversão por funil" e feeds |
 
 **Mapa do Brasil ao vivo** — `BrazilLiveMap.tsx` está pronto mas **não plugado**:
 falta o backend capturar geolocalização (IP → cidade/UF) no rastreador
