@@ -1,28 +1,30 @@
 import { useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard,
-  GitBranch,
-  BarChart3,
-  Upload,
-  Settings,
+  SquaresFour,
+  FlowArrow,
+  Eye,
+  ChartBar,
+  Broadcast,
+  UploadSimple,
+  Gear,
   Plus,
-  Zap,
-  LogOut,
-  ChevronsLeft,
-  ChevronsRight,
-} from "lucide-react";
+  SignOut,
+  CaretDoubleLeft,
+  CaretDoubleRight,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/cn";
 import { useNewFunnel } from "@/components/funnel/NewFunnelProvider";
 import { useAuth } from "@/components/common/AuthContext";
 
 const navItems = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/funnels", label: "Funis", icon: GitBranch },
-  { to: "/metrics", label: "Métricas", icon: BarChart3 },
-  { to: "/live", label: "Ao Vivo", icon: Zap },
-  { to: "/imports", label: "Importações", icon: Upload },
-  { to: "/settings", label: "Configurações", icon: Settings },
+  { to: "/", label: "Dashboard", icon: SquaresFour },
+  { to: "/funnels", label: "Funis", icon: FlowArrow },
+  { to: "/overview", label: "Visão dos funis", icon: Eye },
+  { to: "/metrics", label: "Métricas", icon: ChartBar },
+  { to: "/live", label: "Ao Vivo", icon: Broadcast },
+  { to: "/imports", label: "Importações", icon: UploadSimple },
+  { to: "/settings", label: "Configurações", icon: Gear },
 ] as const;
 
 const COLLAPSE_KEY = "funil-analytics:sidebar-collapsed";
@@ -32,9 +34,6 @@ export function Sidebar() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { open: openNewFunnel } = useNewFunnel();
-  // Lembrado entre sessões: quem trabalha com o conteúdo central grande
-  // (o Ateliê, telas de configuração) não quer reabrir a barra toda vez
-  // que recarrega a página.
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSE_KEY) === "1"
   );
@@ -56,7 +55,7 @@ export function Sidebar() {
     <aside
       className={cn(
         "relative border-r border-border bg-card h-screen flex flex-col shrink-0 transition-[width] duration-200",
-        collapsed ? "w-16" : "w-64"
+        collapsed ? "w-16" : "w-[230px]"
       )}
     >
       <button
@@ -64,79 +63,75 @@ export function Sidebar() {
         title={collapsed ? "Expandir menu" : "Recolher menu"}
         className="absolute -right-3 top-6 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground"
       >
-        {collapsed ? <ChevronsRight size={13} /> : <ChevronsLeft size={13} />}
+        {collapsed ? <CaretDoubleRight size={13} /> : <CaretDoubleLeft size={13} />}
       </button>
 
-      <div className="p-4 border-b border-border overflow-hidden">
-        {/* Não é h1: a página já tem o seu próprio (o título no Header) —
-            dois h1 na mesma tela quebra a hierarquia de heading que leitor
-            de tela e SEO dependem pra entender do que a página trata. */}
+      <div className="px-4 py-[18px] border-b border-border overflow-hidden">
         <div
           className={cn(
-            "flex items-center gap-2 text-lg font-bold tracking-tight",
+            "flex items-center gap-2 text-base font-semibold tracking-tight",
             collapsed && "justify-center"
           )}
         >
-          <span className="text-primary shrink-0">📊</span>
-          {!collapsed && (
+          {collapsed ? (
+            <span className="text-primary shrink-0">F</span>
+          ) : (
             <span className="whitespace-nowrap">
-              FUNNEL<span className="text-primary">TRON</span>
+              <span className="text-neutral-300">FUNNEL</span>
+              <span className="text-primary">TRON</span>
             </span>
           )}
         </div>
       </div>
 
-      <nav className="flex-1 p-3 space-y-1">
+      <nav className="flex-1 p-3 flex flex-col gap-0.5 overflow-y-auto">
         {navItems.map(({ to, label, icon: Icon }) => {
-          const isActive = location.pathname === to || (to !== "/" && location.pathname.startsWith(to));
+          const isActive =
+            location.pathname === to ||
+            (to !== "/" && location.pathname.startsWith(to));
           return (
             <NavLink
               key={to}
               to={to}
               title={collapsed ? label : undefined}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-                  collapsed && "justify-center px-0",
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                )
-              }
+              className={cn(
+                "flex items-center gap-2.5 px-2.5 py-2.5 rounded-md text-[12.5px] transition-colors whitespace-nowrap",
+                collapsed && "justify-center px-0",
+                isActive
+                  ? "bg-primary/15 text-primary"
+                  : "text-foreground hover:bg-muted"
+              )}
             >
-              <Icon size={18} aria-hidden="true" className="shrink-0" />
-              {!collapsed && <span className="whitespace-nowrap">{label}</span>}
+              <Icon size={16} aria-hidden="true" className="shrink-0" />
+              {!collapsed && <span>{label}</span>}
             </NavLink>
           );
         })}
       </nav>
 
-      <div className="p-3 border-t border-border space-y-2">
+      <div className="p-3 border-t border-border flex flex-col gap-1.5">
         {!collapsed && user?.email && (
-          <p className="px-1 text-[11px] text-muted-foreground truncate" title={user.email}>
+          <p
+            className="px-1 text-[11px] text-muted-foreground truncate"
+            title={user.email}
+          >
             {user.email}
           </p>
         )}
         <button
           onClick={openNewFunnel}
           title={collapsed ? "Novo funil" : undefined}
-          className={cn(
-            "w-full flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-            "bg-primary text-primary-foreground hover:bg-primary/90"
-          )}
+          className="btn btn-secondary btn-block"
         >
-          <Plus size={16} className="shrink-0" />
+          <Plus size={15} className="shrink-0" />
           {!collapsed && "Novo funil"}
         </button>
         <button
           onClick={handleLogout}
           title={collapsed ? "Sair" : undefined}
-          className={cn(
-            "w-full flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-            "text-muted-foreground hover:bg-muted hover:text-foreground"
-          )}
+          className={cn("btn btn-ghost", collapsed ? "justify-center" : "justify-start")}
         >
-          <LogOut size={16} className="shrink-0" />
+          <SignOut size={15} className="shrink-0" />
           {!collapsed && "Sair"}
         </button>
       </div>

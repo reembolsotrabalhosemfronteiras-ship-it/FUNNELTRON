@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useLocation, Navigate } from "react-router-dom";
-import { LogIn, UserPlus, Loader2, AlertCircle } from "lucide-react";
+import { SignIn, UserPlus, CircleNotch, WarningCircle } from "@phosphor-icons/react";
 import { useAuth } from "@/components/common/AuthContext";
-import { Button } from "@/components/common/Button";
 import { Input, Label } from "@/components/common/Input";
 import { cn } from "@/lib/cn";
 
@@ -19,7 +18,6 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Já logado? vai para a página de origem (ou dashboard).
   if (user) return <Navigate to={from} replace />;
 
   const submit = async (e: React.FormEvent) => {
@@ -41,77 +39,72 @@ export function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-canvas px-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">
-            <span className="text-muted-foreground">FUNNEL</span>
+    <div className="min-h-screen flex items-center justify-center bg-canvas px-6">
+      <div className="w-full max-w-[420px]">
+        <div className="text-center mb-7">
+          <h1 className="text-3xl font-semibold tracking-tight">
+            <span className="text-neutral-300">FUNNEL</span>
             <span className="text-primary">TRON</span>
           </h1>
-          <p className="text-sm text-muted-foreground mt-2">
+          <p className="text-[13px] text-muted-foreground mt-1">
             Análise de funis em tempo real
           </p>
         </div>
 
-        <div className="rounded-xl border border-border bg-card shadow-lg p-6">
-          <div className="flex mb-6 rounded-lg bg-muted/50 p-1">
+        <div className="card elev-md !p-6">
+          <div className="seg w-full mb-[18px]">
             {(["login", "signup"] as const).map((m) => (
-              <button
+              <label
                 key={m}
-                type="button"
+                className="seg-opt flex-1 justify-center"
                 onClick={() => {
                   setMode(m);
                   setError(null);
                 }}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-1.5 rounded-md py-2 text-sm font-medium transition-colors",
-                  mode === m
-                    ? "bg-card text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
               >
-                {m === "login" ? <LogIn size={15} /> : <UserPlus size={15} />}
+                <input type="radio" name="loginmode" readOnly checked={mode === m} />
+                {m === "login" ? <SignIn size={15} /> : <UserPlus size={15} />}
                 {m === "login" ? "Entrar" : "Criar conta"}
-              </button>
+              </label>
             ))}
           </div>
 
-          <form onSubmit={submit} className="space-y-4">
+          <form onSubmit={submit} className="flex flex-col gap-3.5">
             {mode === "signup" && (
-              <div>
+              <div className="field">
                 <Label>Nome completo</Label>
-                <Input
+                <input
+                  className="input"
                   type="text"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Seu nome"
-                  className="mt-1"
                   autoComplete="name"
                 />
               </div>
             )}
 
-            <div>
+            <div className="field">
               <Label>Email</Label>
-              <Input
+              <input
+                className="input"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="voce@empresa.com"
-                className="mt-1"
                 autoComplete="email"
                 required
               />
             </div>
 
-            <div>
+            <div className="field">
               <Label>Senha</Label>
-              <Input
+              <input
+                className="input"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="mt-1"
                 autoComplete={mode === "login" ? "current-password" : "new-password"}
                 required
               />
@@ -119,25 +112,25 @@ export function LoginPage() {
 
             {error && (
               <div className="flex items-center gap-2 text-sm text-danger bg-danger/10 border border-danger/30 p-3 rounded-md">
-                <AlertCircle size={16} className="shrink-0" />
+                <WarningCircle size={16} className="shrink-0" />
                 {error}
               </div>
             )}
 
-            <Button type="submit" className="w-full" disabled={loading}>
+            <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
               {loading ? (
-                <Loader2 size={16} className="animate-spin" />
+                <CircleNotch size={16} className={cn("animate-spin")} />
               ) : mode === "login" ? (
-                <LogIn size={16} />
+                <SignIn size={16} />
               ) : (
                 <UserPlus size={16} />
               )}
               {mode === "login" ? "Entrar" : "Criar conta"}
-            </Button>
+            </button>
           </form>
 
           {import.meta.env.VITE_USE_MOCK !== "false" && (
-            <p className="text-[11px] text-muted-foreground mt-4 text-center">
+            <p className="text-[11px] text-muted-foreground mt-3.5 text-center">
               Modo demonstração: qualquer email e senha válidos entram.
             </p>
           )}

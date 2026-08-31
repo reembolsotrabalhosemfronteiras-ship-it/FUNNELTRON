@@ -7,6 +7,7 @@ import { NotificationsProvider } from "./components/common/NotificationsProvider
 import { DashboardPage } from "./pages/DashboardPage";
 import { FunnelListPage } from "./pages/FunnelListPage";
 import { FunnelViewPage } from "./pages/FunnelViewPage";
+import { FunnelOverviewPage } from "./pages/FunnelOverviewPage";
 import { FunnelEditorPage } from "./pages/FunnelEditorPage";
 import { MetricsPage } from "./pages/MetricsPage";
 import { ImportsPage } from "./pages/ImportsPage";
@@ -77,6 +78,7 @@ export default function App() {
                     <Routes>
                       <Route path="/" element={<DashboardPage />} />
                       <Route path="/funnels" element={<FunnelListPage />} />
+                      <Route path="/overview" element={<FunnelOverviewPage />} />
                       <Route path="/funnel/:id" element={<FunnelViewPage />} />
                       <Route path="/funnel/:id/live" element={<LivePage />} />
                       <Route path="/live" element={<LivePage />} />

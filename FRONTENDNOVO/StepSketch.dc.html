@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div style="position:absolute;inset:0;display:flex;flex-direction:column;gap:6px;padding:12px 12px 14px;background:linear-gradient(180deg,hsl(222 44% 14%),hsl(222 47% 10%))">
+  <div style="display:flex;align-items:center;gap:4px">
+    <span style="width:16px;height:5px;border-radius:2px;background:hsl(217 33% 30%)"></span>
+    <span style="flex:1"></span>
+    <span style="width:10px;height:4px;border-radius:2px;background:hsl(217 33% 26%)"></span>
+    <span style="width:10px;height:4px;border-radius:2px;background:hsl(217 33% 26%)"></span>
+  </div>
+
+  <sc-if value="{{ isLanding }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex;flex-direction:column;gap:5px;margin-top:6px">
+      <span style="height:9px;border-radius:3px;background:hsl(217 33% 34%)"></span>
+      <span style="height:9px;width:70%;border-radius:3px;background:hsl(217 33% 34%)"></span>
+      <span style="height:4px;border-radius:2px;background:hsl(217 33% 24%);margin-top:4px"></span>
+      <span style="height:4px;width:85%;border-radius:2px;background:hsl(217 33% 24%)"></span>
+      <span style="height:4px;width:60%;border-radius:2px;background:hsl(217 33% 24%)"></span>
+      <span style="height:18px;width:62%;border-radius:4px;background:hsl(217 91% 62%);margin-top:8px"></span>
+      <div style="display:flex;gap:5px;margin-top:8px">
+        <span style="flex:1;height:26px;border-radius:3px;background:hsl(217 33% 20%)"></span>
+        <span style="flex:1;height:26px;border-radius:3px;background:hsl(217 33% 20%)"></span>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isVsl }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
+      <div style="position:relative;height:74px;border-radius:4px;background:hsl(222 47% 8%);border:1px solid hsl(217 33% 24%);display:flex;align-items:center;justify-content:center">
+        <span style="width:0;height:0;border-left:14px solid hsl(271 91% 65%);border-top:9px solid transparent;border-bottom:9px solid transparent"></span>
+        <span style="position:absolute;left:8px;right:8px;bottom:7px;height:3px;border-radius:2px;background:hsl(217 33% 26%)"></span>
+        <span style="position:absolute;left:8px;bottom:7px;width:40%;height:3px;border-radius:2px;background:hsl(271 91% 65%)"></span>
+      </div>
+      <span style="height:6px;width:80%;border-radius:3px;background:hsl(217 33% 32%)"></span>
+      <span style="height:4px;border-radius:2px;background:hsl(217 33% 22%)"></span>
+      <span style="height:16px;width:66%;border-radius:4px;background:hsl(217 91% 62%);margin-top:6px"></span>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isCheckout }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:7px;margin-top:6px">
+      <span style="height:6px;width:55%;border-radius:3px;background:hsl(217 33% 32%)"></span>
+      <span style="height:14px;border-radius:3px;background:hsl(222 47% 8%);border:1px solid hsl(217 33% 24%)"></span>
+      <span style="height:14px;border-radius:3px;background:hsl(222 47% 8%);border:1px solid hsl(217 33% 24%)"></span>
+      <div style="display:flex;gap:6px">
+        <span style="flex:1;height:14px;border-radius:3px;background:hsl(222 47% 8%);border:1px solid hsl(217 33% 24%)"></span>
+        <span style="width:34%;height:14px;border-radius:3px;background:hsl(222 47% 8%);border:1px solid hsl(217 33% 24%)"></span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
+        <span style="height:4px;width:30%;border-radius:2px;background:hsl(217 33% 24%)"></span>
+        <span style="height:7px;width:22%;border-radius:3px;background:hsl(142 69% 52%)"></span>
+      </div>
+      <span style="height:18px;border-radius:4px;background:hsl(142 69% 52%);margin-top:4px"></span>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isBump }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:7px;margin-top:8px">
+      <span style="height:5px;width:60%;border-radius:2px;background:hsl(217 33% 28%)"></span>
+      <div style="display:flex;gap:7px;align-items:center;border:1px dashed hsl(38 92% 58%);border-radius:5px;padding:8px">
+        <span style="width:12px;height:12px;border-radius:3px;background:hsl(38 92% 58%);flex-shrink:0"></span>
+        <span style="display:flex;flex-direction:column;gap:4px;flex:1">
+          <span style="height:5px;border-radius:2px;background:hsl(217 33% 34%)"></span>
+          <span style="height:4px;width:70%;border-radius:2px;background:hsl(217 33% 24%)"></span>
+        </span>
+      </div>
+      <span style="height:4px;border-radius:2px;background:hsl(217 33% 22%)"></span>
+      <span style="height:16px;width:70%;border-radius:4px;background:hsl(217 91% 62%);margin-top:6px"></span>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isUpsell }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:12px">
+      <span style="width:0;height:0;border-bottom:13px solid hsl(142 69% 52%);border-left:10px solid transparent;border-right:10px solid transparent"></span>
+      <span style="height:6px;width:70%;border-radius:3px;background:hsl(217 33% 32%)"></span>
+      <span style="height:4px;width:85%;border-radius:2px;background:hsl(217 33% 22%)"></span>
+      <span style="height:36px;width:100%;border-radius:4px;background:hsl(217 33% 18%)"></span>
+      <span style="height:16px;width:75%;border-radius:4px;background:hsl(142 69% 52%)"></span>
+      <span style="height:4px;width:45%;border-radius:2px;background:hsl(217 33% 24%)"></span>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isDownsell }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:12px">
+      <span style="width:0;height:0;border-top:13px solid hsl(38 92% 58%);border-left:10px solid transparent;border-right:10px solid transparent"></span>
+      <span style="height:6px;width:70%;border-radius:3px;background:hsl(217 33% 32%)"></span>
+      <span style="height:4px;width:85%;border-radius:2px;background:hsl(217 33% 22%)"></span>
+      <span style="height:36px;width:100%;border-radius:4px;background:hsl(217 33% 18%)"></span>
+      <span style="height:16px;width:75%;border-radius:4px;background:hsl(38 92% 58%)"></span>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isThankYou }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:9px;margin-top:22px">
+      <span style="width:34px;height:34px;border-radius:50%;border:2px solid hsl(142 69% 52%);display:flex;align-items:center;justify-content:center">
+        <span style="width:12px;height:6px;border-left:2px solid hsl(142 69% 52%);border-bottom:2px solid hsl(142 69% 52%);transform:rotate(-45deg);margin-top:-3px"></span>
+      </span>
+      <span style="height:6px;width:62%;border-radius:3px;background:hsl(217 33% 32%)"></span>
+      <span style="height:4px;width:80%;border-radius:2px;background:hsl(217 33% 22%)"></span>
+      <span style="height:4px;width:52%;border-radius:2px;background:hsl(217 33% 22%)"></span>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isOther }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+      <span style="height:6px;width:65%;border-radius:3px;background:hsl(217 33% 32%)"></span>
+      <span style="height:4px;border-radius:2px;background:hsl(217 33% 22%)"></span>
+      <span style="height:4px;border-radius:2px;background:hsl(217 33% 22%)"></span>
+      <span style="height:4px;width:70%;border-radius:2px;background:hsl(217 33% 22%)"></span>
+      <span style="height:46px;border-radius:4px;background:hsl(217 33% 18%);margin-top:6px"></span>
+      <span style="height:4px;border-radius:2px;background:hsl(217 33% 22%)"></span>
+      <span style="height:4px;width:55%;border-radius:2px;background:hsl(217 33% 22%)"></span>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isSubFunnel }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
+      <span style="height:5px;width:58%;border-radius:2px;background:hsl(217 33% 28%)"></span>
+      <div style="display:flex;flex-direction:column;gap:7px">
+        <span style="height:22px;border-radius:4px;background:hsl(199 89% 60% / .18);border:1px solid hsl(199 89% 60%)"></span>
+        <span style="height:22px;border-radius:4px;background:hsl(199 89% 60% / .14);border:1px solid hsl(199 89% 60% / .7)"></span>
+        <span style="height:22px;border-radius:4px;background:hsl(199 89% 60% / .1);border:1px solid hsl(199 89% 60% / .5)"></span>
+      </div>
+    </div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:180,&quot;height&quot;:200},&quot;type&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;landing&quot;,&quot;vsl&quot;,&quot;checkout&quot;,&quot;order_bump&quot;,&quot;upsell&quot;,&quot;downsell&quot;,&quot;thank_you&quot;,&quot;other&quot;,&quot;sub_funnel&quot;],&quot;default&quot;:&quot;landing&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const t = this.props.type || 'landing';
+    return {
+      isLanding: t === 'landing', isVsl: t === 'vsl', isCheckout: t === 'checkout',
+      isBump: t === 'order_bump', isUpsell: t === 'upsell', isDownsell: t === 'downsell',
+      isThankYou: t === 'thank_you', isOther: t === 'other', isSubFunnel: t === 'sub_funnel'
+    };
+  }
+}
+
+</script>
+</body>
+</html>

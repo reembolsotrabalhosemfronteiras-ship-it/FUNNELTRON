@@ -11,22 +11,20 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   loading?: boolean;
 }
 
+// Nocturne: o primário é um contorno do accent, nunca um preenchimento sólido.
 const variants: Record<Variant, string> = {
-  primary:
-    "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm",
-  secondary:
-    "bg-muted text-foreground hover:bg-muted/70 border border-border shadow-sm",
-  ghost: "bg-transparent hover:bg-muted text-foreground",
-  danger: "bg-danger text-white hover:bg-danger/90 shadow-sm",
-  outline:
-    "bg-transparent border border-border text-foreground hover:bg-muted shadow-sm",
+  primary: "btn btn-primary",
+  secondary: "btn btn-secondary",
+  outline: "btn btn-secondary",
+  ghost: "btn btn-ghost",
+  danger: "btn btn-danger",
 };
 
 const sizes: Record<Size, string> = {
-  sm: "h-8 px-3 text-xs",
-  md: "h-9 px-4 text-sm",
-  lg: "h-11 px-6 text-base",
-  icon: "h-9 w-9",
+  sm: "btn-sm",
+  md: "",
+  lg: "text-base px-6 py-2.5",
+  icon: "w-9 h-9 p-0",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
@@ -36,9 +34,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         disabled={disabled || loading}
         className={cn(
-          "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none",
           variants[variant],
           sizes[size],
+          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
           className
         )}
         {...props}

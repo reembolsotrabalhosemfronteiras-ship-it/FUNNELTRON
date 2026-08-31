@@ -1,0 +1,1864 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/nocturne-2d3b970a-87bd-47d8-abee-3c305bd2e856/styles.css">
+  <script src="_ds/nocturne-2d3b970a-87bd-47d8-abee-3c305bd2e856/_ds_bundle.js"></script>
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
+  <script src="https://unpkg.com/d3@7.9.0/dist/d3.min.js" integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/topojson-client@3.1.0/dist/topojson-client.min.js" integrity="sha384-Ukv1p/xTma6P4/2bY5KzWBw+ydSpXmhCMtyciIQVDJ1RmOxtCYNMF1uXT9T63H67" crossorigin="anonymous"></script>
+  <style>
+    /* Tokens repintados com a paleta original do Funneltron (tema escuro) */
+    :root{
+      --color-bg:hsl(222 47% 7%);
+      --color-surface:hsl(222 44% 12%);
+      --color-text:hsl(210 40% 96%);
+      --color-divider:hsl(217 33% 22%);
+      --color-neutral-100:hsl(210 40% 96%);
+      --color-neutral-200:hsl(214 32% 88%);
+      --color-neutral-300:hsl(213 27% 78%);
+      --color-neutral-400:hsl(215 20% 65%);
+      --color-neutral-500:hsl(215 16% 55%);
+      --color-neutral-600:hsl(215 19% 40%);
+      --color-neutral-700:hsl(217 33% 27%);
+      --color-neutral-800:hsl(217 33% 18%);
+      --color-neutral-900:hsl(222 47% 11%);
+      --color-accent:hsl(217 91% 62%);
+      --color-accent-100:hsl(214 95% 93%);
+      --color-accent-200:hsl(213 97% 87%);
+      --color-accent-300:hsl(212 96% 78%);
+      --color-accent-400:hsl(213 94% 70%);
+      --color-accent-500:hsl(217 91% 62%);
+      --color-accent-600:hsl(221 83% 53%);
+      --color-accent-700:hsl(224 76% 42%);
+      --color-accent-800:hsl(222 55% 25%);
+      --color-accent-900:hsl(222 55% 16%);
+      --color-accent-2-300:hsl(269 97% 85%);
+      --color-accent-2-500:hsl(271 91% 65%);
+      --color-accent-2-800:hsl(272 50% 25%);
+      --color-accent-2-900:hsl(272 50% 16%);
+      --c-high:hsl(142 69% 52%);
+      --c-mid:hsl(38 92% 58%);
+      --c-low:hsl(0 84% 65%);
+      --c-live:hsl(0 84% 60%);
+      --c-vsl:hsl(271 91% 65%);
+    }
+    html,body{height:100%}
+    @keyframes livepulse{0%{opacity:1}50%{opacity:.3}100%{opacity:1}}
+    ::-webkit-scrollbar{width:10px;height:10px}
+    ::-webkit-scrollbar-thumb{background:var(--color-neutral-700);border-radius:8px}
+    ::-webkit-scrollbar-track{background:transparent}
+    .tag,.card-kicker,.seg-opt,.btn,.card-title{white-space:nowrap}
+  </style>
+</helmet>
+
+<div style="min-height:100vh;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);display:flex">
+
+  <div class="tag tag-outline" style="position:fixed;top:14px;right:14px;z-index:80;background:var(--color-bg)">Esboço · dados fictícios</div>
+
+  <!-- ============================= LOGIN ============================= -->
+  <sc-if value="{{ isLoginPage }}" hint-placeholder-val="{{ false }}">
+    <div style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">
+      <div style="width:100%;max-width:420px">
+        <div style="text-align:center;margin-bottom:28px">
+          <h1 style="margin-bottom:4px"><span style="color:var(--color-neutral-300)">FUNNEL</span><span style="color:var(--color-accent)">TRON</span></h1>
+          <p class="text-muted" style="font-size:13px">Análise de funis em tempo real</p>
+        </div>
+        <div class="card elev-md" style="padding:24px">
+          <div class="seg" style="width:100%;margin-bottom:18px">
+            <label class="seg-opt" style="flex:1;justify-content:center">
+              <input type="radio" name="loginmode" checked="{{ loginModeIsLogin }}" onChange="{{ loginAsLogin }}">
+              <i class="ph ph-sign-in"></i> Entrar
+            </label>
+            <label class="seg-opt" style="flex:1;justify-content:center">
+              <input type="radio" name="loginmode" checked="{{ loginModeIsSignup }}" onChange="{{ loginAsSignup }}">
+              <i class="ph ph-user-plus"></i> Criar conta
+            </label>
+          </div>
+          <form onSubmit="{{ doLogin }}" style="display:flex;flex-direction:column;gap:14px">
+            <sc-if value="{{ loginModeIsSignup }}" hint-placeholder-val="{{ false }}">
+              <div class="field"><label>Nome completo</label><input class="input" placeholder="Seu nome"></div>
+            </sc-if>
+            <div class="field"><label>Email</label><input class="input" type="email" placeholder="voce@empresa.com"></div>
+            <div class="field"><label>Senha</label><input class="input" type="password" placeholder="••••••••"></div>
+            <button type="submit" class="btn btn-primary btn-block"><i class="ph ph-sign-in"></i> Entrar no esboço</button>
+          </form>
+          <p class="text-muted" style="font-size:11px;text-align:center;margin-top:14px">Protótipo de visualização — nenhum dado real é usado.</p>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ============================= APP SHELL ============================= -->
+  <sc-if value="{{ isAppPage }}" hint-placeholder-val="{{ true }}">
+    <aside style="width:230px;flex-shrink:0;background:var(--color-surface);border-right:1px solid var(--color-divider);display:flex;flex-direction:column;height:100vh;position:sticky;top:0">
+      <div style="padding:18px 16px;border-bottom:1px solid var(--color-divider)">
+        <div style="font-family:var(--font-heading);font-weight:600;font-size:16px"><span style="color:var(--color-neutral-300)">FUNNEL</span><span style="color:var(--color-accent)">TRON</span></div>
+      </div>
+      <nav style="flex:1;padding:12px;display:flex;flex-direction:column;gap:2px;overflow-y:auto">
+        <sc-for list="{{ navItems }}" as="item" hint-placeholder-count="8">
+          <button onClick="{{ item.go }}" style="display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:var(--radius-md);border:none;cursor:pointer;font-size:12.5px;font-family:var(--font-body);text-align:left;white-space:nowrap;background:{{ item.bg }};color:{{ item.color }}">
+            <i class="{{ item.icon }}" style="font-size:16px;flex-shrink:0"></i>{{ item.label }}
+          </button>
+        </sc-for>
+      </nav>
+      <div style="padding:12px;border-top:1px solid var(--color-divider);display:flex;flex-direction:column;gap:6px">
+        <p class="text-muted" style="font-size:11px;padding:0 4px">demo@funneltron.app</p>
+        <button class="btn btn-secondary btn-block"><i class="ph ph-plus"></i>Novo funil</button>
+        <button class="btn btn-ghost" style="justify-content:flex-start" onClick="{{ goLogin }}"><i class="ph ph-sign-out"></i>Voltar ao login</button>
+      </div>
+    </aside>
+
+    <main style="flex:1;min-width:0;height:100vh;overflow-y:auto">
+
+      <!-- ================= DASHBOARD ================= -->
+      <sc-if value="{{ page.dashboard }}" hint-placeholder-val="{{ false }}" data-screen-label="Dashboard">
+        <header style="padding:22px 28px 16px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:1px solid var(--color-divider)">
+          <div><h2 style="margin-bottom:2px">Dashboard</h2><p class="text-muted" style="font-size:13px">Métricas gerais de todos os funis · {{ periodLabel }}</p></div>
+          <button class="seg" style="border:1px solid var(--color-divider);cursor:pointer;background:none;padding:0" onClick="{{ cyclePeriod }}">
+            <span class="seg-opt" style="color:var(--color-text)"><i class="ph ph-calendar-blank"></i>{{ periodLabel }}</span>
+          </button>
+        </header>
+        <div style="padding:24px 28px;display:flex;flex-direction:column;gap:24px">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px">
+            <sc-for list="{{ dash.kpis }}" as="k" hint-placeholder-count="4">
+              <div class="card elev-sm" style="padding:16px">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                  <span class="card-kicker">{{ k.label }}</span>
+                  <i class="{{ k.icon }}" style="font-size:18px;color:var(--color-accent)"></i>
+                </div>
+                <p style="font-size:26px;font-weight:600;font-family:var(--font-heading);margin:6px 0 2px">{{ k.value }}</p>
+                <p class="text-muted" style="font-size:12px">{{ k.sub }}</p>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="display:grid;grid-template-columns:2fr 1fr;gap:20px;align-items:start">
+            <div class="card elev-sm" style="padding:18px">
+              <p class="card-title" style="display:flex;align-items:center;gap:8px"><i class="ph ph-chart-bar-horizontal" style="color:var(--color-accent)"></i>Ranking de funis por conversão</p>
+              <p class="card-body" style="margin-bottom:14px">Melhor → pior no período selecionado</p>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <sc-for list="{{ dash.rankingRows }}" as="r" hint-placeholder-count="5">
+                  <div>
+                    <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px"><span>{{ r.name }}</span><span style="font-weight:600">{{ r.rateFmt }}</span></div>
+                    <div style="height:9px;border-radius:6px;background:var(--color-neutral-900);overflow:hidden"><div style="height:100%;border-radius:6px;background:{{ r.color }};width:{{ r.pct }}%"></div></div>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div class="hr"></div>
+
+              <table class="table">
+                <thead><tr><th>Funil</th><th>Status</th><th style="text-align:right">Visitas</th><th style="text-align:right">Conv.</th><th style="text-align:right">Tend.</th></tr></thead>
+                <tbody>
+                  <sc-for list="{{ dash.rankingRows }}" as="r" hint-placeholder-count="5">
+                    <tr>
+                      <td style="cursor:pointer;color:var(--color-accent)" onClick="{{ r.view }}">{{ r.name }}</td>
+                      <td><span class="tag {{ r.statusTag }}">{{ r.statusLabel }}</span></td>
+                      <td style="text-align:right">{{ r.visitorsFmt }}</td>
+                      <td style="text-align:right;font-weight:600">{{ r.rateFmt }}</td>
+                      <td style="text-align:right;color:{{ r.trendColor }}">{{ r.trendFmt }}</td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="card elev-sm" style="padding:18px">
+              <p class="card-title" style="display:flex;align-items:center;gap:8px"><i class="ph ph-play-circle" style="color:var(--c-vsl)"></i>Conversão de VSL</p>
+              <p class="card-body" style="margin-bottom:12px">Fonte: VTurb Analytics</p>
+              <sc-if value="{{ dash.hasVsl }}" hint-placeholder-val="{{ false }}">
+                <div style="background:var(--color-accent-2-900);border:1px solid var(--color-accent-2-800);border-radius:var(--radius-md);padding:12px;margin-bottom:14px">
+                  <p style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--color-accent-2-300)">Top VSL</p>
+                  <p style="font-weight:600;margin:4px 0">{{ dash.topVsl.name }}</p>
+                  <p style="font-size:26px;font-weight:700;color:var(--color-accent-2-300)">{{ dash.topVsl.conv }}</p>
+                  <p class="text-muted" style="font-size:11px">Engajamento {{ dash.topVsl.eng }} · {{ dash.topVsl.views }} views</p>
+                </div>
+              </sc-if>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <sc-for list="{{ dash.vslList }}" as="v" hint-placeholder-count="3">
+                  <div style="border:1px solid var(--color-divider);border-radius:var(--radius-md);padding:9px 11px">
+                    <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px"><span>{{ v.name }}</span><span class="tag tag-accent-2">{{ v.conv }}</span></div>
+                    <div style="height:6px;border-radius:4px;background:var(--color-neutral-900);overflow:hidden"><div style="height:100%;background:var(--c-vsl);width:{{ v.pct }}%"></div></div>
+                    <p class="text-muted" style="font-size:10.5px;margin-top:4px">{{ v.eng }} engajamento · {{ v.views }} views</p>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ================= FUNIS (list) ================= -->
+      <sc-if value="{{ page.funnels }}" hint-placeholder-val="{{ false }}" data-screen-label="Lista de Funis">
+        <header style="padding:22px 28px 16px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:1px solid var(--color-divider)">
+          <div><h2 style="margin-bottom:2px">Funis</h2><p class="text-muted" style="font-size:13px">{{ funnelsList.count }} funis cadastrados · {{ periodLabel }}</p></div>
+          <button class="btn btn-primary"><i class="ph ph-plus"></i>Novo funil</button>
+        </header>
+        <div style="padding:16px 28px 0">
+          <div class="seg">
+            <label class="seg-opt"><input type="radio" name="kindtab" checked="{{ funnelsList.kindFront }}" onChange="{{ kindFront }}">Funis de front</label>
+            <label class="seg-opt"><input type="radio" name="kindtab" checked="{{ funnelsList.kindUpsell }}" onChange="{{ kindUpsell }}">Funis de upsell</label>
+          </div>
+        </div>
+        <div style="padding:24px 28px">
+          <sc-if value="{{ funnelsList.kindFront }}" hint-placeholder-val="{{ true }}">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
+              <sc-for list="{{ funnelsList.rows }}" as="f" hint-placeholder-count="5">
+                <div class="card elev-sm" style="padding:16px">
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+                    <p class="card-title" style="overflow:hidden;text-overflow:ellipsis;margin-right:8px">{{ f.name }}</p>
+                    <span class="tag {{ f.statusTag }}" style="flex-shrink:0">{{ f.statusLabel }}</span>
+                  </div>
+                  <p class="text-muted" style="font-size:12px;margin-bottom:12px">{{ f.baseUrl }}</p>
+                  <svg viewBox="0 0 200 36" style="width:100%;height:36px;display:block;margin-bottom:12px"><polyline points="{{ f.sparkline }}" fill="none" stroke="var(--color-accent)" stroke-width="2"></polyline></svg>
+                  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center">
+                    <div style="background:var(--color-neutral-900);border-radius:var(--radius-sm);padding:8px 4px"><p class="text-muted" style="font-size:10px">Visitas</p><p style="font-weight:600;font-size:13px">{{ f.visitors }}</p></div>
+                    <div style="background:var(--color-neutral-900);border-radius:var(--radius-sm);padding:8px 4px"><p class="text-muted" style="font-size:10px">Conv. funil</p><p style="font-weight:600;font-size:13px;color:{{ f.rateColor }}">{{ f.rate }}</p></div>
+                    <div style="background:var(--color-neutral-900);border-radius:var(--radius-sm);padding:8px 4px"><p class="text-muted" style="font-size:10px">Vendas</p><p style="font-weight:600;font-size:13px">{{ f.sales }}</p></div>
+                  </div>
+<sc-if value="{{ f.hasVsl }}" hint-placeholder-val="{{ false }}">
+                    <div class="hr" style="margin:10px 0"></div>
+                    <div style="display:flex;justify-content:space-between;font-size:11px" class="text-muted"><span><i class="ph ph-video-camera"></i> VSL {{ f.vslConv }}</span><span>Engaj {{ f.vslEng }}</span></div>
+                  </sc-if>
+                  <div style="display:flex;gap:8px;margin-top:12px">
+                    <button class="btn btn-ghost" style="flex:1;justify-content:center" onClick="{{ f.view }}"><i class="ph ph-eye"></i>Ver funil</button>
+                    <button class="btn btn-secondary" style="flex:1;justify-content:center" onClick="{{ f.edit }}"><i class="ph ph-pencil-simple"></i>Editar</button>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ funnelsList.kindUpsell }}" hint-placeholder-val="{{ false }}">
+            <div style="text-align:center;padding:60px 0" class="text-muted"><i class="ph ph-git-branch" style="font-size:38px"></i><p style="margin-top:10px">Nenhum funil de upsell neste esboço.</p></div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <!-- ================= ATELIÊ ================= -->
+      <sc-if value="{{ page.atelier }}" hint-placeholder-val="{{ false }}" data-screen-label="Ateliê">
+        <div style="height:100vh;display:flex;flex-direction:column">
+          <!-- toolbar flutuante, como no original -->
+          <header style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 20px;border-bottom:1px solid var(--color-divider);background:var(--color-surface)">
+<button class="btn btn-ghost" onClick="{{ atelier.back }}"><i class="ph ph-arrow-left"></i>Voltar</button>
+            <div style="min-width:0">
+              <p style="font-weight:600;font-size:14px;margin:0">{{ atelier.name }}</p>
+              <p class="text-muted" style="font-size:11px">{{ atelier.stepCount }} páginas · {{ atelier.edgeCount }} setas</p>
+            </div>
+            <div style="display:flex;gap:4px;margin-left:8px">
+              <sc-for list="{{ atelier.statuses }}" as="st" hint-placeholder-count="3">
+                <button onClick="{{ st.pick }}" style="display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:var(--radius-md);cursor:pointer;font-size:11.5px;font-family:var(--font-body);background:{{ st.bg }};border:1px solid {{ st.border }};color:{{ st.color }}">
+                  <span style="width:7px;height:7px;border-radius:50%;background:{{ st.dot }}"></span>{{ st.label }}
+                </button>
+              </sc-for>
+            </div>
+            <div style="flex:1"></div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+<button class="btn btn-ghost" onClick="{{ atelier.toggleIntegrations }}"><i class="ph ph-plugs"></i>Integrações deste funil</button>
+              <button class="btn btn-ghost" onClick="{{ atelier.captureAll }}"><i class="ph ph-camera"></i>Capturar tudo</button>
+              <button class="btn btn-ghost" onClick="{{ atelier.spread }}"><i class="ph ph-layout"></i>Espalhar</button>
+              <button class="btn btn-ghost" onClick="{{ atelier.undo }}"><i class="ph ph-arrow-counter-clockwise"></i>Desfazer</button>
+              <span style="display:flex;align-items:center;gap:6px;font-size:11px;color:{{ atelier.dirtyColor }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ atelier.dirtyColor }}"></span>{{ atelier.dirtyLabel }}</span>
+              <button class="btn btn-primary" onClick="{{ atelier.save }}"><i class="ph ph-floppy-disk"></i>Salvar</button>
+            </div>
+          </header>
+
+          <sc-if value="{{ atelier.captureBanner }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:8px 20px;background:var(--color-accent-900);border-bottom:1px solid var(--color-accent-800);font-size:12px;display:flex;align-items:center;gap:8px">
+              <i class="ph ph-camera" style="color:var(--color-accent-300)"></i>capturando prints das páginas… {{ atelier.captureProgress }}
+            </div>
+          </sc-if>
+
+<sc-if value="{{ atelier.integrationsOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:16px 20px;border-bottom:1px solid var(--color-divider);background:var(--color-surface)">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px">
+                <div>
+                  <p style="font-size:13px;font-weight:600;margin:0">Integrações de {{ atelier.name }}</p>
+                  <p class="text-muted" style="font-size:11.5px">Códigos e tokens que valem só para este funil</p>
+                </div>
+                <button class="btn btn-ghost" onClick="{{ atelier.toggleIntegrations }}"><i class="ph ph-x"></i>Fechar</button>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px">
+                <div class="card" style="padding:14px;border:1px solid var(--color-divider)">
+                  <p class="card-kicker" style="display:flex;align-items:center;gap:6px;margin-bottom:10px"><i class="ph ph-chart-line" style="color:var(--color-accent)"></i>Microsoft Clarity</p>
+                  <div class="field" style="margin-bottom:10px"><label>ID do projeto</label><input class="input" value="{{ atelier.integrations.clarityProject }}" readonly></div>
+                  <div class="field" style="margin-bottom:10px"><label>Token de API</label><input class="input" type="password" value="{{ atelier.integrations.clarityToken }}" readonly></div>
+                  <div style="display:flex;gap:8px"><button class="btn btn-secondary">Salvar</button><button class="btn btn-ghost">Testar</button></div>
+                </div>
+                <div class="card" style="padding:14px;border:1px solid var(--color-divider)">
+                  <p class="card-kicker" style="display:flex;align-items:center;gap:6px;margin-bottom:10px"><i class="ph ph-video-camera" style="color:var(--c-vsl)"></i>VTurb Analytics</p>
+                  <div class="field" style="margin-bottom:10px"><label>X-Api-Token</label><input class="input" type="password" value="{{ atelier.integrations.vturbToken }}" readonly></div>
+                  <p class="text-muted" style="font-size:10.5px;margin-bottom:10px;line-height:1.35">O Player ID de cada VSL fica no inspetor da página, à direita.</p>
+                  <div style="display:flex;gap:8px"><button class="btn btn-secondary">Salvar</button><button class="btn btn-ghost">Testar</button></div>
+                </div>
+                <div class="card" style="padding:14px;border:1px solid var(--color-divider)">
+                  <p class="card-kicker" style="display:flex;align-items:center;gap:6px;margin-bottom:10px"><i class="ph ph-webhooks-logo" style="color:var(--color-accent)"></i>Webhook de venda</p>
+                  <div class="field" style="margin-bottom:10px"><label>URL deste funil</label><input class="input" value="{{ atelier.integrations.webhook }}" readonly></div>
+                  <button class="btn btn-secondary"><i class="ph ph-copy"></i>Copiar</button>
+                </div>
+                <div class="card" style="padding:14px;border:1px solid var(--color-divider)">
+                  <p class="card-kicker" style="display:flex;align-items:center;gap:6px;margin-bottom:10px"><i class="ph ph-code" style="color:var(--color-accent)"></i>Rastreador próprio</p>
+                  <div class="field" style="margin-bottom:10px"><label>Snippet no &lt;head&gt; das páginas</label><input class="input" value="{{ atelier.integrations.snippet }}" readonly></div>
+                  <button class="btn btn-secondary"><i class="ph ph-copy"></i>Copiar snippet</button>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <div style="flex:1;position:relative;overflow:hidden;background:var(--color-bg);background-image:radial-gradient(var(--color-neutral-800) 1px,transparent 1px);background-size:22px 22px">
+            <!-- paleta -->
+            <div style="position:absolute;left:16px;top:16px;z-index:20;width:196px;border:1px solid var(--color-divider);border-radius:var(--radius-md);background:var(--color-surface);padding:10px;box-shadow:var(--shadow-lg)">
+              <p style="display:flex;align-items:center;gap:6px;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--color-neutral-400);margin-bottom:8px"><i class="ph ph-plus" style="color:var(--color-accent)"></i>Adicionar página</p>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                <sc-for list="{{ atelier.palette }}" as="p" hint-placeholder-count="9">
+                  <button onClick="{{ p.add }}" style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 4px;border-radius:var(--radius-sm);cursor:pointer;background:var(--color-neutral-900);border:1px solid var(--color-divider);color:var(--color-neutral-300);font-family:var(--font-body)">
+                    <i class="{{ p.icon }}" style="font-size:15px;color:var(--color-accent)"></i>
+                    <span style="font-size:9.5px;line-height:1.1;text-align:center">{{ p.label }}</span>
+                  </button>
+                </sc-for>
+              </div>
+              <p class="text-muted" style="font-size:10px;margin-top:8px;line-height:1.35">Clique para pôr no canvas. Puxe a bolinha da direita de um card e solte no vazio para criar a próxima página já ligada.</p>
+            </div>
+
+            <!-- legenda de setas -->
+            <div style="position:absolute;left:16px;bottom:16px;z-index:20;border:1px solid var(--color-divider);border-radius:var(--radius-md);background:var(--color-surface);padding:10px;box-shadow:var(--shadow-lg)">
+              <p style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--color-neutral-500);margin-bottom:6px">Tipos de seta</p>
+              <div style="display:flex;flex-direction:column;gap:5px">
+                <sc-for list="{{ atelier.edgeLegend }}" as="e" hint-placeholder-count="6">
+                  <div style="display:flex;align-items:center;gap:8px"><span style="width:22px;height:2px;border-radius:2px;background:{{ e.color }}"></span><span style="font-size:11px;color:var(--color-neutral-400)">{{ e.label }}</span></div>
+                </sc-for>
+              </div>
+              <p class="text-muted" style="font-size:10px;margin-top:8px;max-width:170px;line-height:1.35">Com métrica, a seta assume a cor da conversão: verde ≥ 80%, amarelo ≥ 50%, vermelho abaixo.</p>
+            </div>
+
+            <!-- canvas -->
+            <div style="position:absolute;inset:0;overflow:auto;padding:16px 16px 16px 228px">
+              <div style="position:relative;width:{{ atelier.canvasWidth }}px;height:{{ atelier.canvasHeight }}px">
+                <svg viewBox="{{ atelier.canvasViewBox }}" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none">
+<sc-for list="{{ atelier.edges }}" as="e" hint-placeholder-count="4">
+                    <path d="{{ e.path }}" fill="none" stroke="{{ e.color }}" stroke-width="2"></path>
+                  </sc-for>
+                </svg><sc-for list="{{ atelier.edges }}" as="e" hint-placeholder-count="4"><div style="position:absolute;left:{{ e.labelX }}px;top:{{ e.labelY }}px;transform:translate(-50%,-50%);font-size:16px;font-weight:700;white-space:nowrap;color:{{ e.rateColor }}">{{ e.rate }}</div></sc-for><sc-for list="{{ atelier.edges }}" as="e" hint-placeholder-count="4"><div style="position:absolute;left:{{ e.lostX }}px;top:{{ e.lostY }}px;transform:translate(-50%,-50%);font-size:11.5px;white-space:nowrap;color:var(--color-neutral-400)">{{ e.lost }}</div></sc-for>
+                <sc-for list="{{ atelier.nodes }}" as="n" hint-placeholder-count="5">
+                  <div onClick="{{ n.select }}" style="position:absolute;left:{{ n.x }}px;top:{{ n.y }}px;width:180px;cursor:pointer;border-radius:var(--radius-md);overflow:hidden;background:var(--color-surface);border:1.5px solid {{ n.border }};box-shadow:var(--shadow-md)">
+                    <sc-if value="{{ n.isGoal }}" hint-placeholder-val="{{ false }}">
+                      <span style="position:absolute;right:6px;top:6px;z-index:2;border-radius:4px;padding:1px 5px;font-size:9px;font-weight:700;text-transform:uppercase;background:var(--c-high);color:hsl(222 47% 9%)">meta</span>
+                    </sc-if>
+                    <div style="display:flex;align-items:center;gap:6px;padding:7px 9px;border-bottom:1px solid var(--color-divider)">
+                      <i class="{{ n.icon }}" style="font-size:14px;color:var(--color-accent)"></i>
+                      <span style="font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ n.label }}</span>
+                      <span style="flex:1"></span>
+                      <i class="ph ph-pencil-simple" style="font-size:12px;color:var(--color-neutral-500)"></i>
+                    </div>
+                    <div style="position:relative;height:200px;background:var(--color-neutral-900);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px">
+                      <dc-import name="StepSketch" type="{{ n.type }}" hint-size="100%,100%"></dc-import>
+                      <span class="tag tag-neutral" style="position:absolute;left:6px;bottom:6px;font-size:9px">{{ n.typeLabel }}</span>
+                    </div>
+                    <div style="padding:7px 9px;border-top:1px solid var(--color-divider);display:flex;justify-content:space-between;font-size:10.5px">
+                      <span class="text-muted">{{ n.visitors }} chegaram</span>
+                      <span style="font-weight:600;color:{{ n.rateColor }}">{{ n.rate }}</span>
+                    </div>
+                    <span style="position:absolute;right:-6px;top:50%;width:11px;height:11px;border-radius:50%;background:var(--color-accent);border:2px solid var(--color-surface)"></span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <!-- inspetor -->
+            <sc-if value="{{ atelier.inspectorOpen }}" hint-placeholder-val="{{ true }}">
+              <aside style="position:absolute;right:16px;top:16px;bottom:16px;z-index:20;width:292px;overflow-y:auto;border:1px solid var(--color-divider);border-radius:var(--radius-md);background:var(--color-surface);box-shadow:var(--shadow-lg)">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--color-divider);position:sticky;top:0;background:var(--color-surface)">
+                  <span style="font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--color-neutral-400)">Esta página</span>
+                  <button onClick="{{ atelier.closeInspector }}" class="btn btn-ghost" style="padding:2px 6px"><i class="ph ph-x"></i></button>
+                </div>
+                <div style="padding:12px;display:flex;flex-direction:column;gap:14px">
+                  <div class="field"><label>Nome</label><input class="input" value="{{ atelier.selected.label }}" readonly></div>
+
+                  <div>
+                    <label style="display:block;font-size:11px;color:var(--color-neutral-400);margin-bottom:6px">O que é esta página</label>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                      <sc-for list="{{ atelier.typeOptions }}" as="t" hint-placeholder-count="9">
+                        <button onClick="{{ t.pick }}" style="display:flex;align-items:center;gap:5px;padding:6px 7px;border-radius:var(--radius-sm);cursor:pointer;font-size:10.5px;font-family:var(--font-body);background:{{ t.bg }};border:1px solid {{ t.border }};color:{{ t.color }}">
+                          <i class="{{ t.icon }}" style="font-size:13px"></i>{{ t.label }}
+                        </button>
+                      </sc-for>
+                    </div>
+                  </div>
+
+                  <div class="field"><label>URL da página</label><input class="input" value="{{ atelier.selected.url }}" readonly></div>
+                  <button class="btn btn-primary btn-block"><i class="ph ph-camera"></i>{{ atelier.selected.captureLabel }}</button>
+
+                  <sc-if value="{{ atelier.selected.isVsl }}" hint-placeholder-val="{{ false }}">
+                    <div>
+                      <label style="display:block;font-size:11px;color:var(--color-neutral-400);margin-bottom:6px">Player ID do VTurb</label>
+                      <div style="display:flex;gap:6px">
+                        <input class="input" value="{{ atelier.selected.playerId }}" readonly>
+                        <button class="btn btn-secondary" style="flex-shrink:0;border-color:var(--c-vsl);color:var(--color-accent-2-300)"><i class="ph ph-magic-wand"></i></button>
+                      </div>
+                      <p class="text-muted" style="font-size:10px;margin-top:5px;line-height:1.35">Sem isso a página "Ao Vivo" não mostra quem está assistindo esta VSL agora.</p>
+                    </div>
+                  </sc-if>
+
+                  <div>
+                    <label style="display:block;font-size:11px;color:var(--color-neutral-400);margin-bottom:6px">Print da página</label>
+                    <div style="border:1px dashed var(--color-neutral-600);border-radius:var(--radius-sm);padding:22px 12px;text-align:center;cursor:pointer">
+                      <p class="text-muted" style="font-size:11px;line-height:1.35">Clique, arraste ou cole (Ctrl+V) um print aqui</p>
+                    </div>
+                  </div>
+
+                  <button onClick="{{ atelier.toggleGoal }}" style="display:flex;gap:8px;text-align:left;padding:10px;border-radius:var(--radius-sm);cursor:pointer;font-family:var(--font-body);background:{{ atelier.goalBg }};border:1px solid {{ atelier.goalBorder }};color:var(--color-text)">
+                    <i class="ph ph-flag" style="font-size:14px;flex-shrink:0;color:{{ atelier.goalIconColor }}"></i>
+                    <span>
+                      <span style="display:block;font-size:11.5px;font-weight:600">{{ atelier.goalTitle }}</span>
+                      <span style="display:block;font-size:10.5px;color:var(--color-neutral-400);line-height:1.35">A conversão de compra é medida até esta página.</span>
+                    </span>
+                  </button>
+
+                  <button class="btn btn-ghost" style="justify-content:center;color:var(--c-low)"><i class="ph ph-trash"></i>Remover página</button>
+                </div>
+              </aside>
+            </sc-if>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ================= VISÃO DO FUNIL ================= -->
+      <sc-if value="{{ page.funnelview }}" hint-placeholder-val="{{ false }}" data-screen-label="Visão do Funil">
+<header style="padding:22px 28px 16px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:1px solid var(--color-divider)">
+          <div><h2 style="margin-bottom:2px">Visão dos funis</h2><p class="text-muted" style="font-size:13px">{{ fview.count }} funis · fluxo e conversão etapa a etapa · {{ periodLabel }}</p></div>
+          <button class="btn btn-secondary"><i class="ph ph-arrow-clockwise"></i>Sincronizar tudo</button>
+        </header>
+        <div style="padding:24px 28px;display:flex;flex-direction:column;gap:18px">
+          <sc-for list="{{ fview.funnels }}" as="f" hint-placeholder-count="5">
+            <div class="card elev-sm" style="padding:0;overflow:hidden">
+              <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--color-divider);background:var(--color-neutral-900)">
+                <div style="min-width:0">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <p style="font-size:15px;font-weight:600;margin:0">{{ f.name }}</p>
+                    <span class="tag {{ f.statusTag }}">{{ f.statusLabel }}</span>
+                  </div>
+                  <p class="text-muted" style="font-size:11.5px">{{ f.slug }} · {{ f.stepCount }} etapas · conv. funil <span style="color:{{ f.rateColor }};font-weight:600">{{ f.rate }}</span></p>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <button class="btn btn-secondary" onClick="{{ f.goMetrics }}"><i class="ph ph-chart-bar"></i>Ver métricas</button>
+                  <button class="btn btn-primary" onClick="{{ f.goEdit }}"><i class="ph ph-pencil-simple"></i>Editar funil</button>
+                </div>
+              </div>
+<div style="padding:18px;overflow-x:auto;background:var(--color-bg);background-image:radial-gradient(var(--color-neutral-800) 1px,transparent 1px);background-size:22px 22px">
+                <div style="position:relative;width:{{ f.canvas.width }}px;height:{{ f.canvas.height }}px">
+                  <svg viewBox="{{ f.canvas.viewBox }}" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none">
+                    <sc-for list="{{ f.canvas.edges }}" as="e" hint-placeholder-count="4">
+                      <path d="{{ e.path }}" fill="none" stroke="{{ e.color }}" stroke-width="2"></path>
+                    </sc-for>
+                  </svg><sc-for list="{{ f.canvas.edges }}" as="e" hint-placeholder-count="4"><div style="position:absolute;left:{{ e.labelX }}px;top:{{ e.labelY }}px;transform:translate(-50%,-50%);font-size:16px;font-weight:700;white-space:nowrap;color:{{ e.rateColor }}">{{ e.rate }}</div></sc-for><sc-for list="{{ f.canvas.edges }}" as="e" hint-placeholder-count="4"><div style="position:absolute;left:{{ e.lostX }}px;top:{{ e.lostY }}px;transform:translate(-50%,-50%);font-size:11.5px;white-space:nowrap;color:var(--color-neutral-400)">{{ e.lost }}</div></sc-for>
+                  <sc-for list="{{ f.canvas.nodes }}" as="n" hint-placeholder-count="5">
+                    <div style="position:absolute;left:{{ n.x }}px;top:{{ n.y }}px;width:180px;border-radius:var(--radius-md);overflow:hidden;background:var(--color-surface);border:1px solid {{ n.border }};box-shadow:var(--shadow-md)">
+                      <sc-if value="{{ n.isGoal }}" hint-placeholder-val="{{ false }}">
+                        <span style="position:absolute;right:6px;top:6px;z-index:2;border-radius:4px;padding:1px 5px;font-size:9px;font-weight:700;text-transform:uppercase;background:var(--c-high);color:hsl(222 47% 9%)">meta</span>
+                      </sc-if>
+                      <div style="display:flex;align-items:center;gap:6px;padding:7px 9px;border-bottom:1px solid var(--color-divider)">
+                        <i class="{{ n.icon }}" style="font-size:14px;color:var(--color-accent)"></i>
+                        <span style="font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ n.label }}</span>
+                      </div>
+                      <div style="position:relative;height:200px;background:var(--color-neutral-900);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px">
+                        <dc-import name="StepSketch" type="{{ n.type }}" hint-size="100%,100%"></dc-import>
+                        <span class="tag tag-neutral" style="position:absolute;left:6px;bottom:6px;font-size:9px">{{ n.typeLabel }}</span>
+                      </div>
+                      <div style="padding:7px 9px;border-top:1px solid var(--color-divider);display:flex;justify-content:space-between;font-size:10.5px">
+                        <span class="text-muted">{{ n.visitors }} chegaram</span>
+                        <span style="font-weight:600;color:{{ n.rateColor }}">{{ n.rate }}</span>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <!-- ================= MÉTRICAS ================= -->
+      <sc-if value="{{ page.metrics }}" hint-placeholder-val="{{ false }}" data-screen-label="Métricas">
+        <header style="padding:22px 28px 16px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:1px solid var(--color-divider)">
+          <div><h2 style="margin-bottom:2px">Métricas</h2><p class="text-muted" style="font-size:13px">{{ metrics.subtitle }}</p></div>
+          <button class="seg" style="border:1px solid var(--color-divider);cursor:pointer;background:none;padding:0" onClick="{{ cyclePeriod }}"><span class="seg-opt" style="color:var(--color-text)"><i class="ph ph-calendar-blank"></i>{{ periodLabel }}</span></button>
+        </header>
+
+        <div style="padding:16px 28px;border-bottom:1px solid var(--color-divider);background:var(--color-surface)">
+          <p class="text-muted" style="font-size:11.5px;margin-bottom:8px">Visão global, um funil, ou vários para comparar</p>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <button onClick="{{ metrics.setGlobal }}" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--radius-md);cursor:pointer;background:{{ metrics.globalBg }};border:1px solid {{ metrics.globalBorder }};color:var(--color-text);font-family:var(--font-body)">
+              <i class="ph ph-globe" style="color:var(--color-accent)"></i><span style="font-size:12.5px;font-weight:600">Global</span>
+            </button>
+            <sc-for list="{{ metrics.strip }}" as="f" hint-placeholder-count="5">
+              <button onClick="{{ f.toggle }}" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--radius-md);cursor:pointer;background:{{ f.bg }};border:1px solid {{ f.border }};color:var(--color-text);font-family:var(--font-body)">
+                <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:{{ f.dot }}"></span><span style="font-size:12.5px;font-weight:600;white-space:nowrap">{{ f.name }}</span>
+              </button>
+            </sc-for>
+          </div>
+        </div>
+
+        <!-- GLOBAL VIEW -->
+        <sc-if value="{{ metrics.isGlobal }}" hint-placeholder-val="{{ true }}">
+          <div style="padding:24px 28px;display:flex;flex-direction:column;gap:22px">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px">
+              <sc-for list="{{ metrics.global.kpis }}" as="k" hint-placeholder-count="4">
+                <div class="card elev-sm" style="padding:16px"><span class="card-kicker">{{ k.label }}</span><p style="font-size:24px;font-weight:600;font-family:var(--font-heading);margin:6px 0 2px">{{ k.value }}</p><p class="text-muted" style="font-size:11.5px">{{ k.sub }}</p></div>
+              </sc-for>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+              <div class="card" style="padding:16px;background:var(--color-accent-900);border:1px solid var(--color-accent-800)"><p style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--color-accent-300)">Melhor funil</p><p style="font-weight:600;font-size:17px;margin:4px 0">{{ metrics.global.best.name }}</p><p class="text-muted" style="font-size:12px">{{ metrics.global.best.rate }} de conversão · {{ metrics.global.best.visitors }} visitas</p></div>
+              <div class="card" style="padding:16px;border:1px solid var(--color-divider)"><p style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--color-neutral-400)">Pior funil</p><p style="font-weight:600;font-size:17px;margin:4px 0">{{ metrics.global.worst.name }}</p><p class="text-muted" style="font-size:12px">{{ metrics.global.worst.rate }} de conversão · {{ metrics.global.worst.visitors }} visitas</p></div>
+            </div>
+            <div class="card elev-sm" style="padding:18px">
+              <p class="card-title" style="margin-bottom:2px">Todos os funis</p><p class="card-body" style="margin-bottom:12px">Ordenado pela conversão de funil</p>
+              <table class="table"><thead><tr><th>Funil</th><th style="text-align:right">Visitas</th><th style="text-align:right">Conversões</th><th style="text-align:right">Conv. funil</th><th style="text-align:right">Conv. compra</th><th style="text-align:right">Etapas</th></tr></thead>
+                <tbody>
+                  <sc-for list="{{ metrics.global.rows }}" as="r" hint-placeholder-count="5">
+                    <tr><td>{{ r.name }}</td><td style="text-align:right">{{ r.visitors }}</td><td style="text-align:right">{{ r.sales }}</td><td style="text-align:right;font-weight:600;color:{{ r.rateColor }}">{{ r.rate }}</td><td style="text-align:right">{{ r.endToEnd }}</td><td style="text-align:right" class="text-muted">{{ r.steps }}</td></tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+            <div class="card elev-sm" style="padding:18px">
+              <p class="card-title" style="margin-bottom:12px">Volume por funil</p>
+              <div style="display:flex;align-items:flex-end;gap:18px;height:180px;padding-top:10px">
+                <sc-for list="{{ metrics.global.barRows }}" as="b" hint-placeholder-count="5">
+                  <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end">
+                    <div style="display:flex;gap:4px;align-items:flex-end;height:100%">
+                      <div style="width:16px;border-radius:3px 3px 0 0;background:var(--color-neutral-600);height:{{ b.visitorsPct }}%"></div>
+                      <div style="width:16px;border-radius:3px 3px 0 0;background:var(--color-accent);height:{{ b.salesPct }}%"></div>
+                    </div>
+                    <p style="font-size:10.5px;text-align:center" class="text-muted">{{ b.name }}</p>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex;gap:16px;margin-top:10px;font-size:11px" class="text-muted"><span><span style="display:inline-block;width:8px;height:8px;background:var(--color-neutral-600);border-radius:2px;margin-right:5px"></span>Visitantes</span><span><span style="display:inline-block;width:8px;height:8px;background:var(--color-accent);border-radius:2px;margin-right:5px"></span>Vendas</span></div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- SINGLE VIEW -->
+        <sc-if value="{{ metrics.isSingle }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:24px 28px;display:flex;flex-direction:column;gap:22px">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+              <h3 style="margin:0">{{ metrics.single.name }}</h3>
+<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+                <div class="seg">
+                  <label class="seg-opt"><input type="radio" name="pc" checked="{{ metrics.single.pcOff }}" onChange="{{ togglePeriodCompare }}">Período atual</label>
+                  <label class="seg-opt"><input type="radio" name="pc" checked="{{ metrics.single.pcOn }}" onChange="{{ togglePeriodCompare }}">Atual x anterior</label>
+                </div>
+                <sc-if value="{{ metrics.single.periodCompare }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span class="text-muted" style="font-size:11.5px">comparar com</span>
+                    <div style="display:flex;gap:4px">
+                      <sc-for list="{{ metrics.single.periodOptions }}" as="o" hint-placeholder-count="3">
+                        <button onClick="{{ o.pick }}" style="padding:6px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:11.5px;font-family:var(--font-body);white-space:nowrap;background:{{ o.bg }};border:1px solid {{ o.border }};color:{{ o.color }}">{{ o.label }}</button>
+                      </sc-for>
+                    </div>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px">
+              <sc-for list="{{ metrics.single.kpis }}" as="k" hint-placeholder-count="5">
+                <div class="card elev-sm" style="padding:16px">
+                  <span class="card-kicker">{{ k.label }}</span>
+                  <p style="font-size:24px;font-weight:600;font-family:var(--font-heading);margin:6px 0 2px">{{ k.value }}</p>
+<sc-if value="{{ k.hasDelta }}" hint-placeholder-val="{{ false }}">
+<p style="font-size:11.5px;font-weight:600;color:{{ k.deltaColor }}">{{ k.delta }} vs {{ metrics.single.baselineLabel }}</p>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+
+<div class="card elev-sm" style="padding:0;overflow:hidden">
+              <div style="padding:16px 18px;border-bottom:1px solid var(--color-divider)">
+                <p class="card-title" style="margin-bottom:2px">Funil de {{ metrics.single.name }}</p>
+                <p class="card-body">Fluxo com a taxa de passagem de cada etapa no período</p>
+              </div>
+              <div style="padding:18px;overflow-x:auto;background-image:radial-gradient(var(--color-neutral-800) 1px,transparent 1px);background-size:22px 22px">
+                <div style="position:relative;width:{{ metrics.single.canvas.width }}px;height:{{ metrics.single.canvas.height }}px">
+                  <svg viewBox="{{ metrics.single.canvas.viewBox }}" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none">
+                    <sc-for list="{{ metrics.single.canvas.edges }}" as="e" hint-placeholder-count="4">
+                      <path d="{{ e.path }}" fill="none" stroke="{{ e.color }}" stroke-width="2"></path>
+                    </sc-for>
+                  </svg><sc-for list="{{ metrics.single.canvas.edges }}" as="e" hint-placeholder-count="4"><div style="position:absolute;left:{{ e.labelX }}px;top:{{ e.labelY }}px;transform:translate(-50%,-50%);font-size:16px;font-weight:700;white-space:nowrap;color:{{ e.rateColor }}">{{ e.rate }}</div></sc-for><sc-for list="{{ metrics.single.canvas.edges }}" as="e" hint-placeholder-count="4"><div style="position:absolute;left:{{ e.lostX }}px;top:{{ e.lostY }}px;transform:translate(-50%,-50%);font-size:11.5px;white-space:nowrap;color:var(--color-neutral-400)">{{ e.lost }}</div></sc-for>
+                  <sc-for list="{{ metrics.single.canvas.nodes }}" as="n" hint-placeholder-count="5">
+                    <div style="position:absolute;left:{{ n.x }}px;top:{{ n.y }}px;width:180px;border-radius:var(--radius-md);overflow:hidden;background:var(--color-surface);border:1px solid var(--color-divider);box-shadow:var(--shadow-md)">
+                      <sc-if value="{{ n.isGoal }}" hint-placeholder-val="{{ false }}">
+                        <span style="position:absolute;right:6px;top:6px;z-index:2;border-radius:4px;padding:1px 5px;font-size:9px;font-weight:700;text-transform:uppercase;background:var(--c-high);color:hsl(222 47% 9%)">meta</span>
+                      </sc-if>
+                      <div style="display:flex;align-items:center;gap:6px;padding:7px 9px;border-bottom:1px solid var(--color-divider)">
+                        <i class="{{ n.icon }}" style="font-size:14px;color:var(--color-accent)"></i>
+                        <span style="font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ n.label }}</span>
+                      </div>
+                      <div style="position:relative;height:200px;background:var(--color-neutral-900);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px">
+                        <dc-import name="StepSketch" type="{{ n.type }}" hint-size="100%,100%"></dc-import>
+                        <span class="tag tag-neutral" style="position:absolute;left:6px;bottom:6px;font-size:9px">{{ n.typeLabel }}</span>
+                      </div>
+                      <div style="padding:7px 9px;border-top:1px solid var(--color-divider);display:flex;justify-content:space-between;font-size:10.5px">
+                        <span class="text-muted">{{ n.visitors }} chegaram</span>
+                        <span style="font-weight:600;color:{{ n.rateColor }}">{{ n.rate }}</span>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+              <div class="card elev-sm" style="padding:18px">
+                <p class="card-title" style="margin-bottom:2px">Queda etapa a etapa</p><p class="card-body" style="margin-bottom:12px">Taxa de passagem entre páginas</p>
+                <div style="display:flex;flex-direction:column;gap:10px">
+                  <sc-for list="{{ metrics.single.stepRows }}" as="s" hint-placeholder-count="4">
+                    <div>
+                      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span class="text-muted">{{ s.label }}</span><span style="font-weight:600;color:{{ s.color }}">{{ s.rate }}</span></div>
+                      <div style="height:8px;border-radius:5px;background:var(--color-neutral-900);overflow:hidden"><div style="height:100%;border-radius:5px;background:{{ s.color }};width:{{ s.pct }}%"></div></div>
+                    </div>
+                  </sc-for>
+                </div>
+                <div class="hr"></div>
+                <div style="display:flex;align-items:center;gap:8px;background:var(--color-neutral-900);border-radius:var(--radius-md);padding:10px">
+                  <i class="ph ph-warning-circle" style="color:var(--c-mid)"></i>
+                  <p style="font-size:12px;margin:0">Pior passagem: <strong>{{ metrics.single.worstLabel }}</strong> ({{ metrics.single.worstRate }}) — {{ metrics.single.worstLost }} pessoas perdidas</p>
+                </div>
+              </div>
+              <div class="card elev-sm" style="padding:18px">
+                <p class="card-title" style="margin-bottom:12px">Tempo médio na página</p>
+                <div style="display:flex;flex-direction:column;gap:10px">
+                  <sc-for list="{{ metrics.single.timeRows }}" as="t" hint-placeholder-count="4">
+                    <div>
+                      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span class="text-muted">{{ t.label }}</span><span style="font-weight:600">{{ t.value }}</span></div>
+                      <div style="height:8px;border-radius:5px;background:var(--color-neutral-900);overflow:hidden"><div style="height:100%;border-radius:5px;background:var(--color-accent-600);width:{{ t.pct }}%"></div></div>
+                    </div>
+                  </sc-for>
+                </div>
+                <sc-if value="{{ metrics.single.hasVsl }}" hint-placeholder-val="{{ false }}">
+                  <div class="hr"></div>
+                  <p class="card-kicker" style="margin-bottom:8px">VSL desta etapa</p>
+                  <div style="display:flex;gap:18px">
+                    <div><p class="text-muted" style="font-size:11px">Conversão</p><p style="font-size:20px;font-weight:700;color:var(--color-accent-2-300)">{{ metrics.single.vslConv }}</p></div>
+                    <div><p class="text-muted" style="font-size:11px">Engajamento</p><p style="font-size:20px;font-weight:700">{{ metrics.single.vslEng }}</p></div>
+                    <div><p class="text-muted" style="font-size:11px">Views</p><p style="font-size:20px;font-weight:700">{{ metrics.single.vslViews }}</p></div>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- COMPARE VIEW -->
+        <sc-if value="{{ metrics.isCompare }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:24px 28px;display:flex;flex-direction:column;gap:22px">
+            <div class="card elev-md" style="padding:18px;border:1.5px solid {{ metrics.compare.verdictBorder }}">
+              <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:16px">
+                <div style="display:flex;align-items:center;gap:14px">
+                  <span style="width:44px;height:44px;border-radius:50%;background:var(--color-accent-900);display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ph ph-trophy" style="font-size:20px;color:var(--color-accent-300)"></i></span>
+                  <div>
+                    <p class="card-kicker" style="margin-bottom:2px">{{ metrics.compare.verdictKicker }}</p>
+                    <p style="font-size:19px;font-weight:700;margin:0">{{ metrics.compare.verdictTitle }}</p>
+                    <p class="text-muted" style="font-size:12.5px">{{ metrics.compare.verdictSub }}</p>
+                  </div>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <sc-for list="{{ metrics.compare.ranked }}" as="r" hint-placeholder-count="3">
+                    <div style="border-radius:var(--radius-md);padding:8px 14px;text-align:center;background:{{ r.bg }};border:1px solid {{ r.border }}">
+                      <p style="display:flex;align-items:center;gap:6px;font-size:11.5px;justify-content:center"><span style="width:7px;height:7px;border-radius:50%;background:{{ r.color }}"></span>{{ r.name }}</p>
+                      <p style="font-size:17px;font-weight:700">{{ r.wins }}</p>
+                      <p class="text-muted" style="font-size:10px">métricas vencidas</p>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+
+            <div class="seg" style="align-self:flex-start">
+              <label class="seg-opt"><input type="radio" name="cv" checked="{{ metrics.compare.styleTable }}" onChange="{{ styleTable }}"><i class="ph ph-table"></i>Tabela</label>
+              <label class="seg-opt"><input type="radio" name="cv" checked="{{ metrics.compare.styleCards }}" onChange="{{ styleCards }}"><i class="ph ph-cards"></i>Cards</label>
+              <label class="seg-opt"><input type="radio" name="cv" checked="{{ metrics.compare.styleOverlay }}" onChange="{{ styleOverlay }}"><i class="ph ph-stack"></i>Sobreposto</label>
+            </div>
+
+            <sc-if value="{{ metrics.compare.styleTable }}" hint-placeholder-val="{{ true }}">
+              <div class="card elev-sm" style="padding:18px;overflow-x:auto">
+                <p class="card-title" style="margin-bottom:2px">Métrica a métrica</p><p class="card-body" style="margin-bottom:12px">Vencedor em negrito com troféu · linhas cinzas são volume/contexto</p>
+                <table class="table" style="min-width:520px">
+                  <thead><tr><th>Métrica</th>
+                    <sc-for list="{{ metrics.compare.tableFunnels }}" as="tf" hint-placeholder-count="3"><th style="text-align:right"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:{{ tf.color }}"></span>{{ tf.name }}</span></th></sc-for>
+                  </tr></thead>
+                  <tbody>
+                    <sc-for list="{{ metrics.compare.tableRows }}" as="row" hint-placeholder-count="9">
+                      <tr>
+                        <td class="text-muted">{{ row.label }}</td>
+                        <sc-for list="{{ row.cells }}" as="cell" hint-placeholder-count="3">
+                          <td style="text-align:right;font-weight:{{ cell.weight }};color:{{ cell.color }}">{{ cell.formatted }} <sc-if value="{{ cell.isBest }}" hint-placeholder-val="{{ false }}"><i class="ph ph-trophy" style="font-size:11px"></i></sc-if></td>
+                        </sc-for>
+                      </tr>
+                    </sc-for>
+                  </tbody>
+                </table>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ metrics.compare.styleCards }}" hint-placeholder-val="{{ false }}">
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">
+                <sc-for list="{{ metrics.compare.cards }}" as="c" hint-placeholder-count="3">
+                  <div class="card elev-sm" style="padding:16px;border-top:3px solid {{ c.color }}">
+                    <p style="font-weight:700;margin-bottom:2px">{{ c.name }}</p>
+                    <span class="tag {{ c.statusTag }}" style="margin-bottom:12px">{{ c.status }}</span>
+                    <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+                      <sc-for list="{{ c.kpis }}" as="k" hint-placeholder-count="5">
+                        <div style="display:flex;justify-content:space-between;font-size:12.5px"><span class="text-muted">{{ k.label }}</span><span style="font-weight:600">{{ k.value }}</span></div>
+                      </sc-for>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ metrics.compare.styleOverlay }}" hint-placeholder-val="{{ false }}">
+              <div class="card elev-sm" style="padding:18px">
+                <p class="card-title" style="margin-bottom:2px">Funis sobrepostos</p><p class="card-body" style="margin-bottom:14px">Silhueta de cada funil, alinhada da entrada até a última etapa</p>
+                <svg viewBox="0 0 520 200" style="width:100%;height:220px">
+                  <sc-for list="{{ metrics.compare.overlayPolygons }}" as="p" hint-placeholder-count="3">
+                    <polygon points="{{ p.points }}" fill="{{ p.color }}" fill-opacity="0.22" stroke="{{ p.color }}" stroke-width="2"></polygon>
+                  </sc-for>
+                </svg>
+                <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">
+                  <sc-for list="{{ metrics.compare.overlayLegend }}" as="l" hint-placeholder-count="3">
+                    <span style="font-size:11.5px;display:flex;align-items:center;gap:6px"><span style="width:9px;height:9px;border-radius:50%;background:{{ l.color }}"></span>{{ l.name }}</span>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+              <div class="card elev-sm" style="padding:18px">
+                <p class="card-title" style="margin-bottom:2px">Queda etapa a etapa</p><p class="card-body" style="margin-bottom:12px">Progresso no funil (entrada → última etapa), 0–100%</p>
+                <svg viewBox="0 0 480 180" style="width:100%;height:180px">
+                  <sc-for list="{{ metrics.compare.stepLines }}" as="ln" hint-placeholder-count="3">
+                    <polyline points="{{ ln.points }}" fill="none" stroke="{{ ln.color }}" stroke-width="2.5"></polyline>
+                  </sc-for>
+                </svg>
+                <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px">
+                  <sc-for list="{{ metrics.compare.stepLines }}" as="ln" hint-placeholder-count="3"><span style="font-size:11px;display:flex;align-items:center;gap:5px" class="text-muted"><span style="width:10px;height:2px;background:{{ ln.color }}"></span>{{ ln.name }}</span></sc-for>
+                </div>
+              </div>
+              <div class="card elev-sm" style="padding:18px">
+                <p class="card-title" style="margin-bottom:12px">Onde cada funil mais perde</p>
+                <div style="display:flex;flex-direction:column;gap:10px">
+                  <sc-for list="{{ metrics.compare.worstCards }}" as="w" hint-placeholder-count="3">
+                    <div style="border:1px solid var(--color-divider);border-radius:var(--radius-md);padding:10px 12px">
+                      <div style="display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:{{ w.color }}"></span>{{ w.name }}</span><span class="tag tag-outline">{{ w.rate }}</span></div>
+                      <p class="text-muted" style="font-size:11.5px;margin-top:4px">{{ w.label }} · {{ w.lost }} abandonaram</p>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+              <div class="card elev-sm" style="padding:18px">
+                <p class="card-title" style="margin-bottom:12px">Volume e vendas</p>
+                <div style="display:flex;align-items:flex-end;gap:18px;height:160px">
+                  <sc-for list="{{ metrics.compare.volumeBars }}" as="b" hint-placeholder-count="3">
+                    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end">
+                      <div style="display:flex;gap:4px;align-items:flex-end;height:100%">
+                        <div style="width:16px;border-radius:3px 3px 0 0;background:var(--color-neutral-600);height:{{ b.visitorsPct }}%"></div>
+                        <div style="width:16px;border-radius:3px 3px 0 0;background:{{ b.color }};height:{{ b.salesPct }}%"></div>
+                      </div>
+                      <p style="font-size:10.5px" class="text-muted">{{ b.name }}</p>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+              <div class="card elev-sm" style="padding:18px">
+                <p class="card-title" style="margin-bottom:12px">VSLs de cada funil</p>
+                <sc-if value="{{ metrics.compare.hasVslBars }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;flex-direction:column;gap:12px">
+                    <sc-for list="{{ metrics.compare.vslBars }}" as="v" hint-placeholder-count="2">
+                      <div>
+                        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="display:flex;align-items:center;gap:5px"><span style="width:8px;height:8px;border-radius:50%;background:{{ v.color }}"></span>{{ v.name }}</span><span>{{ v.conv }} conv · {{ v.eng }} engaj</span></div>
+                        <div style="height:8px;border-radius:5px;background:var(--color-neutral-900);overflow:hidden"><div style="height:100%;border-radius:5px;background:{{ v.color }};width:{{ v.convPct }}%"></div></div>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+      </sc-if>
+
+      <!-- ================= AO VIVO ================= -->
+      <sc-if value="{{ page.live }}" hint-placeholder-val="{{ false }}" data-screen-label="Ao Vivo">
+        <header style="padding:22px 28px 16px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:1px solid var(--color-divider)">
+          <div><h2 style="margin-bottom:2px">Ao Vivo</h2><p class="text-muted" style="font-size:13px">Monitoramento em tempo real de visitantes e vendas</p></div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end">
+            <button onClick="{{ live.togglePush }}" class="btn btn-ghost"><i class="{{ live.pushIcon }}"></i>{{ live.pushLabel }}</button>
+            <div class="seg">
+              <label class="seg-opt"><input type="radio" name="lsource" checked="{{ live.sourceOwn }}" onChange="{{ sourceOwn }}">Rastreador próprio</label>
+              <label class="seg-opt"><input type="radio" name="lsource" checked="{{ live.sourceClarity }}" onChange="{{ sourceClarity }}">Clarity</label>
+            </div>
+            <sc-if value="{{ live.showWindow }}" hint-placeholder-val="{{ true }}">
+<button class="seg" style="border:1px solid var(--color-divider);cursor:pointer;background:none;padding:0" onClick="{{ live.cycleWindow }}"><span class="seg-opt" style="color:var(--color-text)"><i class="ph ph-lightning" style="color:var(--color-accent)"></i>{{ live.windowLabel }}</span></button>
+            </sc-if>
+          </div>
+        </header>
+
+        <div style="padding:16px 28px 0">
+          <div style="display:flex;gap:4px;overflow-x:auto;background:var(--color-neutral-900);border-radius:var(--radius-md);padding:4px">
+            <sc-for list="{{ live.tabs }}" as="t" hint-placeholder-count="6">
+              <button onClick="{{ t.select }}" style="display:flex;align-items:center;gap:6px;flex-shrink:0;padding:7px 12px;border-radius:var(--radius-sm);cursor:pointer;font-size:12.5px;font-weight:500;font-family:var(--font-body);white-space:nowrap;border:none;background:{{ t.bg }};color:{{ t.color }}">
+                <sc-if value="{{ t.isGeral }}" hint-placeholder-val="{{ false }}"><i class="ph ph-squares-four"></i></sc-if>{{ t.label }}
+              </button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="padding:20px 28px;display:flex;flex-direction:column;gap:24px">
+          <!-- 5 cards de resumo (iguais nas duas vistas) -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px">
+            <sc-for list="{{ live.summary }}" as="s" hint-placeholder-count="5">
+              <div class="card elev-sm" style="padding:14px">
+                <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px"><i class="{{ s.icon }}" style="font-size:15px;color:{{ s.iconColor }}"></i><span style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--color-neutral-400)">{{ s.label }}</span></div>
+                <p style="font-size:23px;font-weight:700;font-family:var(--font-heading)">{{ s.value }}</p>
+                <p class="text-muted" style="font-size:11px">{{ s.sub }}</p>
+              </div>
+            </sc-for>
+          </div>
+
+<!-- mapa ao vivo -->
+          <div class="card elev-sm" style="padding:0;overflow:hidden">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:14px 18px;border-bottom:1px solid var(--color-divider)">
+              <div>
+                <p class="card-title" style="display:flex;align-items:center;gap:8px;margin-bottom:2px"><i class="ph ph-map-pin" style="color:var(--c-live)"></i>De onde estão acessando agora</p>
+                <p class="card-body">Cada ponto de luz é uma praça com gente no funil — quanto mais gente, maior o ponto</p>
+              </div>
+              <span style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--c-live)"><span style="width:8px;height:8px;border-radius:50%;background:var(--c-live);animation:livepulse 1.4s infinite"></span>{{ live.geo.total }} pessoas · {{ live.geo.places }} praças</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:0">
+              <div style="min-height:420px;background:var(--color-bg)">
+                <x-import component-from-global-scope="brazil-live-map" from="./brazil-live-map.js" points="{{ live.geo.pointsJson }}" hint-size="100%,420px"></x-import>
+              </div>
+              <div style="border-left:1px solid var(--color-divider);padding:14px 16px;display:flex;flex-direction:column;gap:9px;max-height:420px;overflow-y:auto">
+                <p class="card-kicker">Praças com mais gente</p>
+                <sc-for list="{{ live.geo.top }}" as="p" hint-placeholder-count="8">
+                  <div>
+                    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+                      <span>{{ p.city }} <span class="text-muted">{{ p.uf }}</span></span>
+                      <span style="font-weight:700;color:var(--c-live)">{{ p.online }}</span>
+                    </div>
+                    <div style="height:6px;border-radius:4px;background:var(--color-neutral-900);overflow:hidden"><div style="height:100%;border-radius:4px;background:var(--c-live);width:{{ p.pct }}%"></div></div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== vista GERAL ===== -->
+          <sc-if value="{{ live.isGeral }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--color-neutral-400);margin:0">Conversão por funil ({{ live.windowLabel }})</h3>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px">
+                <sc-for list="{{ live.convCards }}" as="c" hint-placeholder-count="4">
+                  <div class="card elev-sm" style="padding:16px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px">
+                      <p style="font-size:13px;font-weight:600;margin:0"><span class="text-muted">{{ c.name }} ·</span> Conversão de compra — {{ c.periodLabel }}</p>
+                      <span style="font-size:17px;font-weight:700;color:{{ c.rateColor }}">{{ c.rate }}</span>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;text-align:center">
+                      <div><p style="font-size:21px;font-weight:700">{{ c.visitors }}</p><p class="text-muted" style="font-size:10.5px">Entraram</p></div>
+                      <div><p style="font-size:21px;font-weight:700">{{ c.arrivals }}</p><p class="text-muted" style="font-size:10.5px">Chegaram no fim</p></div>
+                      <div><p style="font-size:21px;font-weight:700;color:{{ c.funnelRateColor }}">{{ c.funnelRate }}</p><p class="text-muted" style="font-size:10.5px">Conv. funil</p></div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px;text-align:center;border-top:1px solid var(--color-divider);margin-top:12px;padding-top:12px">
+                      <div><p style="font-size:21px;font-weight:700;color:var(--c-high)">{{ c.purchases }}</p><p class="text-muted" style="font-size:10.5px">Compras</p></div>
+                      <div><p style="font-size:21px;font-weight:700;color:{{ c.rateColor }}">{{ c.rate }}</p><p class="text-muted" style="font-size:10.5px">Conv. compra</p></div>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:7px;margin-top:14px">
+                      <sc-for list="{{ c.stepRates }}" as="s" hint-placeholder-count="4">
+                        <div>
+                          <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span class="text-muted">{{ s.label }}</span><span>{{ s.detail }}</span></div>
+                          <div style="height:6px;border-radius:4px;background:var(--color-neutral-900);overflow:hidden"><div style="height:100%;border-radius:4px;background:{{ s.color }};width:{{ s.pct }}%"></div></div>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- ===== vista de UM FUNIL ===== -->
+          <sc-if value="{{ live.isFunnel }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--c-live);border-radius:var(--radius-md);background:hsl(0 84% 60% / .1);padding:9px 14px">
+                <div style="display:flex;align-items:center;gap:9px">
+                  <i class="ph ph-users" style="font-size:17px;color:var(--c-live)"></i>
+                  <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--c-live);margin:0">Fluxo ao Vivo</h3>
+                  <span class="tag" style="border:1px solid var(--c-live);color:var(--c-live);background:transparent;font-weight:700">{{ live.funnel.online }} pessoas agora</span>
+                </div>
+                <span style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--c-live)"><span style="width:8px;height:8px;border-radius:50%;background:var(--c-live);animation:livepulse 1.4s infinite"></span>ao vivo · {{ live.clock }}</span>
+              </div>
+
+<div class="card elev-sm" style="padding:18px;overflow-x:auto;background-image:radial-gradient(var(--color-neutral-800) 1px,transparent 1px);background-size:22px 22px">
+                <div style="position:relative;width:{{ live.funnel.canvas.width }}px;height:{{ live.funnel.canvas.height }}px">
+                  <svg viewBox="{{ live.funnel.canvas.viewBox }}" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none">
+                    <sc-for list="{{ live.funnel.canvas.edges }}" as="e" hint-placeholder-count="4">
+                      <path d="{{ e.path }}" fill="none" stroke="{{ e.color }}" stroke-width="2"></path>
+                    </sc-for>
+                  </svg><sc-for list="{{ live.funnel.canvas.edges }}" as="e" hint-placeholder-count="4"><div style="position:absolute;left:{{ e.labelX }}px;top:{{ e.labelY }}px;transform:translate(-50%,-50%);font-size:16px;font-weight:700;white-space:nowrap;color:{{ e.rateColor }}">{{ e.rate }}</div></sc-for><sc-for list="{{ live.funnel.canvas.edges }}" as="e" hint-placeholder-count="4"><div style="position:absolute;left:{{ e.lostX }}px;top:{{ e.lostY }}px;transform:translate(-50%,-50%);font-size:11.5px;white-space:nowrap;color:var(--color-neutral-400)">{{ e.lost }}</div></sc-for>
+                  <sc-for list="{{ live.funnel.canvas.nodes }}" as="n" hint-placeholder-count="5">
+                    <div style="position:absolute;left:{{ n.x }}px;top:{{ n.y }}px;width:180px;border-radius:var(--radius-md);overflow:hidden;background:var(--color-surface);border:1px solid {{ n.border }};box-shadow:var(--shadow-md)">
+                      <div style="display:flex;align-items:center;gap:6px;padding:7px 9px;border-bottom:1px solid var(--color-divider)">
+                        <i class="{{ n.icon }}" style="font-size:14px;color:var(--color-accent)"></i>
+                        <span style="font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ n.label }}</span>
+                      </div>
+                      <div style="position:relative;height:200px;background:var(--color-neutral-900);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px">
+                        <dc-import name="StepSketch" type="{{ n.type }}" hint-size="100%,100%"></dc-import>
+                        <span style="position:absolute;left:6px;top:6px;display:flex;align-items:center;gap:5px;border-radius:20px;padding:2px 8px;background:hsl(0 84% 60% / .16);border:1px solid var(--c-live)">
+                          <span style="width:6px;height:6px;border-radius:50%;background:var(--c-live);animation:livepulse 1.4s infinite"></span>
+                          <span style="font-size:11px;font-weight:700;color:{{ n.onlineColor }}">{{ n.online }}</span>
+                        </span>
+                        <span class="tag tag-neutral" style="position:absolute;left:6px;bottom:6px;font-size:9px">{{ n.typeLabel }}</span>
+                      </div>
+                      <div style="padding:7px 9px;border-top:1px solid var(--color-divider);display:flex;justify-content:space-between;font-size:10.5px">
+                        <span class="text-muted">{{ n.visitors }} na janela</span>
+                        <span style="font-weight:600;color:{{ n.rateColor }}">{{ n.rate }}</span>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+
+              <sc-if value="{{ live.funnel.trackerMissing }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;gap:8px;border:1px solid var(--c-mid);border-radius:var(--radius-md);background:hsl(38 92% 58% / .1);padding:11px">
+                  <i class="ph ph-warning-circle" style="color:var(--c-mid);flex-shrink:0"></i>
+                  <p style="font-size:11.5px;margin:0;color:var(--c-mid);line-height:1.4">Rastreador próprio não detectado — para ver pessoas em cada etapa, instale o snippet do Funneltron no &lt;head&gt; das páginas. As VSLs continuam via VTurb.</p>
+                </div>
+              </sc-if>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 2fr;gap:20px;align-items:start">
+              <div style="display:flex;flex-direction:column;gap:12px">
+                <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--color-neutral-400);margin:0">Conversão</h3>
+                <div class="card elev-sm" style="padding:16px">
+                  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px">
+                    <p style="font-size:12.5px;font-weight:600;margin:0">Conversão de compra — {{ live.funnel.conv.periodLabel }}</p>
+                    <button class="btn btn-ghost" style="padding:3px 8px;font-size:10.5px" onClick="{{ live.toggleScope }}">{{ live.funnel.conv.scopeLabel }}</button>
+                  </div>
+                  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center">
+                    <div><p style="font-size:20px;font-weight:700">{{ live.funnel.conv.visitors }}</p><p class="text-muted" style="font-size:10px">Entraram</p></div>
+                    <div><p style="font-size:20px;font-weight:700">{{ live.funnel.conv.arrivals }}</p><p class="text-muted" style="font-size:10px">Chegaram no fim</p></div>
+                    <div><p style="font-size:20px;font-weight:700;color:{{ live.funnel.conv.funnelRateColor }}">{{ live.funnel.conv.funnelRate }}</p><p class="text-muted" style="font-size:10px">Conv. funil</p></div>
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px;text-align:center;border-top:1px solid var(--color-divider);margin-top:12px;padding-top:12px">
+                    <div><p style="font-size:20px;font-weight:700;color:var(--c-high)">{{ live.funnel.conv.purchases }}</p><p class="text-muted" style="font-size:10px">Compras</p></div>
+                    <div><p style="font-size:20px;font-weight:700;color:{{ live.funnel.conv.rateColor }}">{{ live.funnel.conv.rate }}</p><p class="text-muted" style="font-size:10px">Conv. compra</p></div>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:7px;margin-top:14px">
+                    <sc-for list="{{ live.funnel.conv.stepRates }}" as="s" hint-placeholder-count="4">
+                      <div>
+                        <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span class="text-muted">{{ s.label }}</span><span>{{ s.detail }}</span></div>
+                        <div style="height:6px;border-radius:4px;background:var(--color-neutral-900);overflow:hidden"><div style="height:100%;border-radius:4px;background:{{ s.color }};width:{{ s.pct }}%"></div></div>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </div>
+
+              <div style="display:flex;flex-direction:column;gap:12px">
+                <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px">
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="width:8px;height:8px;border-radius:50%;background:var(--c-live);animation:livepulse 1.4s infinite"></span>
+                    <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--color-neutral-400);margin:0">Entradas em página</h3>
+                  </div>
+                  <span class="text-muted" style="font-size:10px">{{ live.windowLabel }} · mais recente no topo</span>
+                </div>
+                <div class="card elev-sm" style="padding:6px 0;max-height:420px;overflow-y:auto">
+                  <sc-for list="{{ live.funnel.entries }}" as="e" hint-placeholder-count="9">
+                    <div style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--color-divider)">
+                      <i class="{{ e.icon }}" style="font-size:14px;color:var(--color-accent);flex-shrink:0"></i>
+                      <div style="min-width:0;flex:1">
+                        <p style="font-size:12px;font-weight:600;margin:0">{{ e.step }}</p>
+                        <p class="text-muted" style="font-size:10.5px">{{ e.origin }}</p>
+                      </div>
+                      <span class="text-muted" style="font-size:10.5px;flex-shrink:0">{{ e.timeAgo }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- vendas (webhook) — nas duas vistas -->
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px">
+              <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--color-neutral-400);margin:0">{{ live.salesTitle }}</h3>
+              <div class="seg">
+                <label class="seg-opt"><input type="radio" name="salefilter" checked="{{ live.filterAll }}" onChange="{{ filterAll }}">Todas</label>
+                <label class="seg-opt"><input type="radio" name="salefilter" checked="{{ live.filterPaid }}" onChange="{{ filterPaid }}">Pagas</label>
+                <label class="seg-opt"><input type="radio" name="salefilter" checked="{{ live.filterPending }}" onChange="{{ filterPending }}">Pendentes</label>
+              </div>
+            </div>
+            <div class="card elev-sm" style="padding:0">
+              <sc-for list="{{ live.sales }}" as="v" hint-placeholder-count="6">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 16px;border-bottom:1px solid var(--color-divider)">
+                  <div style="display:flex;align-items:center;gap:10px;min-width:0">
+                    <span style="width:7px;height:7px;border-radius:50%;flex-shrink:0;background:{{ v.statusDot }}"></span>
+                    <div style="min-width:0">
+                      <p style="font-size:12.5px;font-weight:600;margin:0">{{ v.funnel }}</p>
+                      <p class="text-muted" style="font-size:10.5px">{{ v.step }} · {{ v.timeAgo }}</p>
+                    </div>
+                  </div>
+                  <div style="text-align:right;flex-shrink:0">
+                    <p style="font-size:13px;font-weight:700;margin:0">{{ v.amount }}</p>
+                    <span class="tag {{ v.statusTag }}">{{ v.statusLabel }}</span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <!-- VSLs ao vivo -->
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <i class="ph ph-lightning" style="font-size:17px;color:var(--c-vsl)"></i>
+              <h3 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--color-neutral-400);margin:0">Entradas recentes nas VSLs</h3>
+            </div>
+            <sc-if value="{{ live.hasVsl }}" hint-placeholder-val="{{ true }}">
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px">
+                <sc-for list="{{ live.vslCards }}" as="v" hint-placeholder-count="3">
+                  <div class="card elev-sm" style="padding:14px;border-left:3px solid var(--c-vsl)">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
+                      <span class="text-muted" style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ v.label }}</span>
+                      <span class="tag tag-accent-2" style="flex-shrink:0">VTurb</span>
+                    </div>
+                    <p style="display:flex;align-items:baseline;gap:6px;margin:0"><span style="font-size:28px;font-weight:700">{{ v.viewers }}</span><span class="text-muted" style="font-size:11px">pessoas</span></p>
+                    <p class="text-muted" style="font-size:10px;margin-top:6px;display:flex;align-items:center;gap:5px"><i class="ph ph-clock"></i>Entraram nos {{ live.windowLabel }}</p>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ live.hasVsl }}" hint-placeholder-val="{{ false }}">
+              <p class="text-muted" style="font-size:12.5px;border:1px dashed var(--color-divider);border-radius:var(--radius-md);padding:24px;text-align:center">Nenhuma VSL ativa neste funil.</p>
+            </sc-if>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ================= IMPORTAÇÕES ================= -->
+      <sc-if value="{{ page.imports }}" hint-placeholder-val="{{ false }}" data-screen-label="Importações">
+        <header style="padding:22px 28px 16px;border-bottom:1px solid var(--color-divider)"><h2 style="margin-bottom:2px">Importações</h2><p class="text-muted" style="font-size:13px">Relatórios de vendas da UTMify</p></header>
+        <div style="padding:24px 28px;display:flex;flex-direction:column;gap:18px;max-width:900px">
+          <div class="card" style="padding:14px;border:1px solid var(--c-mid);background:hsl(38 92% 58% / .08)">
+            <p style="display:flex;gap:8px;font-size:13px;margin:0"><i class="ph ph-warning" style="color:var(--c-mid);flex-shrink:0"></i>O arquivo é lido e as colunas são identificadas — mapeamento de campos ainda pendente.</p>
+          </div>
+          <div class="card elev-sm" style="padding:18px">
+            <p class="card-title" style="margin-bottom:2px">Enviar relatório</p><p class="card-body" style="margin-bottom:14px">CSV ou TSV exportado da UTMify</p>
+            <div onClick="{{ toggleImportsPreview }}" style="cursor:pointer;border:2px dashed var(--color-divider);border-radius:var(--radius-md);padding:36px;text-align:center">
+              <i class="ph ph-file-csv" style="font-size:32px;color:var(--color-neutral-500)"></i>
+              <p style="font-size:13px;font-weight:600;margin:10px 0 2px">Arraste o arquivo aqui ou clique para escolher</p>
+              <p class="text-muted" style="font-size:11.5px">.csv · .tsv · .txt</p>
+            </div>
+          </div>
+          <sc-if value="{{ importsPreviewOpen }}" hint-placeholder-val="{{ false }}">
+            <div class="card elev-sm" style="padding:18px;border:1px solid var(--color-accent-800)">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+                <div><p class="card-title">Prévia: vendas_utmify_agosto.csv</p><p class="card-body">312 linhas · 9 colunas · separador ,</p></div>
+                <div style="display:flex;gap:8px"><button class="btn btn-secondary" onClick="{{ toggleImportsPreview }}">Cancelar</button><button class="btn btn-primary"><i class="ph ph-check-circle"></i>Guardar</button></div>
+              </div>
+              <div style="overflow-x:auto"><table class="table" style="min-width:600px"><thead><tr><th>Data</th><th>Funil (UTM)</th><th>Produto</th><th>Valor</th><th>Status</th></tr></thead>
+                <tbody>
+                  <tr><td>12/08</td><td>vsldireta</td><td>Curso Principal</td><td>R$ 297,00</td><td>Pago</td></tr>
+                  <tr><td>12/08</td><td>quizsegmentado</td><td>Curso Principal</td><td>R$ 297,00</td><td>Pago</td></tr>
+                  <tr><td>13/08</td><td>webinarioaovivo</td><td>Mentoria</td><td>R$ 697,00</td><td>Pendente</td></tr>
+                </tbody></table></div>
+            </div>
+          </sc-if>
+          <div class="card elev-sm" style="padding:18px">
+            <p class="card-title" style="margin-bottom:12px">Importações guardadas</p>
+            <div style="display:flex;justify-content:space-between;align-items:center;border:1px solid var(--color-divider);border-radius:var(--radius-md);padding:12px">
+              <div><p style="font-size:13px;font-weight:600">vendas_utmify_julho.csv</p><p class="text-muted" style="font-size:11px">284 linhas · 9 colunas · 01/08/2026</p></div>
+              <span class="tag tag-outline">aguardando mapeamento</span>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ================= CONFIGURAÇÕES ================= -->
+      <sc-if value="{{ page.settings }}" hint-placeholder-val="{{ false }}" data-screen-label="Configurações">
+        <header style="padding:22px 28px 16px;border-bottom:1px solid var(--color-divider)"><h2 style="margin-bottom:2px">Configurações</h2><p class="text-muted" style="font-size:13px">Integrações e tokens de API</p></header>
+        <div style="padding:24px 28px;display:flex;flex-direction:column;gap:18px;max-width:760px">
+          <div class="card elev-sm" style="padding:18px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><p class="card-title" style="display:flex;align-items:center;gap:8px"><i class="ph ph-video-camera" style="color:var(--c-vsl)"></i>VTurb Analytics</p><span class="tag tag-accent-2">VSL</span></div>
+            <div class="field" style="margin-bottom:12px"><label>X-Api-Token</label><input class="input" type="password" value="••••••••••••••••"></div>
+            <div style="display:flex;gap:8px"><button class="btn btn-secondary">Salvar</button><button class="btn btn-secondary">Testar</button></div>
+          </div>
+          <div class="card elev-sm" style="padding:18px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><p class="card-title" style="display:flex;align-items:center;gap:8px"><i class="ph ph-chart-line" style="color:var(--color-accent)"></i>Microsoft Clarity</p><span class="tag tag-accent">Conversão real</span></div>
+            <div class="field" style="margin-bottom:12px"><label>Token de API</label><input class="input" type="password" value="••••••••••••••••"></div>
+            <button class="btn btn-secondary">Salvar e testar</button>
+          </div>
+          <div class="card elev-sm" style="padding:18px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><p class="card-title" style="display:flex;align-items:center;gap:8px"><i class="ph ph-webhooks-logo" style="color:var(--color-accent)"></i>Webhook de venda</p><span class="tag tag-neutral">PerfectPay</span></div>
+            <div class="field" style="margin-bottom:12px"><label>URL do webhook</label><input class="input" readonly value="https://funneltron.app/api/live/webhook/perfectpay/f1?click_id={click_id}"></div>
+            <button class="btn btn-secondary">Copiar</button>
+          </div>
+        </div>
+      </sc-if>
+
+    </main>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+const STATUS_LABELS = { active: 'Ativo', testing: 'Em teste', inactive: 'Desativo' };
+const STATUS_TAG = { active: 'tag-accent', testing: 'tag-outline', inactive: 'tag-neutral' };
+const STATUS_DOT = { active: 'var(--c-high)', testing: 'var(--c-mid)', inactive: 'var(--color-neutral-500)' };
+const STEP_ICON = { landing: 'ph ph-target', vsl: 'ph ph-play-circle', checkout: 'ph ph-credit-card', order_bump: 'ph ph-plus-circle', upsell: 'ph ph-arrow-fat-up', downsell: 'ph ph-arrow-fat-down', thank_you: 'ph ph-check-circle', other: 'ph ph-file-text', sub_funnel: 'ph ph-package' };
+const STEP_TYPE_LABEL = { landing: 'Landing', vsl: 'VSL', checkout: 'Checkout', upsell: 'Upsell', downsell: 'Downsell', order_bump: 'Order Bump', thank_you: 'Obrigado', other: 'Outra', sub_funnel: 'Funil de upsell' };
+const STEP_TYPES = ['landing', 'vsl', 'checkout', 'order_bump', 'upsell', 'downsell', 'thank_you', 'other', 'sub_funnel'];
+const EDGE_LEGEND = [
+  { key: 'default', label: 'Fluxo normal', color: 'hsl(215 16% 55%)' },
+  { key: 'on_accept', label: 'Se aceitou', color: 'hsl(142 69% 52%)' },
+  { key: 'on_decline', label: 'Se recusou', color: 'hsl(0 84% 65%)' },
+  { key: 'on_bump', label: 'Com order bump', color: 'hsl(38 92% 58%)' },
+  { key: 'on_no_bump', label: 'Sem order bump', color: 'hsl(215 16% 65%)' },
+  { key: 'back_redirect', label: 'Back redirect', color: 'hsl(271 76% 58%)' }
+];
+const SERIES_COLORS = ['hsl(217 91% 62%)', 'hsl(271 91% 65%)', 'hsl(142 69% 52%)', 'hsl(38 92% 58%)', 'hsl(199 89% 60%)'];
+const WINDOWS = [5, 30, 60, 240];
+
+const FUNNELS = [
+  { id: 'f1', name: 'VSL Direta', status: 'active', baseUrl: 'vsldireta.com.br',
+    steps: [{ label: 'Captura', type: 'landing' }, { label: 'VSL', type: 'vsl' }, { label: 'Checkout', type: 'checkout' }, { label: 'Order Bump', type: 'order_bump' }, { label: 'Obrigado', type: 'thank_you' }],
+    visitorsByStep: [10000, 7200, 2100, 1950, 430], ticket: 297, salesCount: 410, online: 34, goalIndex: 4,
+    vsl: { views: 7200, engagementRate: 61, conversionRate: 29.2 }, timeOnPage: [12, 410, 95, 35, 15],
+    trend14: [16.8, 17.2, 17.9, 18.1, 18.6, 17.9, 18.8, 19.0, 18.5, 19.2, 19.6, 19.1, 19.8, 19.5],
+    prevEntry: 8700, prevPreThankyou: 1500, prevSalesCount: 328, prevTicket: 287 },
+  { id: 'f2', name: 'Webinário Ao Vivo', status: 'active', baseUrl: 'webinarioaovivo.com',
+    steps: [{ label: 'Inscrição', type: 'landing' }, { label: 'Aula', type: 'vsl' }, { label: 'Checkout', type: 'checkout' }, { label: 'Obrigado', type: 'thank_you' }],
+    visitorsByStep: [8400, 3600, 1050, 270], ticket: 697, salesCount: 265, online: 19, goalIndex: 3,
+    vsl: { views: 3600, engagementRate: 44, conversionRate: 29.2 }, timeOnPage: [14, 2380, 135, 18],
+    trend14: [10.1, 10.4, 10.0, 10.8, 11.2, 10.9, 11.5, 11.8, 11.4, 12.0, 12.3, 11.9, 12.6, 12.5],
+    prevEntry: 7812, prevPreThankyou: 900, prevSalesCount: 239, prevTicket: 650 },
+  { id: 'f3', name: 'Checkout Direto', status: 'testing', baseUrl: 'checkoutdireto.shop',
+    steps: [{ label: 'LP', type: 'landing' }, { label: 'Checkout', type: 'checkout' }, { label: 'Order Bump', type: 'order_bump' }, { label: 'Obrigado', type: 'thank_you' }],
+    visitorsByStep: [5200, 1800, 1650, 205], ticket: 197, salesCount: 198, online: 8, goalIndex: 3,
+    vsl: null, timeOnPage: [8, 55, 28, 12],
+    trend14: [28.0, 28.6, 27.9, 29.4, 30.1, 29.6, 30.8, 31.2, 30.6, 31.5, 31.9, 31.3, 32.0, 31.7],
+    prevEntry: 4940, prevPreThankyou: 1400, prevSalesCount: 168, prevTicket: 190 },
+  { id: 'f4', name: 'Quiz Segmentado', status: 'active', baseUrl: 'quizsegmentado.com',
+    steps: [{ label: 'Quiz', type: 'landing' }, { label: 'VSL', type: 'vsl' }, { label: 'Checkout', type: 'checkout' }, { label: 'Obrigado', type: 'thank_you' }],
+    visitorsByStep: [12000, 9000, 2600, 645], ticket: 297, salesCount: 624, online: 41, goalIndex: 3,
+    vsl: { views: 9000, engagementRate: 71, conversionRate: 28.9 }, timeOnPage: [70, 375, 88, 16],
+    trend14: [18.2, 18.6, 19.1, 19.6, 20.0, 19.5, 20.4, 20.8, 20.3, 21.0, 21.5, 21.1, 21.9, 21.7],
+    prevEntry: 10200, prevPreThankyou: 1980, prevSalesCount: 487, prevTicket: 280 },
+  { id: 'f5', name: 'Lançamento Semente', status: 'inactive', baseUrl: 'lancamentosemente.com.br',
+    steps: [{ label: 'Captura', type: 'landing' }, { label: 'Conteúdo 1', type: 'other' }, { label: 'Conteúdo 2', type: 'other' }, { label: 'Carrinho', type: 'checkout' }, { label: 'Obrigado', type: 'thank_you' }],
+    visitorsByStep: [15000, 9800, 6200, 1450, 215], ticket: 1497, salesCount: 203, online: 3, goalIndex: 4,
+    vsl: null, timeOnPage: [11, 610, 545, 48, 14],
+    trend14: [11.6, 11.3, 11.0, 10.7, 10.5, 10.8, 10.2, 10.0, 9.9, 10.1, 9.8, 9.6, 9.8, 9.7],
+    prevEntry: 15750, prevPreThankyou: 1650, prevSalesCount: 223, prevTicket: 1450 }
+];
+
+const SALES = [
+  { funnelId: 'f4', amount: 297, status: 'paid', timeAgo: '1 min atrás', step: 'Checkout' },
+  { funnelId: 'f1', amount: 297, status: 'paid', timeAgo: '3 min atrás', step: 'Order Bump' },
+  { funnelId: 'f2', amount: 697, status: 'pending', timeAgo: '6 min atrás', step: 'Checkout' },
+  { funnelId: 'f4', amount: 297, status: 'paid', timeAgo: '11 min atrás', step: 'Checkout' },
+  { funnelId: 'f3', amount: 197, status: 'paid', timeAgo: '14 min atrás', step: 'Order Bump' },
+  { funnelId: 'f1', amount: 297, status: 'pending', timeAgo: '19 min atrás', step: 'Checkout' },
+  { funnelId: 'f5', amount: 1497, status: 'paid', timeAgo: '26 min atrás', step: 'Carrinho' },
+  { funnelId: 'f1', amount: 297, status: 'paid', timeAgo: '31 min atrás', step: 'Checkout' }
+];
+
+// Praças fictícias com coordenadas reais das capitais/cidades.
+const GEO_POINTS = [
+  { city: 'São Paulo', uf: 'SP', lat: -23.55, lon: -46.63, weight: 26 },
+  { city: 'Rio de Janeiro', uf: 'RJ', lat: -22.91, lon: -43.17, weight: 15 },
+  { city: 'Belo Horizonte', uf: 'MG', lat: -19.92, lon: -43.94, weight: 9 },
+  { city: 'Brasília', uf: 'DF', lat: -15.79, lon: -47.88, weight: 8 },
+  { city: 'Curitiba', uf: 'PR', lat: -25.43, lon: -49.27, weight: 7 },
+  { city: 'Porto Alegre', uf: 'RS', lat: -30.03, lon: -51.23, weight: 6 },
+  { city: 'Salvador', uf: 'BA', lat: -12.97, lon: -38.50, weight: 6 },
+  { city: 'Fortaleza', uf: 'CE', lat: -3.73, lon: -38.52, weight: 5 },
+  { city: 'Recife', uf: 'PE', lat: -8.05, lon: -34.88, weight: 5 },
+  { city: 'Goiânia', uf: 'GO', lat: -16.68, lon: -49.25, weight: 4 },
+  { city: 'Campinas', uf: 'SP', lat: -22.90, lon: -47.06, weight: 4 },
+  { city: 'Manaus', uf: 'AM', lat: -3.12, lon: -60.02, weight: 3 },
+  { city: 'Belém', uf: 'PA', lat: -1.46, lon: -48.50, weight: 3 },
+  { city: 'Florianópolis', uf: 'SC', lat: -27.60, lon: -48.55, weight: 3 },
+  { city: 'Vitória', uf: 'ES', lat: -20.32, lon: -40.34, weight: 2 },
+  { city: 'Cuiabá', uf: 'MT', lat: -15.60, lon: -56.10, weight: 2 }
+];
+
+const ENTRY_ORIGINS = ['facebook / cpc', 'google / organic', 'direto', 'instagram / bio', 'youtube / ads'];
+
+const KPI_DEFS = [
+  { key: 'avgRate', label: 'Conversão de funil', fmt: pctFmt, higherBetter: true },
+  { key: 'endToEnd', label: 'Conversão de compra', fmt: pctFmt, higherBetter: true },
+  { key: 'vslConversion', label: 'Conversão de VSL', fmt: pctFmt, higherBetter: true },
+  { key: 'vslEngagement', label: 'Engajamento de VSL', fmt: pctFmt, higherBetter: true },
+  { key: 'worstRate', label: 'Pior passagem', fmt: pctFmt, higherBetter: true },
+  { key: 'visitors', label: 'Visitantes', fmt: numFmt, neutral: true, higherBetter: true },
+  { key: 'revenue', label: 'Receita', fmt: moneyFmt, neutral: true, higherBetter: true },
+  { key: 'ticket', label: 'Ticket médio', fmt: moneyFmt, neutral: true, higherBetter: true },
+  { key: 'steps', label: 'Etapas', fmt: numFmt, neutral: true, higherBetter: false }
+];
+
+function pctFmt(n) { return n == null ? '—' : n.toFixed(1) + '%'; }
+function numFmt(n) { return n == null ? '—' : Math.round(n).toLocaleString('pt-BR'); }
+function moneyFmt(n) { return n == null ? '—' : 'R$ ' + Math.round(n).toLocaleString('pt-BR'); }
+function fmtDuration(s) { if (s == null) return '—'; const m = Math.floor(s / 60); const sec = Math.round(s % 60); return m > 0 ? m + 'm ' + sec + 's' : sec + 's'; }
+function convColor(rate) { if (rate == null) return 'var(--color-neutral-400)'; if (rate >= 80) return 'var(--c-high)'; if (rate >= 50) return 'var(--c-mid)'; return 'var(--c-low)'; }
+function windowLabel(min) { return min >= 60 ? 'últimas ' + (min / 60) + 'h' : 'últimos ' + min + ' min'; }
+
+function kpiValue(s, key) {
+  if (key === 'worstRate') return s.worst.rate;
+  if (key === 'visitors') return s.entry;
+  if (key === 'steps') return s.steps.length;
+  return s[key];
+}
+
+function polylinePoints(values, w, h, max) {
+  max = max || 100;
+  const n = values.length;
+  return values.map((v, i) => {
+    const x = n > 1 ? (i / (n - 1)) * w : 0;
+    const y = h - (Math.max(0, Math.min(max, v)) / max) * h;
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+}
+
+function funnelPolygonPoints(s, w, h) {
+  const entry = s.entry;
+  const n = s.steps.length;
+  const top = [], bottom = [];
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * w;
+    const frac = s.visitorsByStep[i] / entry;
+    const halfH = (frac * h) / 2;
+    top.push(x.toFixed(1) + ',' + (h / 2 - halfH).toFixed(1));
+    bottom.push(x.toFixed(1) + ',' + (h / 2 + halfH).toFixed(1));
+  }
+  return top.concat(bottom.reverse()).join(' ');
+}
+
+function calcStats(f) {
+  const entry = f.visitorsByStep[0];
+  const n = f.steps.length;
+  const preThankyou = f.visitorsByStep[n - 2];
+  const avgRate = entry > 0 ? (preThankyou / entry) * 100 : 0;
+  const endToEnd = entry > 0 ? (f.salesCount / entry) * 100 : 0;
+  const revenue = f.salesCount * f.ticket;
+  const stepRates = [];
+  for (let i = 0; i < n - 1; i++) {
+    const from = f.visitorsByStep[i], to = f.visitorsByStep[i + 1];
+    stepRates.push({ label: f.steps[i].label + ' → ' + f.steps[i + 1].label, rate: from > 0 ? (to / from) * 100 : 0, lost: Math.max(0, from - to) });
+  }
+  let worst = stepRates[0];
+  stepRates.forEach((sr) => { if (sr.rate < worst.rate) worst = sr; });
+  const prevAvgRate = f.prevEntry ? (f.prevPreThankyou / f.prevEntry) * 100 : null;
+  const prevEndToEnd = f.prevEntry ? (f.prevSalesCount / f.prevEntry) * 100 : null;
+  const prevRevenue = f.prevSalesCount != null ? f.prevSalesCount * f.prevTicket : null;
+  return {
+    id: f.id, name: f.name, status: f.status, baseUrl: f.baseUrl, steps: f.steps, visitorsByStep: f.visitorsByStep,
+    entry, preThankyou, avgRate, endToEnd, revenue, ticket: f.ticket, salesCount: f.salesCount, online: f.online, goalIndex: f.goalIndex,
+    stepRates, worst, vsl: f.vsl, vslConversion: f.vsl ? f.vsl.conversionRate : null, vslEngagement: f.vsl ? f.vsl.engagementRate : null,
+    timeOnPage: f.timeOnPage, trend14: f.trend14, prevAvgRate, prevEndToEnd, prevRevenue,
+    prevEntry: f.prevEntry, prevTicket: f.prevTicket
+  };
+}
+
+const PERIOD_LABELS = { '7d': 'Últimos 7 dias', '30d': 'Últimos 30 dias', '90d': 'Últimos 90 dias' };
+
+class Component extends DCLogic {
+  state = {
+    activePage: 'login', loginMode: 'login', period: '30d', selectedFunnelId: 'f1',
+    atelierSelectedIndex: 0, atelierClosed: false, atelierStatus: null, atelierGoal: null,
+    atelierTypes: {}, atelierAdded: {}, atelierDirty: false, atelierCapturing: false, atelierSpread: false, atelierIntegrations: false,
+    compareIds: ['f1', 'f2', 'f4'], compareStyle: 'table', periodCompare: false, comparePeriod: 'prev',
+    liveTab: 'geral', liveWindow: 30, liveSource: 'own', liveScope: 'window', livePush: false, saleFilter: 'all',
+    funnelsKindTab: 'front', importsPreviewOpen: false
+  };
+
+  goPage = (key) => this.setState({ activePage: key });
+  setLoginMode = (m) => this.setState({ loginMode: m });
+  doLogin = (e) => { if (e && e.preventDefault) e.preventDefault(); this.setState({ activePage: 'dashboard' }); };
+  cyclePeriod = () => { const order = ['7d', '30d', '90d']; const i = order.indexOf(this.state.period); this.setState({ period: order[(i + 1) % order.length] }); };
+  selectFunnelForView = (id) => this.setState({ selectedFunnelId: id, atelierSelectedIndex: 0, activePage: 'funnelview' });
+  openAtelier = (id) => this.setState({ selectedFunnelId: id, atelierSelectedIndex: 0, atelierClosed: false, activePage: 'atelier' });
+  toggleCompare = (id) => this.setState((s) => {
+    const has = s.compareIds.includes(id);
+    return { compareIds: has ? s.compareIds.filter((x) => x !== id) : [...s.compareIds, id] };
+  });
+  setGlobalMetrics = () => this.setState({ compareIds: [] });
+  setCompareStyle = (s) => this.setState({ compareStyle: s });
+  togglePeriodCompare = () => this.setState((s) => ({ periodCompare: !s.periodCompare }));
+  setComparePeriod = (v) => this.setState({ comparePeriod: v, periodCompare: true });
+  styleTable = () => this.setCompareStyle('table');
+  styleCards = () => this.setCompareStyle('cards');
+  styleOverlay = () => this.setCompareStyle('overlay');
+  loginAsLogin = () => this.setLoginMode('login');
+  loginAsSignup = () => this.setLoginMode('signup');
+  kindFront = () => this.setFunnelsKindTab('front');
+  kindUpsell = () => this.setFunnelsKindTab('upsell');
+  sourceOwn = () => this.setLiveSource('own');
+  sourceClarity = () => this.setLiveSource('clarity');
+  filterAll = () => this.setSaleFilter('all');
+  filterPaid = () => this.setSaleFilter('paid');
+  filterPending = () => this.setSaleFilter('pending');
+  goLogin = () => this.goPage('login');
+  setLiveTab = (k) => this.setState({ liveTab: k });
+  setLiveSource = (v) => this.setState({ liveSource: v });
+  setSaleFilter = (v) => this.setState({ saleFilter: v });
+  cycleLiveWindow = () => this.setState((s) => ({ liveWindow: WINDOWS[(WINDOWS.indexOf(s.liveWindow) + 1) % WINDOWS.length] }));
+  toggleLiveScope = () => this.setState((s) => ({ liveScope: s.liveScope === 'today' ? 'window' : 'today' }));
+  toggleLivePush = () => this.setState((s) => ({ livePush: !s.livePush }));
+  setFunnelsKindTab = (k) => this.setState({ funnelsKindTab: k });
+  toggleImportsPreview = () => this.setState((s) => ({ importsPreviewOpen: !s.importsPreviewOpen }));
+
+  buildNav() {
+    const defs = [
+      ['dashboard', 'Dashboard', 'ph ph-squares-four'], ['funnels', 'Funis', 'ph ph-flow-arrow'],
+      ['funnelview', 'Visão do Funil', 'ph ph-eye'],
+      ['metrics', 'Métricas', 'ph ph-chart-bar'], ['live', 'Ao Vivo', 'ph ph-broadcast'],
+      ['imports', 'Importações', 'ph ph-upload-simple'], ['settings', 'Configurações', 'ph ph-gear']
+    ];
+    const page = this.state.activePage;
+    // O Ateliê é sempre de um funil específico: só se chega nele pelo "Editar".
+    const active = page === 'atelier' ? 'funnels' : page;
+    return defs.map(([key, label, icon]) => ({
+      key, label, icon, go: () => this.goPage(key),
+      bg: active === key ? 'var(--color-accent-900)' : 'transparent',
+      color: active === key ? 'var(--color-accent-300)' : 'var(--color-text)'
+    }));
+  }
+
+  buildDashboard() {
+    const rows = FUNNELS.map(calcStats).sort((a, b) => b.avgRate - a.avgRate);
+    const maxRate = Math.max(...rows.map((r) => r.avgRate));
+    const totalVisitors = rows.reduce((s, r) => s + r.entry, 0);
+    const totalSales = rows.reduce((s, r) => s + r.salesCount, 0);
+    const avgConv = rows.reduce((s, r) => s + r.avgRate, 0) / rows.length;
+    const activeCount = FUNNELS.filter((f) => f.status === 'active').length;
+    const kpis = [
+      { label: 'Funis ativos', value: String(activeCount), sub: 'Total: ' + FUNNELS.length, icon: 'ph ph-target' },
+      { label: 'Visitantes', value: numFmt(totalVisitors), sub: PERIOD_LABELS[this.state.period], icon: 'ph ph-users' },
+      { label: 'Conversões', value: numFmt(totalSales), sub: 'Soma de todos os funis', icon: 'ph ph-check-circle' },
+      { label: 'Conversão média', value: pctFmt(avgConv), sub: 'Geral do período', icon: 'ph ph-trend-up' }
+    ];
+    const rankingRows = rows.map((r, i) => ({
+      name: r.name, rateFmt: pctFmt(r.avgRate), pct: (r.avgRate / maxRate) * 100, color: SERIES_COLORS[i % SERIES_COLORS.length],
+      statusTag: STATUS_TAG[r.status], statusLabel: STATUS_LABELS[r.status], visitorsFmt: numFmt(r.entry),
+      trendFmt: r.avgRate >= r.prevAvgRate ? '▲ ' + (r.avgRate - r.prevAvgRate).toFixed(1) + 'p.p.' : '▼ ' + (r.prevAvgRate - r.avgRate).toFixed(1) + 'p.p.',
+      trendColor: r.avgRate >= r.prevAvgRate ? 'var(--c-high)' : 'var(--c-low)',
+      view: () => this.selectFunnelForView(r.id)
+    }));
+    const withVsl = rows.filter((r) => r.vsl).sort((a, b) => b.vslConversion - a.vslConversion);
+    const topVsl = withVsl[0];
+    return {
+      kpis, rankingRows, hasVsl: !!topVsl,
+      topVsl: topVsl ? { name: topVsl.name, conv: pctFmt(topVsl.vslConversion), eng: pctFmt(topVsl.vslEngagement), views: numFmt(topVsl.vsl.views) } : null,
+      vslList: withVsl.map((r) => ({ name: r.name, conv: pctFmt(r.vslConversion), eng: pctFmt(r.vslEngagement), views: numFmt(r.vsl.views), pct: r.vslConversion * 2 }))
+    };
+  }
+
+  buildFunnelsList() {
+    const rows = FUNNELS.map(calcStats).sort((a, b) => b.avgRate - a.avgRate);
+    return {
+      count: FUNNELS.length, kindFront: this.state.funnelsKindTab === 'front', kindUpsell: this.state.funnelsKindTab === 'upsell',
+      rows: rows.map((r) => ({
+        name: r.name, baseUrl: r.baseUrl, statusTag: STATUS_TAG[r.status], statusLabel: STATUS_LABELS[r.status],
+        visitors: numFmt(r.entry), rate: pctFmt(r.avgRate), rateColor: convColor(r.avgRate), sales: numFmt(r.salesCount),
+        sparkline: polylinePoints(r.trend14, 200, 32, Math.max(...r.trend14) * 1.15),
+        hasVsl: !!r.vsl, vslConv: r.vsl ? pctFmt(r.vslConversion) : '', vslEng: r.vsl ? pctFmt(r.vslEngagement) : '',
+        view: () => this.selectFunnelForView(r.id), edit: () => this.openAtelier(r.id)
+      }))
+    };
+  }
+
+  atelierSteps(f) {
+    const added = this.state.atelierAdded[f.id] || [];
+    return [...f.steps.map((s, i) => ({ ...s, visitors: f.visitorsByStep[i] })), ...added.map((a) => ({ ...a, visitors: 0 }))];
+  }
+
+  buildAtelier() {
+    const f = FUNNELS.find((x) => x.id === this.state.selectedFunnelId) || FUNNELS[0];
+    const steps = this.atelierSteps(f);
+    const types = this.state.atelierTypes[f.id] || {};
+    const idx = Math.min(this.state.atelierSelectedIndex, steps.length - 1);
+    const goal = this.state.atelierGoal != null ? this.state.atelierGoal : f.goalIndex;
+    const status = this.state.atelierStatus || f.status;
+    const spread = this.state.atelierSpread;
+    const gapX = spread ? 360 : 300;
+    const nodes = steps.map((s, i) => {
+      const type = types[i] || s.type;
+      const prev = i > 0 ? steps[i - 1].visitors : null;
+      const rate = prev ? (s.visitors / prev) * 100 : null;
+      return {
+        i, label: s.label, type, typeLabel: STEP_TYPE_LABEL[type], icon: STEP_ICON[type],
+        x: 20 + i * gapX, y: spread ? 24 : 24 + (i % 2) * 56,
+        border: i === idx ? 'var(--color-accent)' : 'var(--color-divider)',
+        isGoal: i === goal, visitors: numFmt(s.visitors), rate: rate == null ? '—' : pctFmt(rate), rateColor: convColor(rate),
+        select: () => this.setState({ atelierSelectedIndex: i, atelierClosed: false })
+      };
+    });
+    const NODE_H = 290;
+    const edges = [];
+    for (let i = 0; i < nodes.length - 1; i++) {
+      const a = nodes[i], b = nodes[i + 1];
+      const x1 = a.x + 180, y1 = a.y + NODE_H / 2, x2 = b.x, y2 = b.y + NODE_H / 2;
+      const cond = steps[i].type === 'order_bump' ? 'on_bump' : (steps[i + 1].type === 'thank_you' ? 'on_accept' : 'default');
+      const legend = EDGE_LEGEND.find((e) => e.key === cond);
+      const from = steps[i].visitors, to = steps[i + 1].visitors;
+      const rate = from > 0 ? (to / from) * 100 : null;
+      edges.push({
+        path: 'M' + x1 + ',' + y1 + ' C' + (x1 + 60) + ',' + y1 + ' ' + (x2 - 60) + ',' + y2 + ' ' + x2 + ',' + y2,
+        color: legend.color, labelX: (x1 + x2) / 2, labelY: (y1 + y2) / 2 - 14,
+        rate: rate == null ? '' : pctFmt(rate), rateColor: convColor(rate),
+        lostX: (x1 + x2) / 2, lostY: (y1 + y2) / 2 + 26, lost: numFmt(Math.max(0, from - to)) + ' saíram'
+      });
+    }
+    const canvasWidth = 40 + nodes.length * gapX;
+    const canvasHeight = NODE_H + 100;
+    const sel = steps[idx];
+    const selType = types[idx] || sel.type;
+    const slug = f.baseUrl.replace(/\..*$/, '');
+    const tagOpen = '<' + 'script src="https://funneltron.app/t.js" data-funnel="' + f.id + '">';
+    return {
+      name: f.name, stepCount: steps.length, edgeCount: edges.length,
+      back: () => this.setState({ activePage: 'funnelview' }),
+      integrationsOpen: this.state.atelierIntegrations,
+      toggleIntegrations: () => this.setState((s) => ({ atelierIntegrations: !s.atelierIntegrations })),
+      integrations: {
+        clarityProject: slug + '-clarity',
+        clarityToken: '••••••••••••••••',
+        vturbToken: '••••••••••••••••',
+        webhook: 'https://funneltron.app/api/live/webhook/perfectpay/' + f.id + '?click_id={click_id}',
+        snippet: tagOpen + '<' + '/script>'
+      },
+      statuses: ['active', 'testing', 'inactive'].map((k) => ({
+        label: STATUS_LABELS[k], dot: STATUS_DOT[k],
+        bg: status === k ? 'var(--color-accent-900)' : 'var(--color-neutral-900)',
+        border: status === k ? 'var(--color-accent)' : 'var(--color-divider)',
+        color: status === k ? 'var(--color-accent-300)' : 'var(--color-neutral-400)',
+        pick: () => this.setState({ atelierStatus: k, atelierDirty: true })
+      })),
+      dirtyLabel: this.state.atelierDirty ? 'não salvo' : 'salvo há 2 min',
+      dirtyColor: this.state.atelierDirty ? 'var(--c-mid)' : 'var(--c-high)',
+      captureBanner: this.state.atelierCapturing, captureProgress: '2 de ' + steps.length,
+      captureAll: () => { this.setState({ atelierCapturing: true }); setTimeout(() => this.setState({ atelierCapturing: false }), 2200); },
+      spread: () => this.setState((s) => ({ atelierSpread: !s.atelierSpread, atelierDirty: true })),
+      undo: () => this.setState({ atelierSpread: false, atelierAdded: {}, atelierTypes: {}, atelierDirty: false }),
+      save: () => this.setState({ atelierDirty: false }),
+      palette: STEP_TYPES.map((t) => ({
+        label: STEP_TYPE_LABEL[t], icon: STEP_ICON[t],
+        add: () => this.setState((s) => {
+          const list = [...(s.atelierAdded[f.id] || []), { label: STEP_TYPE_LABEL[t], type: t }];
+          return { atelierAdded: { ...s.atelierAdded, [f.id]: list }, atelierDirty: true, atelierSelectedIndex: f.steps.length + list.length - 1, atelierClosed: false };
+        })
+      })),
+      edgeLegend: EDGE_LEGEND,
+      nodes, edges, canvasWidth, canvasHeight, canvasViewBox: '0 0 ' + canvasWidth + ' ' + canvasHeight,
+      inspectorOpen: !this.state.atelierClosed,
+      closeInspector: () => this.setState({ atelierClosed: true }),
+      typeOptions: STEP_TYPES.map((t) => ({
+        label: STEP_TYPE_LABEL[t], icon: STEP_ICON[t],
+        bg: selType === t ? 'var(--color-accent-900)' : 'var(--color-neutral-900)',
+        border: selType === t ? 'var(--color-accent)' : 'var(--color-divider)',
+        color: selType === t ? 'var(--color-accent-300)' : 'var(--color-neutral-400)',
+        pick: () => this.setState((s) => ({ atelierTypes: { ...s.atelierTypes, [f.id]: { ...(s.atelierTypes[f.id] || {}), [idx]: t } }, atelierDirty: true }))
+      })),
+      selected: {
+        label: sel.label, isVsl: selType === 'vsl', playerId: selType === 'vsl' ? '64f1a2b3c4d5e6f7' : '',
+        url: 'https://' + f.baseUrl + '/' + sel.label.toLowerCase().replace(/\s+/g, '-'),
+        captureLabel: 'Puxar print da URL'
+      },
+      toggleGoal: () => this.setState({ atelierGoal: goal === idx ? -1 : idx, atelierDirty: true }),
+      goalTitle: goal === idx ? 'Esta página fecha a conversão de compra' : 'Marcar como fim da conversão de compra',
+      goalBg: goal === idx ? 'hsl(142 69% 52% / .1)' : 'var(--color-neutral-900)',
+      goalBorder: goal === idx ? 'var(--c-high)' : 'var(--color-divider)',
+      goalIconColor: goal === idx ? 'var(--c-high)' : 'var(--color-neutral-500)'
+    };
+  }
+
+  /** Mesma representação do ateliê: card com print retrato + setas curvas. */
+  funnelCanvas(f, opts) {
+    opts = opts || {};
+    const scale = opts.scale || 1;
+    const online = opts.online;
+    // gap generoso entre cards: a taxa de passagem e o "saíram" moram nesse vão.
+    const gapX = 320, NODE_H = 290, PAD = 20;
+    const nodes = f.steps.map((st, i) => {
+      const prev = i > 0 ? f.visitorsByStep[i - 1] : null;
+      const rate = prev ? (f.visitorsByStep[i] / prev) * 100 : null;
+      const onlineHere = online != null ? Math.max(0, Math.round(online * (f.visitorsByStep[i] / f.visitorsByStep[0]))) : null;
+      return {
+        label: st.label, type: st.type, icon: STEP_ICON[st.type], typeLabel: STEP_TYPE_LABEL[st.type],
+        x: PAD + i * gapX, y: PAD,
+        visitors: numFmt(Math.round(f.visitorsByStep[i] * scale)),
+        rate: rate == null ? '—' : pctFmt(rate), rateColor: convColor(rate),
+        isGoal: i === f.goalIndex,
+        hasOnline: onlineHere != null, online: onlineHere,
+        onlineColor: onlineHere ? 'var(--c-live)' : 'var(--color-neutral-500)',
+        border: onlineHere ? 'var(--c-live)' : 'var(--color-divider)'
+      };
+    });
+    const edges = [];
+    for (let i = 0; i < nodes.length - 1; i++) {
+      const a = nodes[i], b = nodes[i + 1];
+      const x1 = a.x + 180, y1 = a.y + NODE_H / 2, x2 = b.x, y2 = b.y + NODE_H / 2;
+      const from = f.visitorsByStep[i], to = f.visitorsByStep[i + 1];
+      const rate = from > 0 ? (to / from) * 100 : null;
+      const cond = f.steps[i].type === 'order_bump' ? 'on_bump' : (f.steps[i + 1].type === 'thank_you' ? 'on_accept' : 'default');
+      edges.push({
+        path: 'M' + x1 + ',' + y1 + ' C' + (x1 + 60) + ',' + y1 + ' ' + (x2 - 60) + ',' + y2 + ' ' + x2 + ',' + y2,
+        color: EDGE_LEGEND.find((e) => e.key === cond).color,
+        labelX: (x1 + x2) / 2, labelY: y1 - 14, rate: pctFmt(rate), rateColor: convColor(rate),
+        lostX: (x1 + x2) / 2, lostY: y1 + 26, lost: numFmt(Math.round(Math.max(0, from - to) * scale)) + ' saíram'
+      });
+    }
+    const width = PAD * 2 + nodes.length * gapX - (gapX - 180);
+    const height = NODE_H + PAD * 2;
+    return { nodes, edges, width, height, viewBox: '0 0 ' + width + ' ' + height };
+  }
+
+  buildFunnelView() {
+    return {
+      count: FUNNELS.length,
+      funnels: FUNNELS.map((f) => {
+        const s = calcStats(f);
+        const canvas = this.funnelCanvas(f);
+        return {
+          name: f.name, slug: f.baseUrl, stepCount: f.steps.length, canvas,
+          statusTag: STATUS_TAG[f.status], statusLabel: STATUS_LABELS[f.status],
+          rate: pctFmt(s.avgRate), rateColor: convColor(s.avgRate),
+          goMetrics: () => this.setState({ compareIds: [f.id], activePage: 'metrics' }),
+          goEdit: () => this.openAtelier(f.id)
+        };
+      })
+    };
+  }
+
+  buildMetrics() {
+    const compareIds = this.state.compareIds;
+    const isGlobal = compareIds.length === 0;
+    const isSingle = compareIds.length === 1;
+    const isCompare = compareIds.length > 1;
+    const strip = FUNNELS.map((f) => {
+      const idx = compareIds.indexOf(f.id);
+      const active = idx >= 0;
+      const color = active ? SERIES_COLORS[idx % SERIES_COLORS.length] : 'var(--color-neutral-600)';
+      return { id: f.id, name: f.name, dot: color, bg: active ? 'var(--color-accent-900)' : 'var(--color-surface)', border: active ? 'var(--color-accent)' : 'var(--color-divider)', toggle: () => this.toggleCompare(f.id) };
+    });
+    const subtitle = isGlobal ? 'Visão global · todos os funis · ' + PERIOD_LABELS[this.state.period]
+      : isCompare ? 'Comparando ' + compareIds.length + ' funis · ' + PERIOD_LABELS[this.state.period]
+      : 'Análise detalhada · ' + PERIOD_LABELS[this.state.period];
+
+    const base = { strip, isGlobal, isSingle, isCompare, subtitle, setGlobal: this.setGlobalMetrics, globalBg: isGlobal ? 'var(--color-accent-900)' : 'var(--color-surface)', globalBorder: isGlobal ? 'var(--color-accent)' : 'var(--color-divider)' };
+
+    if (isGlobal) {
+      const rows = FUNNELS.map(calcStats).sort((a, b) => b.avgRate - a.avgRate);
+      const totalEntry = rows.reduce((s, r) => s + r.entry, 0);
+      const totalSales = rows.reduce((s, r) => s + r.salesCount, 0);
+      const weighted = totalEntry > 0 ? (totalSales / totalEntry) * 100 : 0;
+      const simpleAvg = rows.reduce((s, r) => s + r.avgRate, 0) / rows.length;
+      const maxEntry = Math.max(...rows.map((r) => r.entry));
+      const maxSales = Math.max(...rows.map((r) => r.salesCount));
+      base.global = {
+        kpis: [
+          { label: 'Visitantes', value: numFmt(totalEntry), sub: 'Somando ' + rows.length + ' funis' },
+          { label: 'Conversões', value: numFmt(totalSales), sub: 'Total no período' },
+          { label: 'Taxa ponderada', value: pctFmt(weighted), sub: numFmt(totalEntry) + ' entraram' },
+          { label: 'Média simples', value: pctFmt(simpleAvg), sub: 'Entre funis' }
+        ],
+        best: { name: rows[0].name, rate: pctFmt(rows[0].avgRate), visitors: numFmt(rows[0].entry) },
+        worst: { name: rows[rows.length - 1].name, rate: pctFmt(rows[rows.length - 1].avgRate), visitors: numFmt(rows[rows.length - 1].entry) },
+        rows: rows.map((r) => ({ name: r.name, visitors: numFmt(r.entry), sales: numFmt(r.salesCount), rate: pctFmt(r.avgRate), rateColor: convColor(r.avgRate), endToEnd: pctFmt(r.endToEnd), steps: r.steps.length })),
+        barRows: rows.map((r) => ({ name: r.name, visitorsPct: (r.entry / maxEntry) * 100, salesPct: (r.salesCount / maxSales) * 100 }))
+      };
+    } else if (isSingle) {
+      const f = FUNNELS.find((x) => x.id === compareIds[0]);
+      const s = calcStats(f);
+      const pc = this.state.periodCompare;
+      const cp = this.state.comparePeriod;
+      const CP = {
+        prev: { label: 'período anterior', factor: 1 },
+        lastMonth: { label: 'mesmo período do mês passado', factor: 0.93 },
+        lastYear: { label: 'mesmo período do ano passado', factor: 0.72 }
+      };
+      const factor = CP[cp].factor;
+      const baseAvg = s.prevAvgRate != null ? s.prevAvgRate * factor : null;
+      const baseEnd = s.prevEndToEnd != null ? s.prevEndToEnd * factor : null;
+      const baseRev = s.prevRevenue != null ? s.prevRevenue * factor : null;
+      const dRate = pc && baseAvg != null ? s.avgRate - baseAvg : null;
+      const dEnd = pc && baseEnd != null ? s.endToEnd - baseEnd : null;
+      const dRev = pc && baseRev != null ? ((s.revenue - baseRev) / baseRev) * 100 : null;
+      const mk = (d, unit) => d == null
+        ? { hasDelta: false, delta: '', deltaColor: 'var(--color-text)' }
+        : { hasDelta: true, delta: (d >= 0 ? '▲ ' : '▼ ') + Math.abs(d).toFixed(1) + (unit || '%'), deltaColor: d >= 0 ? 'var(--c-high)' : 'var(--c-low)' };
+      const maxTrend = Math.max(...s.trend14) * 1.25;
+      const prevTrend = baseAvg ? s.trend14.map((v) => v * (baseAvg / s.avgRate)) : s.trend14;
+      base.single = {
+        name: f.name, pcOff: !pc, pcOn: pc, periodCompare: pc,
+        baselineLabel: CP[cp].label,
+        periodOptions: [
+          { key: 'prev', label: 'Período anterior' },
+          { key: 'lastMonth', label: 'Mês passado' },
+          { key: 'lastYear', label: 'Ano passado' }
+        ].map((o) => ({
+          label: o.label, pick: () => this.setComparePeriod(o.key),
+          bg: cp === o.key ? 'var(--color-accent-900)' : 'var(--color-neutral-900)',
+          border: cp === o.key ? 'var(--color-accent)' : 'var(--color-divider)',
+          color: cp === o.key ? 'var(--color-accent-300)' : 'var(--color-neutral-400)'
+        })),
+        canvas: this.funnelCanvas(f),
+        kpis: [
+          { label: 'Visitantes', value: numFmt(s.entry), ...mk(pc && s.prevEntry ? ((s.entry - s.prevEntry * factor) / (s.prevEntry * factor)) * 100 : null) },
+          { label: 'Conversão de funil', value: pctFmt(s.avgRate), ...mk(dRate, 'p.p.') },
+          { label: 'Conversão de compra', value: pctFmt(s.endToEnd), ...mk(dEnd, 'p.p.') },
+          { label: 'Ticket médio', value: moneyFmt(s.ticket), ...mk(pc && s.prevTicket ? ((s.ticket - s.prevTicket * factor) / (s.prevTicket * factor)) * 100 : null) },
+          { label: 'Receita', value: moneyFmt(s.revenue), ...mk(dRev) }
+        ],
+        trendCurrent: polylinePoints(s.trend14, 480, 150, maxTrend),
+        trendPrev: polylinePoints(prevTrend, 480, 150, maxTrend),
+        stepRows: s.stepRates.map((r) => ({ label: r.label, rate: pctFmt(r.rate), pct: r.rate, color: convColor(r.rate) })),
+        worstLabel: s.worst.label, worstRate: pctFmt(s.worst.rate), worstLost: numFmt(s.worst.lost),
+        timeRows: s.steps.map((st, i) => ({ label: st.label, value: fmtDuration(s.timeOnPage[i]), pct: (s.timeOnPage[i] / Math.max(...s.timeOnPage)) * 100 })),
+        hasVsl: !!s.vsl, vslConv: s.vsl ? pctFmt(s.vslConversion) : '', vslEng: s.vsl ? pctFmt(s.vslEngagement) : '', vslViews: s.vsl ? numFmt(s.vsl.views) : ''
+      };
+    } else {
+      const stats = compareIds.map((id) => calcStats(FUNNELS.find((f) => f.id === id)));
+      const rows = KPI_DEFS.map((def) => {
+        const vals = stats.map((s) => kpiValue(s, def.key));
+        const valid = vals.filter((v) => v != null);
+        const best = !def.neutral && valid.length > 1 ? (def.higherBetter ? Math.max(...valid) : Math.min(...valid)) : null;
+        const cells = stats.map((s, i) => {
+          const v = vals[i];
+          const isBest = best != null && v === best;
+          return { value: v, formatted: def.fmt(v), isBest, weight: isBest ? 700 : 400, color: isBest ? 'var(--c-high)' : (def.neutral ? 'var(--color-neutral-400)' : 'var(--color-text)') };
+        });
+        return { label: def.label, neutral: !!def.neutral, cells };
+      });
+      const wins = stats.map(() => 0);
+      rows.forEach((r) => { if (r.neutral) return; r.cells.forEach((c, i) => { if (c.isBest) wins[i]++; }); });
+      const ranked = stats.map((s, i) => ({ id: s.id, name: s.name, color: SERIES_COLORS[i % SERIES_COLORS.length], wins: wins[i] })).sort((a, b) => b.wins - a.wins);
+      const champion = ranked[0], runnerUp = ranked[1];
+      const tie = !champion || !runnerUp || champion.wins === runnerUp.wins;
+      const totalMetrics = KPI_DEFS.filter((d) => !d.neutral).length;
+      const rankedDecorated = ranked.map((r) => ({ ...r, bg: !tie && r.id === champion.id ? 'var(--color-accent-900)' : 'var(--color-neutral-900)', border: !tie && r.id === champion.id ? 'var(--color-accent)' : 'var(--color-divider)' }));
+      const maxEntry = Math.max(...stats.map((s) => s.entry));
+      const maxSales = Math.max(...stats.map((s) => s.salesCount));
+      const vslStats = stats.filter((s) => s.vsl);
+      base.compare = {
+        verdictBorder: tie ? 'var(--color-neutral-600)' : 'var(--color-accent)',
+        verdictKicker: tie ? 'Empate técnico' : 'Melhor funil', verdictTitle: tie ? 'Sem vencedor claro' : champion.name,
+        verdictSub: tie ? 'Os funis vencem no mesmo número de métricas — a escolha depende do que você prioriza.' : 'Vence em ' + champion.wins + ' de ' + totalMetrics + ' métricas de desempenho',
+        ranked: rankedDecorated,
+        styleTable: this.state.compareStyle === 'table', styleCards: this.state.compareStyle === 'cards', styleOverlay: this.state.compareStyle === 'overlay',
+        tableFunnels: stats.map((s, i) => ({ name: s.name, color: SERIES_COLORS[i % SERIES_COLORS.length] })),
+        tableRows: rows,
+        cards: stats.map((s, i) => ({
+          name: s.name, color: SERIES_COLORS[i % SERIES_COLORS.length], status: STATUS_LABELS[s.status], statusTag: STATUS_TAG[s.status],
+          kpis: [
+            { label: 'Visitantes', value: numFmt(s.entry) }, { label: 'Conv. funil', value: pctFmt(s.avgRate) },
+            { label: 'Conv. compra', value: pctFmt(s.endToEnd) }, { label: 'Ticket médio', value: moneyFmt(s.ticket) },
+            { label: 'Receita', value: moneyFmt(s.revenue) },
+            ...(s.vsl ? [{ label: 'VSL conv / engaj', value: pctFmt(s.vslConversion) + ' / ' + pctFmt(s.vslEngagement) }] : [])
+          ]
+        })),
+        overlayPolygons: stats.map((s, i) => ({ color: SERIES_COLORS[i % SERIES_COLORS.length], points: funnelPolygonPoints(s, 500, 180) })),
+        overlayLegend: stats.map((s, i) => ({ name: s.name, color: SERIES_COLORS[i % SERIES_COLORS.length] })),
+        stepLines: stats.map((s, i) => ({ name: s.name, color: SERIES_COLORS[i % SERIES_COLORS.length], points: polylinePoints(s.visitorsByStep.map((v) => (v / s.entry) * 100), 460, 160, 100) })),
+        worstCards: stats.map((s, i) => ({ name: s.name, color: SERIES_COLORS[i % SERIES_COLORS.length], label: s.worst.label, rate: pctFmt(s.worst.rate), lost: numFmt(s.worst.lost) })),
+        volumeBars: stats.map((s, i) => ({ name: s.name, color: SERIES_COLORS[i % SERIES_COLORS.length], visitorsPct: (s.entry / maxEntry) * 100, salesPct: (s.salesCount / maxSales) * 100 })),
+        hasVslBars: vslStats.length > 0,
+        vslBars: vslStats.map((s) => { const i = stats.indexOf(s); return { name: s.name, color: SERIES_COLORS[i % SERIES_COLORS.length], conv: pctFmt(s.vslConversion), eng: pctFmt(s.vslEngagement), convPct: s.vslConversion * 2.5 }; })
+      };
+    }
+    return base;
+  }
+
+  liveConvCard(s, scale, periodLabel) {
+    const visitors = Math.max(1, Math.round(s.entry * scale));
+    const arrivals = Math.max(0, Math.round(s.preThankyou * scale));
+    const purchases = Math.max(0, Math.round(s.salesCount * scale));
+    const rate = visitors > 0 ? (purchases / visitors) * 100 : 0;
+    const funnelRate = visitors > 0 ? (arrivals / visitors) * 100 : 0;
+    const stepRates = s.stepRates.map((r) => ({
+      label: r.label, pct: r.rate, color: convColor(r.rate),
+      detail: numFmt(Math.round(r.lost * scale)) + ' abandonaram · ' + pctFmt(r.rate)
+    }));
+    return {
+      name: s.name, periodLabel, visitors: numFmt(visitors), arrivals: numFmt(arrivals), purchases: numFmt(purchases),
+      rate: pctFmt(rate), rateColor: convColor(rate), funnelRate: pctFmt(funnelRate), funnelRateColor: convColor(funnelRate),
+      stepRates
+    };
+  }
+
+  /** Distribui as pessoas online pelas praças (peso fixo = tráfego típico). */
+  buildGeo(funnelId) {
+    const stats = FUNNELS.map(calcStats);
+    const online = funnelId
+      ? (stats.find((s) => s.id === funnelId) || {}).online || 0
+      : stats.reduce((a, s) => a + s.online, 0);
+    const totalWeight = GEO_POINTS.reduce((a, p) => a + p.weight, 0);
+    let points = GEO_POINTS.map((p) => ({
+      city: p.city, uf: p.uf, lat: p.lat, lon: p.lon,
+      online: Math.max(0, Math.round((p.weight / totalWeight) * online))
+    })).filter((p) => p.online > 0);
+    if (!points.length) points = [];
+    const max = Math.max(1, ...points.map((p) => p.online));
+    return {
+      total: numFmt(points.reduce((a, p) => a + p.online, 0)),
+      places: points.length,
+      pointsJson: JSON.stringify(points),
+      top: points.slice().sort((a, b) => b.online - a.online).slice(0, 10)
+        .map((p) => ({ city: p.city, uf: p.uf, online: p.online, pct: (p.online / max) * 100 }))
+    };
+  }
+
+  buildLive() {
+    const tab = this.state.liveTab;
+    const win = this.state.liveWindow;
+    const scale = win / (30 * 24 * 60);
+    const stats = FUNNELS.map(calcStats);
+    const isGeral = tab === 'geral';
+    const wlabel = windowLabel(win);
+    const tabs = [{ key: 'geral', label: 'Geral', isGeral: true }, ...FUNNELS.map((f) => ({ key: f.id, label: f.name, isGeral: false }))].map((t) => ({
+      ...t, select: () => this.setLiveTab(t.key),
+      bg: t.key === tab ? 'var(--color-surface)' : 'transparent',
+      color: t.key === tab ? 'var(--color-text)' : 'var(--color-neutral-400)'
+    }));
+
+    const filter = this.state.saleFilter;
+    const filterSales = (list) => list.filter((v) => filter === 'all' || v.status === filter).map((v) => ({
+      funnel: FUNNELS.find((f) => f.id === v.funnelId).name, step: v.step, amount: moneyFmt(v.amount), timeAgo: v.timeAgo,
+      statusTag: v.status === 'paid' ? 'tag-accent' : 'tag-outline', statusLabel: v.status === 'paid' ? 'Paga' : 'Pendente',
+      statusDot: v.status === 'paid' ? 'var(--c-high)' : 'var(--c-mid)'
+    }));
+
+    const base = {
+      tabs, isGeral, isFunnel: !isGeral, windowLabel: wlabel, showWindow: this.state.liveSource !== 'clarity',
+      sourceOwn: this.state.liveSource === 'own', sourceClarity: this.state.liveSource === 'clarity',
+      cycleWindow: this.cycleLiveWindow, toggleScope: this.toggleLiveScope, togglePush: this.toggleLivePush,
+      pushLabel: this.state.livePush ? 'Alertas ligados' : 'Alertas de venda',
+      pushIcon: this.state.livePush ? 'ph ph-bell-ringing' : 'ph ph-bell',
+      filterAll: filter === 'all', filterPaid: filter === 'paid', filterPending: filter === 'pending',
+      clock: '14:32:07',
+      geo: this.buildGeo(isGeral ? null : tab)
+    };
+
+    if (isGeral) {
+      const online = stats.reduce((a, s) => a + s.online, 0);
+      const visitors = Math.round(stats.reduce((a, s) => a + s.entry, 0) * scale);
+      const arrivals = Math.round(stats.reduce((a, s) => a + s.preThankyou, 0) * scale);
+      const purchases = Math.round(stats.reduce((a, s) => a + s.salesCount, 0) * scale);
+      const paidSales = SALES.filter((v) => v.status === 'paid');
+      const revenue = paidSales.reduce((a, v) => a + v.amount, 0);
+      base.summary = [
+        { label: 'Pessoas agora', value: numFmt(online), sub: 'todos os funis', icon: 'ph ph-users', iconColor: 'var(--c-live)' },
+        { label: 'Entraram (janela)', value: numFmt(visitors), sub: wlabel, icon: 'ph ph-users-three', iconColor: 'var(--c-live)' },
+        { label: 'Conv. funil', value: numFmt(arrivals), sub: pctFmt(visitors > 0 ? (arrivals / visitors) * 100 : 0) + ' chegaram no fim', icon: 'ph ph-squares-four', iconColor: 'var(--c-mid)' },
+        { label: 'Conv. compra', value: numFmt(purchases), sub: pctFmt(visitors > 0 ? (purchases / visitors) * 100 : 0), icon: 'ph ph-shopping-cart', iconColor: 'var(--c-high)' },
+        { label: 'Receita (pagas)', value: moneyFmt(revenue), sub: paidSales.length + ' pagas', icon: 'ph ph-lightning', iconColor: 'var(--c-vsl)' }
+      ];
+      base.convCards = stats.map((s) => this.liveConvCard(s, scale, wlabel));
+      base.salesTitle = 'Vendas (webhook) — todos os funis';
+      base.sales = filterSales(SALES);
+      const withVsl = stats.filter((s) => s.vsl);
+      base.hasVsl = withVsl.length > 0;
+      base.vslCards = withVsl.map((s) => ({ label: s.name, viewers: Math.round(s.online * 0.55) }));
+    } else {
+      const s = stats.find((x) => x.id === tab);
+      const f = FUNNELS.find((x) => x.id === tab);
+      const visitors = Math.max(1, Math.round(s.entry * scale));
+      const arrivals = Math.round(s.preThankyou * scale);
+      const purchases = Math.round(s.salesCount * scale);
+      const funnelSales = SALES.filter((v) => v.funnelId === tab);
+      const revenue = funnelSales.filter((v) => v.status === 'paid').reduce((a, v) => a + v.amount, 0);
+      base.summary = [
+        { label: 'Pessoas agora', value: numFmt(s.online), sub: 'neste funil', icon: 'ph ph-users', iconColor: 'var(--c-live)' },
+        { label: 'Entraram (janela)', value: numFmt(visitors), sub: wlabel, icon: 'ph ph-users-three', iconColor: 'var(--c-live)' },
+        { label: 'Conv. funil', value: numFmt(arrivals), sub: pctFmt((arrivals / visitors) * 100) + ' chegaram no fim', icon: 'ph ph-squares-four', iconColor: 'var(--c-mid)' },
+        { label: 'Conv. compra', value: numFmt(purchases), sub: pctFmt((purchases / visitors) * 100), icon: 'ph ph-shopping-cart', iconColor: 'var(--c-high)' },
+        { label: 'Receita (pagas)', value: moneyFmt(revenue), sub: funnelSales.filter((v) => v.status === 'paid').length + ' pagas', icon: 'ph ph-lightning', iconColor: 'var(--c-vsl)' }
+      ];
+      const canvas = this.funnelCanvas(f, { scale, online: s.online });
+      const flow = f.steps.map((st, i) => {
+        const hasNext = i < f.steps.length - 1;
+        const rate = hasNext && f.visitorsByStep[i] > 0 ? (f.visitorsByStep[i + 1] / f.visitorsByStep[i]) * 100 : null;
+        const onlineHere = Math.max(0, Math.round(s.online * (f.visitorsByStep[i] / f.visitorsByStep[0])));
+        return {
+          label: st.label, icon: STEP_ICON[st.type], online: onlineHere,
+          onlineColor: onlineHere > 0 ? 'var(--c-live)' : 'var(--color-neutral-500)',
+          border: onlineHere > 0 ? 'var(--c-live)' : 'var(--color-divider)',
+          visitors: numFmt(Math.round(f.visitorsByStep[i] * scale)), hasNext,
+          rate: rate == null ? '' : pctFmt(rate), rateColor: convColor(rate),
+          lost: hasNext ? numFmt(Math.round(Math.max(0, f.visitorsByStep[i] - f.visitorsByStep[i + 1]) * scale)) : ''
+        };
+      });
+      const scopeToday = this.state.liveScope === 'today';
+      const conv = this.liveConvCard(s, scopeToday ? scale * 48 : scale, scopeToday ? 'hoje, desde a meia-noite' : wlabel);
+      conv.scopeLabel = scopeToday ? 'Ver janela curta' : 'Ver hoje';
+      base.funnel = {
+        online: s.online, flow, canvas, conv, trackerMissing: s.status === 'inactive',
+        entries: f.steps.slice(0, 4).flatMap((st, i) => [0, 1].map((k) => ({
+          step: st.label, icon: STEP_ICON[st.type], origin: ENTRY_ORIGINS[(i + k) % ENTRY_ORIGINS.length],
+          timeAgo: (i * 2 + k + 1) + ' min atrás'
+        })))
+      };
+      base.salesTitle = 'Vendas (webhook)';
+      base.sales = filterSales(funnelSales);
+      base.hasVsl = !!s.vsl;
+      base.vslCards = s.vsl ? [{ label: f.steps.find((x) => x.type === 'vsl').label, viewers: Math.round(s.online * 0.55) }] : [];
+    }
+    return base;
+  }
+
+  renderVals() {
+    const s = this.state;
+    const activePage = s.activePage;
+    const isLoginPage = activePage === 'login';
+    const isAppPage = !isLoginPage;
+    const pageFlags = { dashboard: activePage === 'dashboard', funnels: activePage === 'funnels', atelier: activePage === 'atelier', funnelview: activePage === 'funnelview', metrics: activePage === 'metrics', live: activePage === 'live', imports: activePage === 'imports', settings: activePage === 'settings' };
+    return {
+      isLoginPage, isAppPage, page: pageFlags,
+      loginModeIsLogin: s.loginMode === 'login', loginModeIsSignup: s.loginMode === 'signup',
+      setLoginMode: this.setLoginMode, doLogin: this.doLogin, goPage: this.goPage,
+      navItems: this.buildNav(),
+      period: s.period, periodLabel: PERIOD_LABELS[s.period], cyclePeriod: this.cyclePeriod,
+      dash: pageFlags.dashboard ? this.buildDashboard() : {},
+      funnelsList: pageFlags.funnels ? this.buildFunnelsList() : {},
+      setFunnelsKindTab: this.setFunnelsKindTab,
+      atelier: pageFlags.atelier ? this.buildAtelier() : {},
+      fview: pageFlags.funnelview ? this.buildFunnelView() : {},
+      metrics: pageFlags.metrics ? this.buildMetrics() : {},
+      togglePeriodCompare: this.togglePeriodCompare, setCompareStyle: this.setCompareStyle, setComparePeriod: this.setComparePeriod,
+      live: pageFlags.live ? this.buildLive() : {},
+      styleTable: this.styleTable, styleCards: this.styleCards, styleOverlay: this.styleOverlay,
+      loginAsLogin: this.loginAsLogin, loginAsSignup: this.loginAsSignup,
+      kindFront: this.kindFront, kindUpsell: this.kindUpsell,
+      sourceOwn: this.sourceOwn, sourceClarity: this.sourceClarity,
+      filterAll: this.filterAll, filterPaid: this.filterPaid, filterPending: this.filterPending,
+      goLogin: this.goLogin,
+      importsPreviewOpen: s.importsPreviewOpen, toggleImportsPreview: this.toggleImportsPreview
+    };
+  }
+}
+
+</script>
+</body>
+</html>
