@@ -853,12 +853,15 @@ function TopBar({
 
   return (
     <div className="pointer-events-none absolute inset-x-0 top-4 z-20 flex flex-col items-center gap-1.5 px-4">
-      <div className="pointer-events-auto flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-900/95 px-3 py-2 shadow-2xl backdrop-blur">
-        <button
-          onClick={onBack}
-          className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
-          title="Voltar ao funil"
-        >
+      <div
+        className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2"
+        style={{
+          borderColor: "var(--color-divider)",
+          background: "var(--color-surface)",
+          boxShadow: "var(--shadow-lg)",
+        }}
+      >
+        <button onClick={onBack} className="btn btn-ghost" title="Voltar ao funil">
           <ArrowLeft size={16} />
         </button>
 
@@ -866,12 +869,7 @@ function TopBar({
           onClick={onUndo}
           disabled={!canUndo}
           title="Desfazer movimento (Ctrl+Z)"
-          className={cn(
-            "rounded-lg p-1.5 transition-colors",
-            canUndo
-              ? "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
-              : "cursor-not-allowed text-slate-700"
-          )}
+          className="btn btn-ghost"
         >
           <Undo2 size={16} />
         </button>
@@ -879,7 +877,7 @@ function TopBar({
         <button
           onClick={onAutoLayout}
           title="Organizar automaticamente: afasta cards colados, sem mudar a forma que você desenhou"
-          className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100"
+          className="btn btn-ghost"
         >
           <LayoutGrid size={16} />
         </button>
@@ -888,17 +886,12 @@ function TopBar({
           onClick={onCaptureAll}
           disabled={captureAllProgress !== null}
           title="Capturar print de todas as páginas com URL preenchida"
-          className={cn(
-            "flex items-center gap-1.5 rounded-lg p-1.5 text-[11px] font-medium transition-colors",
-            captureAllProgress !== null
-              ? "cursor-not-allowed text-slate-600"
-              : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
-          )}
+          className="btn btn-ghost"
         >
           {captureAllProgress !== null ? (
             <>
               <Loader2 size={16} className="animate-spin" />
-              <span>
+              <span className="text-[11px]">
                 Capturando {captureAllProgress.done}/{captureAllProgress.total}…
               </span>
             </>
@@ -907,88 +900,64 @@ function TopBar({
           )}
         </button>
 
-        <div className="h-5 w-px bg-slate-700" />
+        <span className="h-5 w-px" style={{ background: "var(--color-divider)" }} />
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-slate-100">
-            {funnel?.name ?? "Funil"}
-          </p>
-          <p className="text-[11px] text-slate-500">
+          <p className="truncate text-sm font-semibold">{funnel?.name ?? "Funil"}</p>
+          <p className="text-[11px] text-muted-foreground">
             {stepCount} {stepCount === 1 ? "página" : "páginas"} no ateliê
           </p>
         </div>
-        <div className="h-5 w-px bg-slate-700" />
+        <span className="h-5 w-px" style={{ background: "var(--color-divider)" }} />
 
-        <div className="flex items-center gap-0.5 rounded-lg bg-slate-800 p-0.5">
-          {FUNNEL_STATUSES.map((s) => (
-            <button
-              key={s.value}
-              onClick={() => onStatusChange(s.value)}
-              title={`Marcar funil como ${s.label.toLowerCase()}`}
-              className={cn(
-                "flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
-                funnel?.status === s.value
-                  ? `${s.activeClass} shadow-sm`
-                  : "text-slate-500 hover:text-slate-300"
-              )}
-            >
-              <span
-                className="h-1.5 w-1.5 rounded-full"
-                style={{ backgroundColor: s.dot }}
-              />
-              {s.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-1">
+          {FUNNEL_STATUSES.map((s) => {
+            const active = funnel?.status === s.value;
+            return (
+              <button
+                key={s.value}
+                onClick={() => onStatusChange(s.value)}
+                title={`Marcar funil como ${s.label.toLowerCase()}`}
+                className="flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[11.5px] transition-colors"
+                style={{
+                  background: active ? "var(--color-accent-900)" : "var(--color-neutral-900)",
+                  borderColor: active ? "hsl(var(--primary))" : "var(--color-divider)",
+                  color: active ? "var(--color-accent-300)" : "hsl(var(--muted-foreground))",
+                }}
+              >
+                <span className="h-[7px] w-[7px] rounded-full" style={{ backgroundColor: s.dot }} />
+                {s.label}
+              </button>
+            );
+          })}
         </div>
 
-        <div className="h-5 w-px bg-slate-700" />
+        <span className="h-5 w-px" style={{ background: "var(--color-divider)" }} />
         <span
-          className={cn(
-            "flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium",
-            dirty
-              ? "bg-amber-400/15 text-amber-300"
-              : "bg-emerald-400/15 text-emerald-300"
-          )}
+          className="flex items-center gap-1.5 text-[11px] font-medium"
+          style={{ color: dirty ? "var(--c-mid)" : "var(--c-high)" }}
         >
-          {dirty ? (
-            <>
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-              não salvo
-            </>
-          ) : (
-            <>
-              <Check size={12} />
-              {savedLabel}
-            </>
-          )}
+          <span
+            className="h-1.5 w-1.5 rounded-full"
+            style={{ background: dirty ? "var(--c-mid)" : "var(--c-high)" }}
+          />
+          {dirty ? "não salvo" : savedLabel}
         </span>
 
-        <button
-          onClick={onSave}
-          disabled={!dirty || saving}
-          title="Salvar funil (Ctrl+S)"
-          className={cn(
-            "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
-            !dirty || saving
-              ? "cursor-not-allowed bg-slate-800 text-slate-500"
-              : "bg-sky-600 text-white hover:bg-sky-500"
-          )}
-        >
-          {saving ? (
-            <>
-              <Loader2 size={13} className="animate-spin" />
-              salvando…
-            </>
-          ) : (
-            <>
-              <Save size={13} />
-              Salvar
-            </>
-          )}
+        <button onClick={onSave} disabled={!dirty || saving} title="Salvar funil (Ctrl+S)" className="btn btn-primary">
+          {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+          {saving ? "salvando…" : "Salvar"}
         </button>
       </div>
 
       {saveError && (
-        <div className="pointer-events-auto max-w-md rounded-lg border border-red-500/40 bg-red-950/90 px-3 py-1.5 text-[11px] text-red-300 shadow-xl backdrop-blur">
+        <div
+          className="pointer-events-auto max-w-md rounded-md px-3 py-1.5 text-[11px]"
+          style={{
+            border: "1px solid hsl(var(--danger) / 0.4)",
+            background: "hsl(var(--danger) / 0.12)",
+            color: "hsl(var(--danger))",
+          }}
+        >
           {saveError}
         </div>
       )}
@@ -998,10 +967,13 @@ function TopBar({
 
 function Palette({ onAdd }: { onAdd: (type: StepType) => void }) {
   return (
-    <div className="absolute left-4 top-4 z-20 w-[190px] rounded-xl border border-slate-700 bg-slate-900/95 p-2.5 shadow-2xl backdrop-blur">
+    <div
+      className="absolute left-4 top-4 z-20 w-[196px] rounded-md border p-2.5"
+      style={{ borderColor: "var(--color-divider)", background: "var(--color-surface)", boxShadow: "var(--shadow-lg)" }}
+    >
       <div className="mb-2 flex items-center gap-1.5 px-0.5">
-        <Plus size={13} className="text-sky-400" />
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        <Plus size={13} className="text-primary" />
+        <span className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
           Adicionar página
         </span>
       </div>
@@ -1016,7 +988,8 @@ function Palette({ onAdd }: { onAdd: (type: StepType) => void }) {
               e.dataTransfer.effectAllowed = "move";
             }}
             onClick={() => onAdd(type)}
-            className="flex cursor-grab flex-col items-center gap-1 rounded-lg border border-slate-700/70 bg-slate-800/50 px-1.5 py-2 text-slate-300 transition-colors hover:border-sky-500 hover:bg-slate-800 hover:text-slate-100 active:cursor-grabbing"
+            className="flex cursor-grab flex-col items-center gap-1 rounded-sm border px-1.5 py-2 transition-colors hover:border-primary active:cursor-grabbing"
+            style={{ borderColor: "var(--color-divider)", background: "var(--color-neutral-900)", color: "var(--color-neutral-300)" }}
           >
             <span className="text-base leading-none">{STEP_TYPE_ICON[type]}</span>
             <span className="text-[10px] leading-tight">
@@ -1026,7 +999,7 @@ function Palette({ onAdd }: { onAdd: (type: StepType) => void }) {
         ))}
       </div>
 
-      <p className="mt-2 px-0.5 text-[10px] leading-snug text-slate-500">
+      <p className="mt-2 px-0.5 text-[10px] leading-snug text-muted-foreground">
         Clique ou arraste para o canvas. Puxe a bolinha da direita de um card e
         solte no vazio para já criar a próxima página ligada.
       </p>
@@ -1036,8 +1009,11 @@ function Palette({ onAdd }: { onAdd: (type: StepType) => void }) {
 
 function ArrowLegend() {
   return (
-    <div className="absolute bottom-4 left-4 z-20 rounded-xl border border-slate-700 bg-slate-900/95 p-2.5 shadow-2xl backdrop-blur">
-      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+    <div
+      className="absolute bottom-4 left-4 z-20 rounded-md border p-2.5"
+      style={{ borderColor: "var(--color-divider)", background: "var(--color-surface)", boxShadow: "var(--shadow-lg)" }}
+    >
+      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
         Tipos de seta
       </p>
       <div className="space-y-1">
@@ -1047,13 +1023,13 @@ function ArrowLegend() {
               className="h-0.5 w-6 rounded-full"
               style={{ backgroundColor: EDGE_CONDITION_COLOR[c] }}
             />
-            <span className="text-[11px] text-slate-400">
+            <span className="text-[11px] text-muted-foreground">
               {EDGE_CONDITION_LABEL[c]}
             </span>
           </div>
         ))}
       </div>
-      <p className="mt-2 max-w-[170px] text-[10px] leading-snug text-slate-500">
+      <p className="mt-2 max-w-[170px] text-[10px] leading-snug text-muted-foreground">
         Com métrica, a seta assume a cor da conversão: verde ≥ 80%, amarelo ≥
         50%, vermelho abaixo.
       </p>
