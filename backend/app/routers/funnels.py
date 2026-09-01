@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from datetime import datetime
 from ..core.auth import get_current_user, get_db
 from ..core.supabase_client import get_supabase_client
+from ..core.workspace import get_active_workspace, scope
 from supabase import Client
 
 router = APIRouter(prefix="/funnels", tags=["funnels"])
@@ -31,11 +32,12 @@ class FunnelUpdate(BaseModel):
 def list_funnels(
     status: Optional[str] = None,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
-    """Lista todos os funis do usuário, com filtro opcional por status"""
+    """Lista os funis do workspace ativo, com filtro opcional por status"""
     try:
-        query = supabase.table("funnels").select("*").eq("user_id", current_user.id)
+        query = scope(supabase.table("funnels").select("*"), ws_id, current_user.id)
 
         if status:
             query = query.eq("status", status)
@@ -55,12 +57,14 @@ def list_funnels(
 def get_funnel(
     funnel_id: str,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """Busca um funil específico"""
     try:
-        result = supabase.table("funnels").select("*").eq("id", funnel_id).eq(
-            "user_id", current_user.id
+        result = scope(
+            supabase.table("funnels").select("*").eq("id", funnel_id),
+            ws_id, current_user.id,
         ).execute()
 
         if not result.data:
@@ -84,18 +88,22 @@ def get_funnel(
 def create_funnel(
     funnel: FunnelCreate,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
-    """Cria um novo funil"""
+    """Cria um novo funil no workspace ativo"""
     try:
-        result = supabase.table("funnels").insert({
+        row = {
             "user_id": current_user.id,
             "name": funnel.name,
             "slug": funnel.slug,
             "status": funnel.status,
             "base_url": funnel.base_url,
-            "kind": funnel.kind
-        }).execute()
+            "kind": funnel.kind,
+        }
+        if ws_id:
+            row["workspace_id"] = ws_id
+        result = supabase.table("funnels").insert(row).execute()
 
         return result.data[0]
 
@@ -111,13 +119,15 @@ def update_funnel(
     funnel_id: str,
     funnel: FunnelUpdate,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """Atualiza um funil"""
     try:
-        # Verifica se o funil existe e pertence ao usuário
-        existing = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
-            "user_id", current_user.id
+        # Verifica se o funil existe e é do workspace ativo
+        existing = scope(
+            supabase.table("funnels").select("id").eq("id", funnel_id),
+            ws_id, current_user.id,
         ).execute()
 
         if not existing.data:
@@ -153,6 +163,7 @@ def patch_funnel_status(
     funnel_id: str,
     status_update: dict,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """Atualiza apenas o status do funil"""
@@ -163,9 +174,10 @@ def patch_funnel_status(
                 detail="Campo 'status' é obrigatório"
             )
 
-        result = supabase.table("funnels").update({
-            "status": status_update["status"]
-        }).eq("id", funnel_id).eq("user_id", current_user.id).execute()
+        result = scope(
+            supabase.table("funnels").update({"status": status_update["status"]}).eq("id", funnel_id),
+            ws_id, current_user.id,
+        ).execute()
 
         if not result.data:
             raise HTTPException(
@@ -188,12 +200,14 @@ def patch_funnel_status(
 def delete_funnel(
     funnel_id: str,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """Deleta um funil"""
     try:
-        result = supabase.table("funnels").delete().eq("id", funnel_id).eq(
-            "user_id", current_user.id
+        result = scope(
+            supabase.table("funnels").delete().eq("id", funnel_id),
+            ws_id, current_user.id,
         ).execute()
 
         if not result.data:

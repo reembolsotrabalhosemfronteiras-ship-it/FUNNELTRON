@@ -4,6 +4,7 @@ from typing import Optional
 from datetime import datetime, timedelta, timezone
 from ..core.auth import get_current_user, get_db
 from ..core.supabase_client import get_supabase_client, get_supabase_admin
+from ..core.workspace import get_active_workspace, scope, funnel_guard
 from ..services.clarity import clarity_service
 from ..services import snapshots
 from supabase import Client
@@ -153,6 +154,7 @@ def get_overview_metrics(
     to_date: Optional[str] = None,
     status_filter: Optional[str] = None,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -181,9 +183,9 @@ def get_overview_metrics(
             + timedelta(days=1)
         ).isoformat()
 
-        # Busca funis do usuário
-        funnels_query = supabase.table("funnels").select("id, status").eq(
-            "user_id", current_user.id
+        # Busca funis do workspace ativo
+        funnels_query = scope(
+            supabase.table("funnels").select("id, status"), ws_id, current_user.id
         )
 
         if status_filter:
@@ -273,6 +275,7 @@ def _tracker_step_metrics(
     to_date: Optional[str],
     current_user,
     supabase: Client,
+    ws_id: Optional[str] = None,
 ):
     """
     Mesmo formato do resultado de `GET /funnels/{funnel_id}` (visitors/
@@ -292,9 +295,10 @@ def _tracker_step_metrics(
     verdade (ninguém comprou "nessa etapa"), não ausência de dado.
     """
     try:
+        funnel_guard(supabase, funnel_id, ws_id, current_user.id)
         funnel_result = supabase.table("funnels").select("*").eq(
             "id", funnel_id
-        ).eq("user_id", current_user.id).execute()
+        ).execute()
 
         if not funnel_result.data:
             raise HTTPException(
@@ -407,6 +411,7 @@ def get_funnels_ranking(
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -439,9 +444,9 @@ def get_funnels_ranking(
             + timedelta(days=1)
         ).isoformat()
 
-        # Busca funis
-        funnels = supabase.table("funnels").select("*").eq(
-            "user_id", current_user.id
+        # Busca funis do workspace ativo
+        funnels = scope(
+            supabase.table("funnels").select("*"), ws_id, current_user.id
         ).execute()
 
         admin = get_supabase_admin()
@@ -483,6 +488,7 @@ def get_vsl_metrics(
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -507,9 +513,9 @@ def get_vsl_metrics(
     try:
         start_date, end_date = parse_period(period, from_date, to_date)
 
-        # Busca funis do usuário
-        funnels = supabase.table("funnels").select("id, name").eq(
-            "user_id", current_user.id
+        # Busca funis do workspace ativo
+        funnels = scope(
+            supabase.table("funnels").select("id, name"), ws_id, current_user.id
         ).execute()
 
         funnel_ids = [f["id"] for f in funnels.data]
@@ -582,6 +588,7 @@ def get_funnel_metrics(
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -601,14 +608,12 @@ def get_funnel_metrics(
     """
     if source == "tracker":
         return _tracker_step_metrics(
-            funnel_id, period or "30d", from_date, to_date, current_user, supabase
+            funnel_id, period or "30d", from_date, to_date, current_user, supabase, ws_id
         )
 
     try:
-        # Verifica se o funil pertence ao usuário
-        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
-            "user_id", current_user.id
-        ).execute()
+        funnel_guard(supabase, funnel_id, ws_id, current_user.id)
+        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).execute()
 
         if not funnel.data:
             raise HTTPException(
@@ -645,6 +650,7 @@ def get_time_on_page(
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -661,9 +667,8 @@ def get_time_on_page(
         [{"stepId": str, "avgSeconds": float, "samples": int}]
     """
     try:
-        funnel = supabase.table("funnels").select("id").eq(
-            "id", funnel_id
-        ).eq("user_id", current_user.id).execute()
+        funnel_guard(supabase, funnel_id, ws_id, current_user.id)
+        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).execute()
 
         if not funnel.data:
             raise HTTPException(
@@ -741,6 +746,7 @@ def get_funnel_trend(
     source: Optional[str] = "clarity",
     period: Optional[str] = "30d",
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -752,9 +758,8 @@ def get_funnel_trend(
         [{ "date": "2026-08-01", "visitors": int, "conversions": int, "rate": float|None }]
     """
     try:
-        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
-            "user_id", current_user.id
-        ).execute()
+        funnel_guard(supabase, funnel_id, ws_id, current_user.id)
+        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).execute()
         if not funnel.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Funil não encontrado"
@@ -841,6 +846,7 @@ def get_funnel_ticket(
     funnel_id: str,
     period: Optional[str] = "30d",
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -853,9 +859,8 @@ def get_funnel_ticket(
     Returns: { "avgTicket": float|None, "salesCount": int }
     """
     try:
-        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
-            "user_id", current_user.id
-        ).execute()
+        funnel_guard(supabase, funnel_id, ws_id, current_user.id)
+        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).execute()
         if not funnel.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Funil não encontrado"
@@ -908,6 +913,7 @@ def get_funnel_ticket(
 def sync_funnel_metrics(
     funnel_id: str,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -915,10 +921,8 @@ def sync_funnel_metrics(
     TODO: Implementar lógica real de sincronização.
     """
     try:
-        # Verifica se o funil pertence ao usuário
-        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
-            "user_id", current_user.id
-        ).execute()
+        funnel_guard(supabase, funnel_id, ws_id, current_user.id)
+        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).execute()
 
         if not funnel.data:
             raise HTTPException(

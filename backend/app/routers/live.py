@@ -8,6 +8,7 @@ from typing import Optional
 from datetime import datetime, timedelta, timezone
 from ..core.auth import get_current_user, get_optional_user, get_db
 from ..core.supabase_client import get_supabase_client, get_supabase_admin
+from ..core.workspace import get_active_workspace, scope, funnel_guard
 from ..core.config import get_settings
 from ..services.vturb import vturb_service
 from ..services.push import notify_sale
@@ -168,6 +169,7 @@ async def track_heartbeat(
 def get_live_data(
     funnel_id: str,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -183,16 +185,7 @@ def get_live_data(
         ]
     """
     try:
-        # Verifica se o funil pertence ao usuário
-        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
-            "user_id", current_user.id
-        ).execute()
-
-        if not funnel.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Funil não encontrado"
-            )
+        funnel_guard(supabase, funnel_id, ws_id, current_user.id)
 
         # Busca beats ativos (últimos 90s)
         cutoff = (datetime.now(timezone.utc) - timedelta(seconds=90)).isoformat()
@@ -238,16 +231,19 @@ def get_live_data(
 def get_live_geo(
     funnel_id: Optional[str] = None,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db),
 ):
     """Praças (cidades) com gente no funil agora — alimenta o mapa do Brasil.
 
-    Sem `funnel_id`: agrega todos os funis do usuário. Cada ponto é uma cidade
+    Sem `funnel_id`: agrega os funis do workspace ativo. Cada ponto é uma cidade
     com a contagem de sessões ativas (últimos 90s) que tinham geolocalização.
     """
     try:
-        # Funis do usuário — e valida a posse quando um id é pedido.
-        owned = supabase.table("funnels").select("id").eq("user_id", current_user.id).execute()
+        # Funis do workspace ativo — e valida a posse quando um id é pedido.
+        owned = scope(
+            supabase.table("funnels").select("id"), ws_id, current_user.id
+        ).execute()
         owned_ids = {f["id"] for f in (owned.data or [])}
         if funnel_id:
             if funnel_id not in owned_ids:
@@ -307,6 +303,7 @@ def get_page_entries(
     window: int = 30,
     limit: int = 40,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -328,15 +325,7 @@ def get_page_entries(
         ]
     """
     try:
-        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
-            "user_id", current_user.id
-        ).execute()
-
-        if not funnel.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Funil não encontrado"
-            )
+        funnel_guard(supabase, funnel_id, ws_id, current_user.id)
 
         # UTC explícito. `datetime.now()` devolve hora local ingênua e o
         # Postgres a interpreta no fuso da sessão (UTC): numa máquina em
@@ -396,6 +385,7 @@ async def get_live_vsl_data(
     funnel_id: str,
     minutes: int = 5,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -414,16 +404,7 @@ async def get_live_vsl_data(
         ]
     """
     try:
-        # Verifica se o funil pertence ao usuário
-        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
-            "user_id", current_user.id
-        ).execute()
-
-        if not funnel.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Funil não encontrado"
-            )
+        funnel_guard(supabase, funnel_id, ws_id, current_user.id)
 
         # Busca steps do tipo VSL
         steps = supabase.table("funnel_steps").select("*").eq(
@@ -485,6 +466,7 @@ async def get_live_vsl_data(
 def get_active_funnels(
     minutes: int = 5,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -498,15 +480,16 @@ def get_active_funnels(
             "funnel_id"
         ).gte("last_seen", cutoff).execute()
 
-        # Mantém só os funis que pertencem ao usuário.
+        # Mantém só os funis do workspace ativo.
         funnel_ids = {b["funnel_id"] for b in beats.data if b.get("funnel_id")}
 
         if not funnel_ids:
             return []
 
-        funnels = supabase.table("funnels").select("id").in_(
-            "id", list(funnel_ids)
-        ).eq("user_id", current_user.id).execute()
+        funnels = scope(
+            supabase.table("funnels").select("id").in_("id", list(funnel_ids)),
+            ws_id, current_user.id,
+        ).execute()
 
         return [f["id"] for f in funnels.data]
 
@@ -524,6 +507,7 @@ def get_live_sales(
     funnel_id: str,
     window: int = 60,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -531,16 +515,7 @@ def get_live_sales(
     Janelas suportadas: 5, 30, 60 (minutos). Status: pending | paid.
     """
     try:
-        # Verifica se o funil pertence ao usuário
-        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
-            "user_id", current_user.id
-        ).execute()
-
-        if not funnel.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Funil não encontrado"
-            )
+        funnel_guard(supabase, funnel_id, ws_id, current_user.id)
 
         # Normaliza a janela para os baldes conhecidos.
         if window <= 5:
@@ -586,6 +561,7 @@ def get_live_conversion(
     window: int = 30,
     scope: str = "window",
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -596,16 +572,7 @@ def get_live_conversion(
     como está agora, o dia diz se isso é normal.
     """
     try:
-        # Verifica se o funil pertence ao usuário
-        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
-            "user_id", current_user.id
-        ).execute()
-
-        if not funnel.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Funil não encontrado"
-            )
+        funnel_guard(supabase, funnel_id, ws_id, current_user.id)
 
         now = datetime.now(timezone.utc)
 

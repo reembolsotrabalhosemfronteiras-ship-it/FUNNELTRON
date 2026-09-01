@@ -158,3 +158,18 @@ export type PeriodInput = Period | DateRange;
 export function isDateRange(p: PeriodInput): p is DateRange {
   return typeof p === "object" && "from" in p && "to" in p;
 }
+
+/** Um workspace (conta) — cada um com seus próprios funis, isolados. */
+export interface Workspace {
+  id: string;
+  name: string;
+  role: "owner" | "member";
+  memberCount: number;
+}
+
+export interface WorkspaceMember {
+  userId: string | null;
+  email: string | null;
+  role: "owner" | "member";
+  pending: boolean;
+}

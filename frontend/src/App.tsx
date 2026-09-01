@@ -3,7 +3,9 @@ import { Sidebar } from "./components/common/Sidebar";
 import { NewFunnelProvider } from "./components/funnel/NewFunnelProvider";
 import { ThemeProvider } from "./components/common/Header";
 import { AuthProvider, useAuth } from "./components/common/AuthContext";
+import { WorkspaceProvider } from "./components/common/WorkspaceContext";
 import { NotificationsProvider } from "./components/common/NotificationsProvider";
+import { WorkspacePage } from "./pages/WorkspacePage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { FunnelListPage } from "./pages/FunnelListPage";
 import { FunnelViewPage } from "./pages/FunnelViewPage";
@@ -48,7 +50,7 @@ function Protected({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  return <>{children}</>;
+  return <WorkspaceProvider>{children}</WorkspaceProvider>;
 }
 
 export default function App() {
@@ -86,6 +88,7 @@ export default function App() {
                       <Route path="/funnel/:id/metrics" element={<MetricsPage />} />
                       <Route path="/imports" element={<ImportsPage />} />
                       <Route path="/settings" element={<SettingsPage />} />
+                      <Route path="/workspace" element={<WorkspacePage />} />
                     </Routes>
                   </AppShell>
                 </Protected>

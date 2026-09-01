@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from datetime import datetime
 from ..core.auth import get_current_user, get_db
 from ..core.supabase_client import get_supabase_client
+from ..core.workspace import get_active_workspace, funnel_guard
 from supabase import Client
 
 router = APIRouter(prefix="/funnels", tags=["layout"])
@@ -44,20 +45,12 @@ class LayoutSaveRequest(BaseModel):
 def get_steps(
     funnel_id: str,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """Busca todas as etapas de um funil"""
     try:
-        # Verifica se o funil existe e pertence ao usuário
-        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
-            "user_id", current_user.id
-        ).execute()
-
-        if not funnel.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Funil não encontrado"
-            )
+        funnel_guard(supabase, funnel_id, ws_id, current_user.id)
 
         result = supabase.table("funnel_steps").select("*").eq(
             "funnel_id", funnel_id
@@ -78,20 +71,12 @@ def get_steps(
 def get_edges(
     funnel_id: str,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """Busca todas as conexões de um funil"""
     try:
-        # Verifica se o funil existe e pertence ao usuário
-        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
-            "user_id", current_user.id
-        ).execute()
-
-        if not funnel.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Funil não encontrado"
-            )
+        funnel_guard(supabase, funnel_id, ws_id, current_user.id)
 
         result = supabase.table("funnel_edges").select("*").eq(
             "funnel_id", funnel_id
@@ -108,18 +93,10 @@ def get_edges(
         )
 
 
-def _assert_owner(funnel_id: str, current_user, supabase: Client):
-    """404 se o funil não existe OU não é do usuário — a mesma resposta nos dois
-    casos, de propósito: distinguir revelaria a existência do funil alheio."""
-    funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
-        "user_id", current_user.id
-    ).execute()
-
-    if not funnel.data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Funil não encontrado"
-        )
+def _assert_owner(funnel_id: str, current_user, supabase: Client, ws_id=None):
+    """404 se o funil não existe OU não é do workspace ativo — a mesma resposta
+    nos dois casos, de propósito: distinguir revelaria a existência do alheio."""
+    funnel_guard(supabase, funnel_id, ws_id, current_user.id)
 
 
 @router.post("/{funnel_id}/steps", status_code=status.HTTP_201_CREATED)
@@ -127,6 +104,7 @@ async def create_step(
     funnel_id: str,
     step: StepData,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -137,7 +115,7 @@ async def create_step(
     reescrever o funil todo.
     """
     try:
-        _assert_owner(funnel_id, current_user, supabase)
+        _assert_owner(funnel_id, current_user, supabase, ws_id)
 
         payload = step.model_dump(exclude_none=True)
         payload["funnel_id"] = funnel_id
@@ -162,11 +140,12 @@ async def create_edge(
     funnel_id: str,
     edge: EdgeData,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """Cria (ou atualiza) UMA conexão entre duas etapas."""
     try:
-        _assert_owner(funnel_id, current_user, supabase)
+        _assert_owner(funnel_id, current_user, supabase, ws_id)
 
         payload = edge.model_dump(exclude_none=True)
         payload["funnel_id"] = funnel_id
@@ -191,6 +170,7 @@ def save_layout(
     funnel_id: str,
     layout: LayoutSaveRequest,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -198,16 +178,7 @@ def save_layout(
     Endpoint usado pelo botão Salvar do ateliê.
     """
     try:
-        # Verifica se o funil existe e pertence ao usuário
-        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
-            "user_id", current_user.id
-        ).execute()
-
-        if not funnel.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Funil não encontrado"
-            )
+        funnel_guard(supabase, funnel_id, ws_id, current_user.id)
 
         # 1. Deleta todas as etapas e edges atuais (cascade vai deletar edges)
         supabase.table("funnel_steps").delete().eq("funnel_id", funnel_id).execute()
@@ -274,20 +245,12 @@ def save_layout(
 def clear_layout(
     funnel_id: str,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """Limpa todo o layout do funil (deleta steps e edges)"""
     try:
-        # Verifica se o funil existe e pertence ao usuário
-        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).eq(
-            "user_id", current_user.id
-        ).execute()
-
-        if not funnel.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Funil não encontrado"
-            )
+        funnel_guard(supabase, funnel_id, ws_id, current_user.id)
 
         # Deleta todas as etapas (cascade vai deletar edges)
         supabase.table("funnel_steps").delete().eq("funnel_id", funnel_id).execute()

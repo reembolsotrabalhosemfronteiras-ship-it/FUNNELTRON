@@ -11,6 +11,7 @@ from typing import List, Optional, Literal
 
 from ..core.auth import get_current_user, get_db
 from ..core.supabase_client import get_supabase_admin
+from ..core.workspace import get_active_workspace, funnel_guard
 from ..services import snapshots
 from supabase import Client
 
@@ -32,19 +33,8 @@ class SlugRulesRequest(BaseModel):
     rules: List[SlugTypeRule]
 
 
-def _assert_owns_funnel(funnel_id: str, user_id: str, supabase: Client) -> None:
-    funnel = (
-        supabase.table("funnels")
-        .select("id")
-        .eq("id", funnel_id)
-        .eq("user_id", user_id)
-        .execute()
-    )
-    if not funnel.data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Funil não encontrado"
-        )
+def _assert_owns_funnel(funnel_id: str, user_id: str, supabase: Client, ws_id=None) -> None:
+    funnel_guard(supabase, funnel_id, ws_id, user_id)
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +44,7 @@ def _assert_owns_funnel(funnel_id: str, user_id: str, supabase: Client) -> None:
 @router.get("/preference")
 def get_preference(
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """Fonte escolhida pelo usuário. Padrão: nosso rastreador."""
@@ -84,6 +75,7 @@ def get_preference(
 def set_preference(
     body: PreferenceRequest,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """Salva a fonte escolhida (vale para Ao Vivo, Métricas e Funil)."""
@@ -113,6 +105,7 @@ def set_preference(
 @router.get("/slug-rules")
 def get_slug_rules(
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -145,6 +138,7 @@ def get_slug_rules(
 def set_slug_rules(
     body: SlugRulesRequest,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """Salva a lista de regras do usuário (substitui a lista inteira)."""
@@ -177,6 +171,7 @@ def get_tracker_history(
     bucket: str = "hour",
     limit: int = 48,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -189,7 +184,7 @@ def get_tracker_history(
             detail="bucket deve ser 'hour' ou 'day'"
         )
 
-    _assert_owns_funnel(funnel_id, current_user.id, supabase)
+    _assert_owns_funnel(funnel_id, current_user.id, supabase, ws_id)
 
     rows = snapshots.list_tracker_snapshots(funnel_id, bucket, limit)
 
@@ -210,6 +205,7 @@ def capture_tracker_snapshot(
     funnel_id: str,
     bucket: str = "hour",
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -222,7 +218,7 @@ def capture_tracker_snapshot(
             detail="bucket deve ser 'hour' ou 'day'"
         )
 
-    _assert_owns_funnel(funnel_id, current_user.id, supabase)
+    _assert_owns_funnel(funnel_id, current_user.id, supabase, ws_id)
 
     try:
         row = snapshots.save_tracker_snapshot(funnel_id, bucket)
@@ -247,6 +243,7 @@ def get_latest_clarity(
     funnel_id: Optional[str] = None,
     period: Optional[str] = None,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -257,7 +254,7 @@ def get_latest_clarity(
     o último dado disponível, e ele vem com o carimbo de quando é.
     """
     if funnel_id:
-        _assert_owns_funnel(funnel_id, current_user.id, supabase)
+        _assert_owns_funnel(funnel_id, current_user.id, supabase, ws_id)
 
     try:
         snap = snapshots.latest_clarity_snapshot(current_user.id, funnel_id, period)
@@ -283,11 +280,12 @@ def get_clarity_history(
     funnel_id: Optional[str] = None,
     limit: int = 30,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """Snapshots do Clarity já salvos, mais recente primeiro."""
     if funnel_id:
-        _assert_owns_funnel(funnel_id, current_user.id, supabase)
+        _assert_owns_funnel(funnel_id, current_user.id, supabase, ws_id)
 
     try:
         query = (

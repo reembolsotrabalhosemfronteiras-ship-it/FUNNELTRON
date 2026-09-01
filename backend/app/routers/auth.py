@@ -61,6 +61,52 @@ def login(
         )
 
 
+def _bootstrap_workspace(user_id: str, email: str, full_name: str) -> None:
+    """No cadastro: cria o workspace pessoal e efetiva convites pendentes.
+
+    Silencioso se a migration 009 ainda não rodou — o `get_active_workspace`
+    cai no modo legado (`user_id`) até lá.
+    """
+    try:
+        from ..core.supabase_client import get_supabase_admin
+
+        admin = get_supabase_admin()
+
+        # Já tem workspace? (retry de cadastro, etc.)
+        existing = admin.table("workspaces").select("id").eq("owner_id", user_id).execute().data
+        if not existing:
+            name = (full_name.strip() or email.split("@")[0]) + " — pessoal"
+            ws = admin.table("workspaces").insert(
+                {"name": name, "owner_id": user_id}
+            ).execute().data[0]
+            admin.table("workspace_members").insert(
+                {"workspace_id": ws["id"], "user_id": user_id, "role": "owner"}
+            ).execute()
+
+        # Convites pendentes pra este email → vira membro de verdade.
+        pending = (
+            admin.table("workspace_members")
+            .select("workspace_id")
+            .is_("user_id", "null")
+            .eq("invited_email", email.strip().lower())
+            .execute()
+            .data
+            or []
+        )
+        for p in pending:
+            admin.table("workspace_members").update(
+                {"user_id": user_id, "invited_email": None}
+            ).eq("workspace_id", p["workspace_id"]).is_("user_id", "null").eq(
+                "invited_email", email.strip().lower()
+            ).execute()
+    except Exception:  # noqa: BLE001 — migration 009 pendente ou falha não-crítica
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "bootstrap de workspace pulado no cadastro", exc_info=True
+        )
+
+
 @router.post("/signup", response_model=AuthResponse)
 def signup(
     data: SignupRequest,
@@ -98,6 +144,8 @@ def signup(
             "email": data.email,
             "full_name": data.full_name
         }).execute()
+
+        _bootstrap_workspace(response.user.id, data.email, data.full_name)
 
         return {
             "access_token": response.session.access_token,

@@ -5,6 +5,7 @@ from typing import List, Optional
 from datetime import datetime
 from ..core.auth import get_current_user, get_db
 from ..core.supabase_client import get_supabase_client
+from ..core.workspace import get_active_workspace, scope
 from supabase import Client
 
 router = APIRouter(prefix="/imports", tags=["imports"])
@@ -23,12 +24,13 @@ class SalesImportRequest(BaseModel):
 @router.get("")
 def list_imports(
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
-    """Lista todas as importações do usuário"""
+    """Lista as importações do workspace ativo"""
     try:
-        result = supabase.table("sales_imports").select("*").eq(
-            "user_id", current_user.id
+        result = scope(
+            supabase.table("sales_imports").select("*"), ws_id, current_user.id
         ).order("created_at", desc=True).execute()
 
         return result.data
@@ -44,11 +46,12 @@ def list_imports(
 def create_import(
     import_data: SalesImportRequest,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
-    """Cria um novo registro de importação"""
+    """Cria um novo registro de importação no workspace ativo"""
     try:
-        result = supabase.table("sales_imports").insert({
+        row = {
             "user_id": current_user.id,
             "filename": import_data.filename,
             "imported_at": import_data.imported_at,
@@ -56,8 +59,11 @@ def create_import(
             "date_range_start": import_data.date_range_start,
             "date_range_end": import_data.date_range_end,
             "detected_columns": import_data.detected_columns,
-            "raw_data": import_data.raw_data
-        }).execute()
+            "raw_data": import_data.raw_data,
+        }
+        if ws_id:
+            row["workspace_id"] = ws_id
+        result = supabase.table("sales_imports").insert(row).execute()
 
         return result.data[0]
 
@@ -72,12 +78,14 @@ def create_import(
 def delete_import(
     import_id: str,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """Deleta uma importação"""
     try:
-        result = supabase.table("sales_imports").delete().eq("id", import_id).eq(
-            "user_id", current_user.id
+        result = scope(
+            supabase.table("sales_imports").delete().eq("id", import_id),
+            ws_id, current_user.id,
         ).execute()
 
         if not result.data:

@@ -10,6 +10,8 @@ import type {
   FunnelStatus,
   FunnelTrendPoint,
   FunnelTicket,
+  Workspace,
+  WorkspaceMember,
 } from "@/types";
 import { isDateRange } from "@/types";
 import type { SlugTypeRule } from "@/lib/urlImport";
@@ -96,10 +98,36 @@ export function getStoredSession(): AuthSession | null {
   }
 }
 
-/** Acrescenta o Bearer token nas chamadas reais (quando USE_MOCK=false). */
+// --- Workspace ativo ---
+// Qual workspace (conta) a pessoa está olhando. Vai no header X-Workspace-Id de
+// toda chamada /api; o backend confere a associação e devolve os dados dele.
+const ACTIVE_WS_KEY = "funil-analytics:active-workspace";
+
+export function getActiveWorkspaceId(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_WS_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setActiveWorkspaceId(id: string | null): void {
+  try {
+    if (id) localStorage.setItem(ACTIVE_WS_KEY, id);
+    else localStorage.removeItem(ACTIVE_WS_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Acrescenta Bearer token + workspace ativo nas chamadas reais. */
 function authHeaders(extra?: Record<string, string>): Record<string, string> {
   const token = getSessionToken();
-  return token ? { ...extra, Authorization: `Bearer ${token}` } : extra ?? {};
+  const ws = getActiveWorkspaceId();
+  const h: Record<string, string> = { ...extra };
+  if (token) h.Authorization = `Bearer ${token}`;
+  if (ws) h["X-Workspace-Id"] = ws;
+  return h;
 }
 
 // ---------------------------------------------------------------------------
@@ -173,6 +201,8 @@ if (
     if (typeof input !== "string" && !(input instanceof URL)) return res;
     const headers = new Headers(init?.headers);
     headers.set("Authorization", `Bearer ${token}`);
+    const ws = getActiveWorkspaceId();
+    if (ws) headers.set("X-Workspace-Id", ws);
     return realFetch(input, { ...init, headers });
   };
 }
@@ -1473,6 +1503,100 @@ export async function logout(): Promise<void> {
     return;
   }
   return delay(undefined, 200);
+}
+
+// --- Workspaces (contas) ---
+
+const MOCK_WS_KEY = "funil-analytics:mock-workspaces";
+function readMockWs(): Workspace[] {
+  try {
+    const raw = localStorage.getItem(MOCK_WS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    /* ignore */
+  }
+  const seed: Workspace[] = [
+    { id: "ws-demo", name: "Meu workspace — pessoal", role: "owner", memberCount: 1 },
+  ];
+  localStorage.setItem(MOCK_WS_KEY, JSON.stringify(seed));
+  return seed;
+}
+function writeMockWs(list: Workspace[]) {
+  localStorage.setItem(MOCK_WS_KEY, JSON.stringify(list));
+}
+
+export async function listWorkspaces(): Promise<Workspace[]> {
+  if (!USE_MOCK) return apiGet(`/api/workspaces`).then(okJson);
+  return delay(readMockWs(), 120);
+}
+
+export async function createWorkspace(name: string): Promise<Workspace> {
+  if (!USE_MOCK) return apiSend(`/api/workspaces`, "POST", { name }).then(okJson);
+  const list = readMockWs();
+  const ws: Workspace = {
+    id: `ws-${Date.now()}`,
+    name: name.trim() || "Novo workspace",
+    role: "owner",
+    memberCount: 1,
+  };
+  writeMockWs([...list, ws]);
+  return delay(ws, 200);
+}
+
+export async function renameWorkspace(id: string, name: string): Promise<void> {
+  if (!USE_MOCK) {
+    await apiSend(`/api/workspaces/${id}`, "PATCH", { name }).then(okJson);
+    return;
+  }
+  writeMockWs(readMockWs().map((w) => (w.id === id ? { ...w, name } : w)));
+  return delay(undefined, 150);
+}
+
+export async function deleteWorkspace(id: string): Promise<void> {
+  if (!USE_MOCK) {
+    const r = await fetch(`/api/workspaces/${id}`, { method: "DELETE", headers: authHeaders() });
+    if (!r.ok && r.status !== 204) {
+      const msg = await r.json().catch(() => ({}));
+      throw new Error(msg.detail || "Não foi possível apagar o workspace");
+    }
+    return;
+  }
+  const list = readMockWs();
+  if (list.length <= 1) throw new Error("Este é seu único workspace.");
+  writeMockWs(list.filter((w) => w.id !== id));
+  return delay(undefined, 150);
+}
+
+export async function listWorkspaceMembers(
+  id: string
+): Promise<{ role: "owner" | "member"; members: WorkspaceMember[] }> {
+  if (!USE_MOCK) return apiGet(`/api/workspaces/${id}/members`).then(okJson);
+  return delay(
+    {
+      role: "owner",
+      members: [{ userId: "me", email: "voce@empresa.com", role: "owner", pending: false }],
+    },
+    150
+  );
+}
+
+export async function addWorkspaceMember(
+  id: string,
+  email: string
+): Promise<{ email: string; pending: boolean }> {
+  if (!USE_MOCK) return apiSend(`/api/workspaces/${id}/members`, "POST", { email }).then(okJson);
+  return delay({ email, pending: true }, 200);
+}
+
+export async function removeWorkspaceMember(id: string, userId: string): Promise<void> {
+  if (!USE_MOCK) {
+    await fetch(`/api/workspaces/${id}/members/${userId}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    });
+    return;
+  }
+  return delay(undefined, 150);
 }
 
 // --- Vendas via webhook (backend salva, frontend consulta) ---
