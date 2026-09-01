@@ -213,6 +213,8 @@ def add_member(
     uid = _find_user_id_by_email(email)
 
     if uid:
+        if uid == current_user.id:
+            raise HTTPException(status_code=409, detail="Você já é membro (é o dono).")
         exists = (
             admin.table("workspace_members")
             .select("user_id")
@@ -223,16 +225,32 @@ def add_member(
         )
         if exists:
             raise HTTPException(status_code=409, detail="Essa pessoa já é membro.")
+        # Se havia convite pendente por email, vira membro de verdade.
+        admin.table("workspace_members").delete().eq(
+            "workspace_id", workspace_id
+        ).eq("invited_email", email).is_("user_id", "null").execute()
         admin.table("workspace_members").insert(
             {"workspace_id": workspace_id, "user_id": uid, "role": "member"}
         ).execute()
         return {"email": email, "pending": False}
 
-    # Sem conta ainda — convite pendente, efetivado no cadastro dela.
-    admin.table("workspace_members").upsert(
-        {"workspace_id": workspace_id, "invited_email": email, "role": "member"},
-        on_conflict="workspace_id,invited_email",
-    ).execute()
+    # Sem conta ainda — convite pendente, efetivado no cadastro dela
+    # (ver _bootstrap_workspace no router de auth). Não uso upsert com
+    # on_conflict porque o índice único é parcial (expressão lower()), e o
+    # PostgREST não consegue mirar nele — então checo e insiro.
+    already = (
+        admin.table("workspace_members")
+        .select("workspace_id")
+        .eq("workspace_id", workspace_id)
+        .eq("invited_email", email)
+        .is_("user_id", "null")
+        .execute()
+        .data
+    )
+    if not already:
+        admin.table("workspace_members").insert(
+            {"workspace_id": workspace_id, "invited_email": email, "role": "member"}
+        ).execute()
     return {"email": email, "pending": True}
 
 
