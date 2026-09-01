@@ -40,12 +40,72 @@ create policy "Usuários podem atualizar próprio perfil"
   using (auth.uid() = id);
 
 -- ============================================================================
+-- WORKSPACES (contas) — os funis pertencem a um workspace, não a um usuário.
+-- Ver migration 009_workspaces.sql. Um login alterna entre vários workspaces
+-- (trocador de conta) e um workspace tem vários membros (compartilhamento).
+-- ============================================================================
+
+create table public.workspaces (
+  id uuid primary key default uuid_generate_v4(),
+  name text not null,
+  owner_id uuid references auth.users on delete cascade not null,
+  created_at timestamptz not null default now()
+);
+create index on public.workspaces (owner_id, created_at);
+
+create table public.workspace_members (
+  workspace_id uuid references public.workspaces on delete cascade not null,
+  user_id uuid references auth.users on delete cascade,          -- null = convite pendente
+  invited_email text,
+  role text not null check (role in ('owner', 'member')) default 'member',
+  created_at timestamptz not null default now()
+);
+create unique index workspace_members_ws_user_idx
+  on public.workspace_members (workspace_id, user_id) where user_id is not null;
+create unique index workspace_members_ws_email_idx
+  on public.workspace_members (workspace_id, lower(invited_email))
+  where user_id is null and invited_email is not null;
+create index workspace_members_user_idx
+  on public.workspace_members (user_id) where user_id is not null;
+
+create or replace function public.is_workspace_member(ws uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.workspace_members m
+                 where m.workspace_id = ws and m.user_id = auth.uid());
+$$;
+
+create or replace function public.is_workspace_owner(ws uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.workspaces w
+                 where w.id = ws and w.owner_id = auth.uid());
+$$;
+
+alter table public.workspaces enable row level security;
+create policy "membro vê o workspace" on public.workspaces for select
+  using (public.is_workspace_member(id));
+create policy "qualquer um cria workspace próprio" on public.workspaces for insert
+  with check (owner_id = auth.uid());
+create policy "owner edita o workspace" on public.workspaces for update
+  using (owner_id = auth.uid());
+create policy "owner apaga o workspace" on public.workspaces for delete
+  using (owner_id = auth.uid());
+
+alter table public.workspace_members enable row level security;
+create policy "membro vê os membros" on public.workspace_members for select
+  using (public.is_workspace_member(workspace_id));
+create policy "owner gerencia membros" on public.workspace_members for all
+  using (public.is_workspace_owner(workspace_id))
+  with check (public.is_workspace_owner(workspace_id));
+
+-- ============================================================================
 -- FUNIS E ESTRUTURA
 -- ============================================================================
 
--- Tabela principal de funis
+-- Tabela principal de funis. `workspace_id` é a raiz da posse; `user_id` fica
+-- como "criado por" (informativo).
 create table public.funnels (
   id uuid primary key default uuid_generate_v4(),
+  workspace_id uuid references public.workspaces on delete cascade,
   user_id uuid references auth.users on delete cascade not null,
   name text not null,
   slug text not null,
@@ -57,6 +117,35 @@ create table public.funnels (
   updated_at timestamptz default now(),
   unique(user_id, slug)
 );
+create index on public.funnels (workspace_id);
+create unique index funnels_workspace_slug_idx
+  on public.funnels (workspace_id, slug) where workspace_id is not null;
+
+-- Preenche workspace_id sozinho quando alguém insere sem informar.
+create or replace function public.fill_workspace_id()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.workspace_id is null then
+    new.workspace_id := (select id from public.workspaces
+                         where owner_id = coalesce(new.user_id, auth.uid())
+                         order by created_at asc limit 1);
+  end if;
+  return new;
+end;
+$$;
+create trigger fill_workspace_funnels before insert on public.funnels
+  for each row execute function public.fill_workspace_id();
+
+-- Cascata de posse: o funil X é acessível pelo auth.uid()?
+create or replace function public.can_access_funnel(fid uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.funnels f
+    where f.id = fid
+      and (public.is_workspace_member(f.workspace_id)
+           or (f.workspace_id is null and f.user_id = auth.uid()))
+  );
+$$;
 
 -- Etapas do funil
 create table public.funnel_steps (
@@ -260,6 +349,7 @@ create table public.api_credentials (
   account_id text,
   rate_limit_tier text check (rate_limit_tier in ('basic', 'pro', 'scale', 'enterprise')),
   extra_config jsonb,
+  workspace_id uuid references public.workspaces on delete cascade,  -- posse (009); trigger fill_workspace_credentials preenche
   created_at timestamptz default now(),
   updated_at timestamptz default now(),
   unique(user_id, provider)
@@ -280,6 +370,7 @@ create table public.sales_imports (
   date_range_end date,
   detected_columns jsonb not null,
   raw_data jsonb,
+  workspace_id uuid references public.workspaces on delete cascade,  -- posse (009); trigger fill_workspace_imports preenche
   created_at timestamptz default now()
 );
 
@@ -305,6 +396,18 @@ create index on public.sales (date desc);
 
 -- ============================================================================
 -- ROW LEVEL SECURITY (RLS)
+-- ============================================================================
+--
+-- ATENÇÃO: a migration 009_workspaces.sql SUBSTITUI as políticas abaixo que
+-- usam `user_id = auth.uid()` / `funnels.user_id = auth.uid()` pelas versões
+-- baseadas em workspace: `is_workspace_member(workspace_id)` e
+-- `can_access_funnel(funnel_id)`, cada uma com o OR de transição
+-- `(workspace_id is null and user_id = auth.uid())`.
+-- Afeta: funnels, funnel_steps, funnel_edges, step_metrics, vsl_insights,
+-- live_beats (leitura), live_snapshots, live_sales, live_page_entries,
+-- api_credentials, sales_imports, sales. As políticas de heartbeat anônimo
+-- (live_beats insert/update) NÃO mudam. Este arquivo mantém as versões
+-- pré-009 como registro histórico — a 009 é a fonte da verdade em produção.
 -- ============================================================================
 
 -- Funnels

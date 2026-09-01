@@ -492,6 +492,85 @@ def main() -> int:
                 f"veio {direct.status_code}",
             )
 
+            # -- workspaces: trocador de conta + compartilhamento ----------
+            ws_list = client.get("/api/workspaces", headers=auth)
+            if ws_list.status_code == 200 and ws_list.json():
+                ws = ws_list.json()
+                a_ws_id = ws[0]["id"]
+                record(
+                    "conta A tem 1 workspace pessoal (backfill 009)",
+                    PASS if len(ws) >= 1 and ws[0].get("role") == "owner" else FAIL,
+                    f"{len(ws)} workspace(s)",
+                )
+
+                # A cria um segundo workspace e volta a ter 2.
+                new_ws = client.post(
+                    "/api/workspaces", headers=auth, json={"name": f"WS Fumaça {stamp}"}
+                )
+                if check("POST /api/workspaces", new_ws):
+                    again = client.get("/api/workspaces", headers=auth)
+                    record(
+                        "conta A passa a ver 2 workspaces",
+                        PASS if len(again.json()) == len(ws) + 1 else FAIL,
+                        f"{len(again.json())}",
+                    )
+
+                # A convida B para o workspace pessoal dela.
+                invited = client.post(
+                    f"/api/workspaces/{a_ws_id}/members",
+                    headers=auth,
+                    json={"email": other_email},
+                )
+                check("POST /api/workspaces/{id}/members (convida B)", invited)
+
+                # B agora enxerga o workspace de A na lista.
+                b_ws = client.get("/api/workspaces", headers=other_auth)
+                sees_shared = any(w["id"] == a_ws_id for w in (b_ws.json() or []))
+                record(
+                    "conta B passa a ver o workspace compartilhado de A",
+                    PASS if sees_shared else FAIL,
+                    "" if sees_shared else "convite não apareceu para B",
+                )
+
+                # B, com o workspace de A ativo, enxerga o funil de A.
+                shared_hdr = {**other_auth, "X-Workspace-Id": a_ws_id}
+                shared_funnels = client.get("/api/funnels", headers=shared_hdr)
+                sees_funnel = any(
+                    f.get("id") == funnel_id for f in (shared_funnels.json() or [])
+                )
+                record(
+                    "conta B vê o funil de A no workspace compartilhado",
+                    PASS if sees_funnel else FAIL,
+                    "" if sees_funnel else "compartilhamento não propagou aos funis",
+                )
+
+                # B sem o header continua sem ver (workspace pessoal dele).
+                own = client.get("/api/funnels", headers=other_auth)
+                bleeds = any(f.get("id") == funnel_id for f in (own.json() or []))
+                record(
+                    "conta B não vê o funil de A fora do workspace compartilhado",
+                    FAIL if bleeds else PASS,
+                    "VAZAMENTO ENTRE WORKSPACES" if bleeds else "",
+                )
+
+                # B (member, não owner) não pode convidar ninguém.
+                b_invite = client.post(
+                    f"/api/workspaces/{a_ws_id}/members",
+                    headers=shared_hdr,
+                    json={"email": f"terceiro.{stamp}@funneltron-smoke.app"},
+                )
+                record(
+                    "member (B) não pode convidar no workspace de A",
+                    PASS if b_invite.status_code in (403, 401) else FAIL,
+                    f"veio {b_invite.status_code}",
+                )
+            else:
+                record(
+                    "workspaces (migration 009)",
+                    SKIP,
+                    "GET /api/workspaces vazio — 009 não rodou ou modo legado",
+                )
+
     # -- limpeza ------------------------------------------------------------
     check(
         "DELETE /api/funnels/{id}",
