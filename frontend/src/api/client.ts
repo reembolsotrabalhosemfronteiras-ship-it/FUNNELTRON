@@ -102,6 +102,81 @@ function authHeaders(extra?: Record<string, string>): Record<string, string> {
   return token ? { ...extra, Authorization: `Bearer ${token}` } : extra ?? {};
 }
 
+// ---------------------------------------------------------------------------
+// Auto-refresh do token em 401.
+//
+// O access token do Supabase dura ~1h. Sem renovar, TODAS as telas param de
+// carregar depois disso ("token is expired") — as chamadas 401am em silêncio e
+// o app fica mostrando tela vazia até deslogar e entrar de novo.
+//
+// Aqui: um patch no `window.fetch` que, ao ver um 401 numa chamada `/api/`
+// autenticada, troca o refresh token por um par novo (POST /api/auth/refresh),
+// salva a sessão e repete a chamada UMA vez. Refresh falhou → limpa a sessão e
+// manda pro login. Fora do caminho de `/api/auth/*` para não entrar em laço.
+// ---------------------------------------------------------------------------
+if (
+  !USE_MOCK &&
+  typeof window !== "undefined" &&
+  !(window as unknown as { __funilFetchPatched?: boolean }).__funilFetchPatched
+) {
+  (window as unknown as { __funilFetchPatched?: boolean }).__funilFetchPatched = true;
+  const realFetch = window.fetch.bind(window);
+  let refreshing: Promise<string | null> | null = null;
+
+  const doRefresh = async (): Promise<string | null> => {
+    const s = getStoredSession();
+    if (!s?.refreshToken) return null;
+    try {
+      const r = await realFetch("/api/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: s.refreshToken }),
+      });
+      if (!r.ok) return null;
+      const j = (await r.json()) as { access_token: string; refresh_token?: string };
+      saveSession({
+        ...s,
+        accessToken: j.access_token,
+        refreshToken: j.refresh_token ?? s.refreshToken,
+      });
+      return j.access_token;
+    } catch {
+      return null;
+    }
+  };
+
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const res = await realFetch(input, init);
+    const url =
+      typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (res.status !== 401 || !url.includes("/api/") || url.includes("/api/auth/")) {
+      return res;
+    }
+
+    if (!refreshing) {
+      refreshing = doRefresh().finally(() => {
+        refreshing = null;
+      });
+    }
+    const token = await refreshing;
+
+    if (!token) {
+      clearSession();
+      if (!window.location.pathname.startsWith("/login")) {
+        window.location.assign("/login");
+      }
+      return res;
+    }
+
+    // Repete a chamada original com o token novo (só para input string/URL —
+    // Request já teve o corpo consumido; nenhuma chamada daqui usa Request).
+    if (typeof input !== "string" && !(input instanceof URL)) return res;
+    const headers = new Headers(init?.headers);
+    headers.set("Authorization", `Bearer ${token}`);
+    return realFetch(input, { ...init, headers });
+  };
+}
+
 function apiGet(path: string): Promise<Response> {
   if (USE_MOCK) return fetch(path);
   return fetch(path, { headers: authHeaders() });

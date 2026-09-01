@@ -24,6 +24,10 @@ class AuthResponse(BaseModel):
     user: dict
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
 @router.post("/login", response_model=AuthResponse)
 def login(
     credentials: LoginRequest,
@@ -113,12 +117,13 @@ def logout(supabase: Client = Depends(get_supabase_client)):
 
 @router.post("/refresh")
 def refresh_token(
-    refresh_token: str,
+    body: RefreshRequest,
     supabase: Client = Depends(get_supabase_client)
 ):
-    """Renova o access token usando refresh token"""
+    """Renova o access token usando o refresh token (no corpo, nunca na URL)."""
     try:
-        response = supabase.auth.refresh_session({ "refresh_token": refresh_token })
+        # supabase-py 2.x: refresh_session recebe a string direto, não um dict.
+        response = supabase.auth.refresh_session(body.refresh_token)
 
         if not response.session:
             raise HTTPException(
