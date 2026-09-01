@@ -471,7 +471,8 @@ real. `npx tsc --noEmit` passa limpo.
    `settings.signup_invite_code` ANTES de `supabase.auth.sign_up`. Vazio na env
    = cadastro aberto (comportamento atual). — **fazer primeiro**
 
-2. **Workspaces** (grande — schema + RLS + todos os routers + shell do front):
+2. **Workspaces** (grande). Prompt completo e autocontido pra rodar em outra IA:
+   **`PROMPT-WORKSPACES.md`** na raiz. Resumo do que ele cobre:
    - tabelas `workspaces (id, name, owner_id)` e `workspace_members
      (workspace_id, user_id, role)`.
    - `funnels.user_id` → `funnels.workspace_id`. Steps/edges/métricas/beats já
