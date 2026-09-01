@@ -564,6 +564,8 @@ function GlobalView({ bundles }: { bundles: FunnelBundle[] }) {
 // ---------------------------------------------------------------------------
 
 function ComparisonView({ bundles }: { bundles: FunnelBundle[] }) {
+  const [compareStyle, setCompareStyle] = useState<"table" | "cards" | "overlay">("table");
+
   const rows = bundles.map((b, i) => {
     const t = totals(b);
     const worstEdge = worstStepDrop(b);
@@ -571,6 +573,7 @@ function ComparisonView({ bundles }: { bundles: FunnelBundle[] }) {
       ...t,
       id: b.funnel.id,
       name: b.funnel.name,
+      status: b.funnel.status,
       color: COMPARE_COLORS[i % COMPARE_COLORS.length],
       vslCount: b.vsl.count,
       vslConversion: b.vsl.avgConversion,
@@ -704,6 +707,98 @@ function ComparisonView({ bundles }: { bundles: FunnelBundle[] }) {
         </div>
       </div>
 
+      <div className="seg self-start">
+        {([
+          ["table", "Tabela"],
+          ["cards", "Cards"],
+          ["overlay", "Sobreposto"],
+        ] as const).map(([k, lbl]) => (
+          <label key={k} className="seg-opt" onClick={() => setCompareStyle(k)}>
+            <input type="radio" name="cmpstyle" readOnly checked={compareStyle === k} />
+            {lbl}
+          </label>
+        ))}
+      </div>
+
+      {compareStyle === "cards" && (
+        <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
+          {rows.map((r) => (
+            <div key={r.id} className="card elev-sm" style={{ borderTop: `3px solid ${r.color}` }}>
+              <p className="font-bold">{r.name}</p>
+              <span className="tag tag-neutral self-start">
+                {r.status === "active" ? "Ativo" : r.status === "testing" ? "Em teste" : "Desativo"}
+              </span>
+              <div className="mt-2 flex flex-col gap-2">
+                {([
+                  ["Visitantes", num(r.visitors)],
+                  ["Conv. funil", pct(r.avgRate)],
+                  ["Conv. compra", pct(r.endToEnd)],
+                  ["Pior passagem", pct(r.worstDropRate)],
+                  ...(r.vslCount > 0
+                    ? [["VSL conv / engaj", `${pct(r.vslConversion)} / ${pct(r.vslEngagement)}`] as const]
+                    : []),
+                ] as const).map(([k, v]) => (
+                  <div key={k} className="flex justify-between text-[12.5px]">
+                    <span className="text-muted-foreground">{k}</span>
+                    <span className="font-semibold">{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {compareStyle === "overlay" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Funis sobrepostos</CardTitle>
+            <CardDescription>
+              Silhueta de cada funil, alinhada da entrada até a última etapa
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <svg viewBox="0 0 520 200" className="w-full" style={{ height: 240 }}>
+              {bundles.map((b, i) => {
+                const color = COMPARE_COLORS[i % COMPARE_COLORS.length];
+                const vis = b.steps
+                  .map((s) => b.metrics.find((m) => m.stepId === s.id)?.visitors ?? 0);
+                const entry = vis[0] || 1;
+                const n = vis.length;
+                if (n < 2) return null;
+                const top: string[] = [];
+                const bot: string[] = [];
+                vis.forEach((v, j) => {
+                  const x = (j / (n - 1)) * 520;
+                  const half = (Math.max(0, Math.min(1, v / entry)) * 180) / 2;
+                  top.push(`${x.toFixed(1)},${(100 - half).toFixed(1)}`);
+                  bot.push(`${x.toFixed(1)},${(100 + half).toFixed(1)}`);
+                });
+                return (
+                  <polygon
+                    key={b.funnel.id}
+                    points={[...top, ...bot.reverse()].join(" ")}
+                    fill={color}
+                    fillOpacity={0.22}
+                    stroke={color}
+                    strokeWidth={2}
+                  />
+                );
+              })}
+            </svg>
+            <div className="mt-2 flex flex-wrap gap-4">
+              {rows.map((r) => (
+                <span key={r.id} className="flex items-center gap-1.5 text-[11.5px]">
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: r.color }} />
+                  {r.name}
+                </span>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {compareStyle === "table" && (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -778,6 +873,7 @@ function ComparisonView({ bundles }: { bundles: FunnelBundle[] }) {
           </table>
         </CardContent>
       </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
