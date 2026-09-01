@@ -21,10 +21,63 @@ import threading
 from functools import lru_cache
 from pathlib import Path
 
+import httpx
 from supabase import create_client, Client
 
 from .config import get_settings
 from .local_db import LocalClient
+
+
+class _RetryTransport(httpx.BaseTransport):
+    """Repete requisições idempotentes (GET/HEAD) quando o servidor derruba
+    uma conexão keep-alive que o pool do httpx ainda achava boa.
+
+    É o outro lado do bug de concorrência: mesmo com um cliente por thread, o
+    Supabase fecha conexões ociosas do seu lado, e o httpx só descobre ao tentar
+    reusar — vira ``RemoteProtocolError: Server disconnected``. Uma segunda
+    tentativa pega uma conexão nova e passa. GET de métrica é seguro repetir.
+    """
+
+    _RETRYABLE = (
+        httpx.RemoteProtocolError,
+        httpx.ConnectError,
+        httpx.ReadError,
+        httpx.WriteError,
+        httpx.PoolTimeout,
+    )
+
+    def __init__(self, inner: httpx.BaseTransport, attempts: int = 3):
+        self._inner = inner
+        self._attempts = attempts
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        last: Exception | None = None
+        for i in range(self._attempts):
+            try:
+                return self._inner.handle_request(request)
+            except self._RETRYABLE as exc:
+                last = exc
+                if request.method not in ("GET", "HEAD", "OPTIONS"):
+                    raise
+        assert last is not None
+        raise last
+
+    def close(self) -> None:
+        self._inner.close()
+
+
+def _harden(client: Client) -> Client:
+    """Envolve os transportes httpx do supabase-py com retry idempotente."""
+    for holder, attr in (
+        (getattr(client, "postgrest", None), "session"),
+        (getattr(client, "storage", None), "session"),
+        (getattr(client, "auth", None), "_http_client"),
+    ):
+        session = getattr(holder, attr, None)
+        transport = getattr(session, "_transport", None)
+        if transport is not None and not isinstance(transport, _RetryTransport):
+            session._transport = _RetryTransport(transport)
+    return client
 
 # Valores que o `.env.example` deixa como marcador. Tratar como "não
 # configurado" evita o pior dos mundos: o app subir apontando para um projeto
@@ -74,7 +127,7 @@ def get_supabase_client():
     client = getattr(_tl, "anon", None)
     if client is None:
         settings = get_settings()
-        client = create_client(settings.supabase_url, settings.supabase_key)
+        client = _harden(create_client(settings.supabase_url, settings.supabase_key))
         _tl.anon = client
     return client
 
@@ -99,7 +152,7 @@ def make_user_client(access_token: str):
         if len(store) >= _MAX_USER_CLIENTS_PER_THREAD:
             store.clear()
         settings = get_settings()
-        client = create_client(settings.supabase_url, settings.supabase_key)
+        client = _harden(create_client(settings.supabase_url, settings.supabase_key))
         # Manda o JWT do usuário nas chamadas ao PostgREST, para o `auth.uid()`
         # das políticas de RLS resolver para ele.
         client.postgrest.auth(access_token)
@@ -119,7 +172,7 @@ def get_supabase_admin():
     client = getattr(_tl, "admin", None)
     if client is None:
         settings = get_settings()
-        client = create_client(settings.supabase_url, settings.supabase_service_key)
+        client = _harden(create_client(settings.supabase_url, settings.supabase_service_key))
         _tl.admin = client
     return client
 
