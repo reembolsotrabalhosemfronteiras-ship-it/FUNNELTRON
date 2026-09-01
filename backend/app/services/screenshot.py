@@ -67,13 +67,45 @@ class ScreenshotService:
 
         try:
             async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
+                # `--disable-blink-features=AutomationControlled` tira o
+                # `navigator.webdriver=true`, principal sinal que faz Cloudflare
+                # e Akamai (serasa, gov, bancos...) servirem "Page Not Found /
+                # PNX003" em vez da página. Só isso já passa na maioria.
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--disable-blink-features=AutomationControlled",
+                        "--no-sandbox",
+                    ],
+                )
                 try:
-                    page = await browser.new_page(viewport=VIEWPORT)
+                    context = await browser.new_context(
+                        viewport=VIEWPORT,
+                        locale="pt-BR",
+                        timezone_id="America/Sao_Paulo",
+                        # UA de Chrome real: o padrão do headless carrega
+                        # "HeadlessChrome", que muito anti-bot barra na hora.
+                        user_agent=(
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/131.0.0.0 Safari/537.36"
+                        ),
+                        extra_http_headers={
+                            "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+                        },
+                    )
+                    page = await context.new_page()
                     # `domcontentloaded` e não `networkidle`: página de vendas
                     # costuma ter pixel de rastreamento que nunca "assenta", e
                     # a espera estouraria o timeout em página que já carregou.
                     await page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+                    # Alguns anti-bot mostram um interstício por ~2-4s antes de
+                    # liberar o conteúdo real. Espera a rede assentar, mas sem
+                    # deixar isso derrubar a captura se não assentar.
+                    try:
+                        await page.wait_for_load_state("networkidle", timeout=6_000)
+                    except Exception:  # noqa: BLE001
+                        pass
                     await page.wait_for_timeout(1_500)  # deixa a dobra renderizar
                     return await page.screenshot(type="png")
                 finally:
@@ -122,6 +154,31 @@ class ScreenshotService:
 
     # -- armazenamento ------------------------------------------------------
 
+    @staticmethod
+    def _ensure_bucket(supabase) -> None:
+        """
+        Cria o bucket `screenshots` (público) se ele ainda não existir.
+
+        Antes, num Supabase novo, a captura funcionava mas o upload falhava com
+        "Bucket not found" e o usuário via um erro vermelho sem saber que
+        precisava abrir o painel e criar o bucket na mão. Com a chave de
+        serviço dá pra criar na hora.
+        """
+        try:
+            supabase.storage.get_bucket("screenshots")
+            return
+        except Exception:  # noqa: BLE001 — não existe (ou API antiga sem get_bucket)
+            pass
+        try:
+            supabase.storage.create_bucket(
+                "screenshots", options={"public": True}
+            )
+        except Exception as exc:  # noqa: BLE001
+            # Corrida (outro request criou) ou já existe: segue o jogo. Erro
+            # real de permissão vai reaparecer no upload logo abaixo.
+            if "already exists" not in str(exc).lower():
+                pass
+
     def _store(self, image: bytes, step_id: str) -> dict:
         file_path = f"{step_id}.png"
 
@@ -136,6 +193,7 @@ class ScreenshotService:
             # usuário. Com a chave anon o Storage recusa por RLS ("new row
             # violates row-level security policy") mesmo com o bucket criado.
             supabase = get_supabase_admin()
+            self._ensure_bucket(supabase)
             supabase.storage.from_("screenshots").upload(
                 file_path,
                 image,
