@@ -1,7 +1,7 @@
 # PLANO — FUNNELTRON
 
 Arquivo de contexto vivo do projeto. **Atualizado ao fim de cada tarefa.**
-Última atualização: 2026-08-31 (redesign pixel-match em andamento)
+Última atualização: 2026-08-31 (cadastro com chave + workspaces no ar; migrations 008/009 rodadas)
 
 ---
 
@@ -386,6 +386,8 @@ isso, rodar o import duas vezes no mesmo dia dobra o número.
 | 99 | **Bug de concorrência do backend — RESOLVIDO.** As telas de fan-out (Métricas, Ao Vivo, Visão dos funis) disparavam ~15-20 req em paralelo e o backend devolvia 500 em massa (`Server disconnected`, `_ssl.c:2426`). Causa: `httpx.Client` síncrono do supabase-py não é thread-safe e um cliente cacheado era compartilhado pelo pool de threads do FastAPI. Correção: (a) cliente **por thread** (`threading.local`) — anon/admin/por-token; (b) `_RetryTransport` que repete GET/HEAD 3x quando o Supabase fecha um keep-alive ocioso. Burst de 21 req paralelas × 8 rodadas em produção: **0 falhas** (antes: quase tudo 500). | `backend/app/core/supabase_client.py` |
 | 100 | **Token não renovava (app parava depois de ~1h) — RESOLVIDO.** O access token do Supabase expira em ~1h e nada o renovava; passado isso, tudo 401ava em silêncio. `/api/auth/refresh` já existia mas passava um dict pro supabase-py 2.x (quer string) → sempre 401. Corrigido + body via `RefreshRequest`. No front, patch no `window.fetch`: 401 numa chamada `/api` autenticada → `POST /api/auth/refresh` → salva sessão nova → repete 1x; refresh falhou → limpa e vai pro `/login`. | `backend/app/routers/auth.py`, `frontend/src/api/client.ts` |
 | 101 | **Mapa do Brasil ao vivo — LIGADO.** `services/geo.py` resolve IP→cidade/UF/lat/lon via `ip-api.com` (grátis, sem chave, cache 12h por IP). O IP nunca é gravado, só a praça. `/api/live/track` resolve no 1º heartbeat da sessão; `_upsert_beat` degrada sozinho se a migration não rodou. `GET /api/live/geo?funnel_id=` agrega sessões ativas por cidade. Front: `getLiveGeo()` + `<LiveGeoCard>` (usa o `BrazilLiveMap` que já existia) plugado nas duas vistas do Ao Vivo. **O snippet `tracker.js` NÃO muda** — geo vem do IP da requisição. ⚠️ **Rodar `migration 008_geo_ao_vivo.sql`** no Supabase (colunas `geo_*` em `live_beats`); até lá o mapa fica vazio mas nada quebra. | `backend/app/services/geo.py`, `backend/app/routers/live.py`, `backend/supabase/migrations/008_geo_ao_vivo.sql`, `frontend/src/api/client.ts`, `frontend/src/pages/LivePage.tsx` |
+| 102 | **Cadastro travado por chave — NO AR.** `POST /api/auth/signup` exige `invite_code == config.signup_invite_code` (padrão `100kdia`, troca por env var no Railway) senão 403. Campo "Código de acesso" no `LoginPage` em modo cadastro. Verificado em produção: sem código→403, errado→403, `100kdia`→passa. | `backend/app/core/config.py`, `backend/app/routers/auth.py`, `frontend/src/pages/LoginPage.tsx`, `frontend/src/components/common/AuthContext.tsx` |
+| 103 | **Workspaces (trocador de conta + compartilhamento) — NO AR.** Os funis/integrações/importações passam a pertencer a um **workspace**, não a um usuário. Um login alterna entre vários workspaces (switcher estilo Slack na Sidebar); o dono convida outras contas por email (`/workspace`) e elas veem os mesmos funis. Backend: `core/workspace.py` (`get_active_workspace` via header `X-Workspace-Id`, `scope()`, `funnel_guard()`), `routers/workspaces.py` (CRUD + membros), todos os routers de dados scopados por workspace com **degradação p/ legado** (`workspaces_ready()`), `_bootstrap_workspace` no signup (cria o pessoal + resolve convites pendentes por email). Front: `WorkspaceContext`, `WorkspaceSwitcher`, `WorkspacePage`, header `X-Workspace-Id` no client + reinjetado no retry do refresh. Default sem header prefere workspace próprio; `scope()` ainda enxerga linha legada (`workspace_id` nulo) do próprio user (espelha o OR de transição da RLS). Verificado em produção: `smoke_test.py` 52/53 (1 SKIP de signup), isolamento + compartilhamento + permissão de member (403) todos verdes. ⚠️ **`migration 009_workspaces.sql` já rodada** pelo usuário no Supabase (2026-08-31). Pendente: `009b_workspaces_cleanup.sql` (tornar `workspace_id` NOT NULL + remover OR de transição) só depois de estável. | `backend/app/core/workspace.py`, `backend/app/routers/workspaces.py`, `backend/app/routers/{funnels,layout,imports,metrics,live,sources}.py`, `backend/app/routers/auth.py`, `backend/supabase/migrations/009_workspaces.sql`, `frontend/src/components/common/{WorkspaceContext,Sidebar}.tsx`, `frontend/src/pages/WorkspacePage.tsx`, `frontend/src/api/client.ts` |
 
 ### ✅ O rastreador ao vivo estava quebrado em silêncio — RESOLVIDO
 
@@ -454,7 +456,15 @@ real. `npx tsc --noEmit` passa limpo.
 
 ### ❌ Fila
 
-#### Cadastro com chave + Workspaces (pedido 2026-08-31)
+#### ✅ FEITO — Cadastro com chave + Workspaces (pedido 2026-08-31, entregue 2026-08-31)
+
+Ver itens **102** e **103** na tabela de Feito. Migrations 008 e 009 rodadas pelo
+usuário no Supabase. Ambos os estágios no ar e verificados em produção.
+Pendências não-bloqueantes: `009b_workspaces_cleanup.sql`; a notificação de venda
+por webhook ainda vai só pro criador do funil (não a todos os membros do
+workspace); slug rules seguem por usuário.
+
+<details><summary>histórico do pedido</summary>
 
 **Decisões do usuário:**
 - **Chave de cadastro fixa** = `100kdia`. Todo cadastro digita a mesma chave;
@@ -489,6 +499,8 @@ real. `npx tsc --noEmit` passa limpo.
    - Frontend: seletor de workspace no topo da Sidebar (estado "workspace
      ativo", persistido); tela de membros (convidar por email, remover); todas
      as chamadas de API levam o workspace ativo.
+
+</details>
 
 #### Redesign — pixel-match do mockup (em andamento, branch `redesign-nocturne`)
 

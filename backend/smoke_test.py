@@ -520,6 +520,16 @@ def main() -> int:
                         f"{len(again.json())}",
                     )
 
+                # Um funil criado JÁ com o workspace pessoal ativo (o funnel_id
+                # lá de cima nasceu antes de A ter workspace — é legado nulo).
+                ws_funnel = client.post(
+                    "/api/funnels",
+                    headers={**auth, "X-Workspace-Id": a_ws_id},
+                    json={"name": f"Funil WS {stamp}", "slug": f"fws-{stamp}",
+                          "status": "active", "kind": "front"},
+                )
+                ws_funnel_id = ws_funnel.json().get("id") if ws_funnel.status_code in (200, 201) else None
+
                 # A convida B para o workspace pessoal dela.
                 invited = client.post(
                     f"/api/workspaces/{a_ws_id}/members",
@@ -541,7 +551,7 @@ def main() -> int:
                 shared_hdr = {**other_auth, "X-Workspace-Id": a_ws_id}
                 shared_funnels = client.get("/api/funnels", headers=shared_hdr)
                 sees_funnel = any(
-                    f.get("id") == funnel_id for f in (shared_funnels.json() or [])
+                    f.get("id") == ws_funnel_id for f in (shared_funnels.json() or [])
                 )
                 record(
                     "conta B vê o funil de A no workspace compartilhado",
@@ -555,7 +565,7 @@ def main() -> int:
                     "/api/workspaces", headers=other_auth, json={"name": f"B pessoal {stamp}"}
                 )
                 own = client.get("/api/funnels", headers=other_auth)
-                bleeds = any(f.get("id") == funnel_id for f in (own.json() or []))
+                bleeds = any(f.get("id") == ws_funnel_id for f in (own.json() or []))
                 record(
                     "conta B não vê o funil de A fora do workspace compartilhado",
                     FAIL if bleeds else PASS,
@@ -581,6 +591,11 @@ def main() -> int:
                 )
 
     # -- limpeza ------------------------------------------------------------
+    try:
+        if ws_funnel_id:
+            client.delete(f"/api/funnels/{ws_funnel_id}", headers=auth)
+    except NameError:
+        pass
     check(
         "DELETE /api/funnels/{id}",
         client.delete(f"/api/funnels/{funnel_id}", headers=auth),
