@@ -1,10 +1,28 @@
-"""Cliente de dados: Supabase em produção, SQLite local em desenvolvimento."""
+"""Cliente de dados: Supabase em produção, SQLite local em desenvolvimento.
+
+## Por que os clientes são por-thread (`threading.local`)
+
+O supabase-py fala com o PostgREST/GoTrue/Storage por `httpx.Client`
+**síncrono**, e `httpx.Client` **não é thread-safe**: duas threads mandando
+requisição pela mesma conexão TLS ao mesmo tempo corrompem o estado do SSL.
+O erro aparece longe da causa — ``Server disconnected``,
+``violation of protocol (_ssl.c:2426)``, ``record layer failure``.
+
+O FastAPI roda os handlers ``def`` (bloqueantes) num pool de threads, e uma
+única tela do app dispara ~15 requisições ao mesmo tempo. Com um cliente só,
+cacheado e compartilhado, as 15 caíam em cima do MESMO `httpx.Client`.
+
+A solução: cada thread do pool guarda o(s) SEU(S) cliente(s). O pool é limitado
+(~40 threads), então a memória também é; e cada `httpx.Client` é tocado por no
+máximo uma thread de cada vez. O custo de construir um cliente (~860ms, medido)
+some depois do aquecimento, igual ao cache antigo — só que sem o bug.
+"""
+import threading
 from functools import lru_cache
 from pathlib import Path
 
 from supabase import create_client, Client
 
-from .cache import TTLCache
 from .config import get_settings
 from .local_db import LocalClient
 
@@ -33,73 +51,77 @@ def is_local_mode() -> bool:
     )
 
 
-@lru_cache()
+# Armazém por-thread. Cada thread do pool do FastAPI enxerga só o que ela
+# mesma guardou aqui — nunca o cliente de outra thread.
+_tl = threading.local()
+
+# Teto de clientes de usuário por thread: JWTs rodam de hora em hora, e uma
+# thread de vida longa juntaria uma entrada por token sem esse limite.
+_MAX_USER_CLIENTS_PER_THREAD = 8
+
+
 def get_supabase_client():
     """
-    Cliente anônimo compartilhado. Use APENAS para operações sem usuário:
+    Cliente anônimo (por thread). Use APENAS para operações sem usuário:
     login, cadastro, verificação de token.
 
     ⚠️ Não use para ler/gravar dados de um usuário. O cliente do supabase-py
-    guarda sessão internamente, e como esta instância é cacheada, ela passa a
-    carregar o token de **quem autenticou por último**. Com dois usuários no
-    ar, as consultas de um rodavam com a identidade do outro: o RLS filtrava
-    pelo `auth.uid()` errado e a lista de funis voltava vazia — ou, numa rota
-    sem filtro explícito de dono, voltaria com os dados alheios.
-    Para dados de usuário existe `make_user_client()`.
+    guarda sessão internamente; para dados de usuário existe `make_user_client()`,
+    amarrado ao JWT de quem chamou.
     """
     if is_local_mode():
         return get_local_client()
-    settings = get_settings()
-    return create_client(settings.supabase_url, settings.supabase_key)
-
-
-# Um cliente por token, reaproveitado enquanto o token vale.
-#
-# A chave é o próprio JWT, e é isso que preserva a correção do S1: dois
-# usuários têm tokens diferentes, logo clientes diferentes, logo nunca
-# compartilham sessão. O que sai daqui é só a reconstrução repetida do MESMO
-# cliente para o MESMO usuário, que custava ~860 ms por requisição.
-#
-# 15 minutos porque o token do Supabase dura cerca de uma hora e é renovado
-# antes disso; token renovado entra como chave nova e o antigo cai sozinho.
-# Token vencido que porventura sobre no cache não vira brecha: quem valida o
-# JWT é o PostgREST, do outro lado, e ele recusa.
-_user_clients = TTLCache(maxsize=64, ttl_seconds=900.0)
+    client = getattr(_tl, "anon", None)
+    if client is None:
+        settings = get_settings()
+        client = create_client(settings.supabase_url, settings.supabase_key)
+        _tl.anon = client
+    return client
 
 
 def make_user_client(access_token: str):
     """
-    Cliente amarrado ao token de quem fez a requisição.
+    Cliente amarrado ao token de quem fez a requisição (por thread).
 
-    Garante que o RLS enxergue o usuário certo e que uma requisição não herde a
-    identidade da anterior — ver `_user_clients` para por que cachear por token
-    mantém essa garantia.
+    A chave é o próprio JWT: dois usuários têm tokens diferentes, logo clientes
+    diferentes, logo nunca compartilham a sessão do supabase-py (correção do S1).
     """
     if is_local_mode():
         return get_local_client()
 
-    def construir():
+    store = getattr(_tl, "user_clients", None)
+    if store is None:
+        store = {}
+        _tl.user_clients = store
+
+    client = store.get(access_token)
+    if client is None:
+        if len(store) >= _MAX_USER_CLIENTS_PER_THREAD:
+            store.clear()
         settings = get_settings()
         client = create_client(settings.supabase_url, settings.supabase_key)
         # Manda o JWT do usuário nas chamadas ao PostgREST, para o `auth.uid()`
         # das políticas de RLS resolver para ele.
         client.postgrest.auth(access_token)
-        return client
+        store[access_token] = client
 
-    return _user_clients.get_or_create(access_token, construir)
+    return client
 
 
-@lru_cache()
 def get_supabase_admin():
-    """Cliente administrativo (no Supabase, service_role: ignora RLS).
+    """Cliente administrativo (por thread) — service_role, ignora RLS.
 
     No modo local é o MESMO cliente do outro: sem RLS não existe o que ignorar.
     A proteção que vale aqui é a checagem de dono feita nos routers.
     """
     if is_local_mode():
         return get_local_client()
-    settings = get_settings()
-    return create_client(settings.supabase_url, settings.supabase_service_key)
+    client = getattr(_tl, "admin", None)
+    if client is None:
+        settings = get_settings()
+        client = create_client(settings.supabase_url, settings.supabase_service_key)
+        _tl.admin = client
+    return client
 
 
 @lru_cache()
