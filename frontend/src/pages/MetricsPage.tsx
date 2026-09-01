@@ -63,14 +63,17 @@ import {
   getFunnelTrend,
   getFunnelTicket,
   getTimeOnPage,
+  periodDays,
 } from "@/api/client";
 import type { StepTimeOnPage } from "@/api/client";
+import { isDateRange } from "@/types";
 import type {
   Funnel,
   FunnelStep,
   FunnelEdge,
   StepMetric,
   PeriodInput,
+  DateRange,
   VslInsight,
   FunnelTrendPoint,
   FunnelTicket,
@@ -151,6 +154,43 @@ function totals(b: FunnelBundle) {
 
 const pct = (n: number | null | undefined) =>
   n == null ? "—" : `${n.toFixed(1)}%`;
+
+/** O período imediatamente ANTES de `period`, do mesmo tamanho.
+ *  Ex.: "30d" (últimos 30 dias) → os 30 dias anteriores a esses. */
+function previousRange(period: PeriodInput): DateRange {
+  const days = periodDays(period);
+  const currentStart = isDateRange(period)
+    ? new Date(period.from + "T00:00:00")
+    : (() => {
+        const d = new Date();
+        d.setHours(0, 0, 0, 0);
+        d.setDate(d.getDate() - days + 1);
+        return d;
+      })();
+  const prevEnd = new Date(currentStart);
+  prevEnd.setDate(prevEnd.getDate() - 1);
+  const prevStart = new Date(prevEnd);
+  prevStart.setDate(prevStart.getDate() - days + 1);
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  return { from: iso(prevStart), to: iso(prevEnd) };
+}
+
+/** Formata a variação de um número entre dois períodos. `unit` = "%" | "p.p." | "". */
+function makeDelta(
+  now: number | null | undefined,
+  before: number | null | undefined,
+  unit: "%" | "p.p." | "",
+  higherIsBetter = true
+): { text: string; positive: boolean } | null {
+  if (now == null || before == null) return null;
+  const diff = unit === "p.p." ? now - before : ((now - before) / (before || 1)) * 100;
+  if (!Number.isFinite(diff)) return null;
+  const up = diff >= 0;
+  return {
+    text: `${up ? "▲" : "▼"} ${Math.abs(diff).toFixed(1)}${unit === "" ? "%" : unit}`,
+    positive: higherIsBetter ? up : !up,
+  };
+}
 
 /** "1m 23s" — segundos crus não dizem nada de cara acima de um minuto. */
 const fmtDuration = (seconds: number | null | undefined) => {
@@ -883,6 +923,34 @@ function SingleFunnelView({
   const [ticket, setTicket] = useState<FunnelTicket | null>(null);
   const [timeOnPage, setTimeOnPage] = useState<StepTimeOnPage[]>([]);
 
+  // Toggle "Período atual / Atual x anterior". Quando ligado, busca as métricas
+  // do período imediatamente anterior (mesmo tamanho) e mostra a variação nos
+  // KPIs. Não precisa de rota nova: `getMetrics` já aceita intervalo de datas.
+  const [comparePrev, setComparePrev] = useState(false);
+  const [prevStats, setPrevStats] = useState<ReturnType<typeof computeStats> | null>(null);
+  const prevRange: DateRange = previousRange(period);
+  const prevLabel = `${prevRange.from.slice(5)} – ${prevRange.to.slice(5)}`;
+
+  useEffect(() => {
+    if (!comparePrev) {
+      setPrevStats(null);
+      return;
+    }
+    let alive = true;
+    Promise.all([
+      getMetrics(funnel.id, "tracker", prevRange),
+      getFunnelTicket(funnel.id, prevRange),
+    ])
+      .then(([m, tk]) => {
+        if (alive) setPrevStats(computeStats(funnel, steps, m, tk.salesCount));
+      })
+      .catch(() => alive && setPrevStats(null));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comparePrev, funnel.id, prevRange.from, prevRange.to]);
+
   // `getVturbMetrics` era mockado incondicionalmente (nunca chamava a API
   // real, nem em produção — `// TODO: implementar com token VTurb real`) e
   // devolvia sempre os MESMOS números fixos. O card "Métricas VTurb" agora
@@ -946,8 +1014,33 @@ function SingleFunnelView({
   const mainPath = flow.filter((c) => !c.isBranch);
   const branchPath = flow.filter((c) => c.isBranch);
 
+  const showDelta = comparePrev && prevStats != null;
+  const d = (now: number | null | undefined, before: number | null | undefined, unit: "%" | "p.p." | "") =>
+    showDelta ? makeDelta(now, before, unit) : null;
+
   return (
-    <main className="space-y-6 p-4">
+    <main className="space-y-6 p-4 md:px-7">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="m-0 text-[19px] font-semibold">{funnel.name}</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="seg">
+            <label className="seg-opt" onClick={() => setComparePrev(false)}>
+              <input type="radio" name="pcompare" readOnly checked={!comparePrev} />
+              Período atual
+            </label>
+            <label className="seg-opt" onClick={() => setComparePrev(true)}>
+              <input type="radio" name="pcompare" readOnly checked={comparePrev} />
+              Atual x anterior
+            </label>
+          </div>
+          {comparePrev && (
+            <span className="text-[11.5px] text-muted-foreground">
+              anterior: {prevLabel}
+            </span>
+          )}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-6">
         <KpiCard
           metric="visitors"
@@ -959,8 +1052,16 @@ function SingleFunnelView({
           }
           icon={<Users className="text-blue-500" size={24} />}
           tone="text-blue-500"
+          delta={d(t.visitors, prevStats?.visitors, "")}
         />
-        <KpiCard metric="conversions" value={t.conversions.toLocaleString("pt-BR")} hint="Chegaram na última página" icon={<Target className="text-success" size={24} />} tone="text-success" />
+        <KpiCard
+          metric="conversions"
+          value={t.conversions.toLocaleString("pt-BR")}
+          hint="Chegaram na última página"
+          icon={<Target className="text-success" size={24} />}
+          tone="text-success"
+          delta={d(t.conversions, prevStats?.conversions, "")}
+        />
         <KpiCard
           metric="avgRate"
           value={pct(t.avgRate)}
@@ -971,9 +1072,17 @@ function SingleFunnelView({
           }
           icon={<TrendingUp className="text-warning" size={24} />}
           tone="text-warning"
+          delta={d(t.avgRate, prevStats?.avgRate, "p.p.")}
         />
         <VslConversionCard vturb={bundle.vsl} tracker={trackerVsl} />
-        <KpiCard metric="endToEnd" value={pct(t.endToEnd)} hint={t.endToEnd == null ? "Sem entrada no período" : "Vendas pagas ÷ entrada"} icon={<Activity className="text-primary" size={24} />} tone="text-primary" />
+        <KpiCard
+          metric="endToEnd"
+          value={pct(t.endToEnd)}
+          hint={t.endToEnd == null ? "Sem entrada no período" : "Vendas pagas ÷ entrada"}
+          icon={<Activity className="text-primary" size={24} />}
+          tone="text-primary"
+          delta={d(t.endToEnd, prevStats?.purchaseRate, "p.p.")}
+        />
       </div>
 
       <Card>
@@ -1473,12 +1582,15 @@ function KpiCard({
   hint,
   icon,
   tone,
+  delta,
 }: {
   metric: MetricKey;
   value: string;
   hint: string;
   icon: React.ReactNode;
   tone: string;
+  /** Variação vs período anterior, quando o toggle "Atual x anterior" está ligado. */
+  delta?: { text: string; positive: boolean } | null;
 }) {
   return (
     <div className="card elev-sm">
@@ -1491,7 +1603,16 @@ function KpiCard({
       <p className={cn("mt-1.5 font-semibold", tone)} style={{ fontSize: 24 }}>
         {value}
       </p>
-      <p className="text-[11.5px] text-muted-foreground">{hint}</p>
+      {delta ? (
+        <p
+          className="text-[11.5px] font-semibold"
+          style={{ color: delta.positive ? "var(--c-high)" : "var(--c-low)" }}
+        >
+          {delta.text} vs período anterior
+        </p>
+      ) : (
+        <p className="text-[11.5px] text-muted-foreground">{hint}</p>
+      )}
     </div>
   );
 }
