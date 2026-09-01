@@ -615,30 +615,24 @@ function ComparisonView({ bundles }: { bundles: FunnelBundle[] }) {
   return (
     <main className="space-y-6 p-4">
       {/* Veredito: quem ganha em mais métricas de desempenho. */}
-      <Card
-        className={cn(
-          "border-2",
-          tie ? "border-warning/40" : "border-success/50"
-        )}
+      <div
+        className="card elev-md !p-[18px]"
+        style={{ border: `1.5px solid ${tie ? "hsl(var(--muted-foreground))" : "hsl(var(--primary))"}` }}
       >
-        <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
             <span
-              className={cn(
-                "flex h-11 w-11 shrink-0 items-center justify-center rounded-full",
-                tie ? "bg-warning/15 text-warning" : "bg-success/15 text-success"
-              )}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
+              style={{ background: "var(--color-accent-900)" }}
             >
-              <Trophy size={20} />
+              <Trophy size={20} style={{ color: "var(--color-accent-300)" }} />
             </span>
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {tie ? "Empate técnico" : "Melhor funil"}
-              </p>
-              <p className="text-xl font-bold">
+              <p className="card-kicker">{tie ? "Empate técnico" : "Melhor funil"}</p>
+              <p className="text-[19px] font-bold">
                 {tie ? "Sem vencedor claro" : champion.name}
               </p>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-[12.5px] text-muted-foreground">
                 {tie
                   ? "Os funis vencem no mesmo número de métricas — a escolha depende do que você prioriza."
                   : `Vence em ${wins.get(champion.id)} de ${
@@ -652,31 +646,23 @@ function ComparisonView({ bundles }: { bundles: FunnelBundle[] }) {
             {ranked.map((r, i) => (
               <div
                 key={r.id}
-                className={cn(
-                  "rounded-lg border px-3 py-2 text-center",
-                  !tie && i === 0
-                    ? "border-success bg-success/10"
-                    : "border-border bg-muted/40"
-                )}
+                className="rounded-md border px-3.5 py-2 text-center"
+                style={{
+                  background: !tie && i === 0 ? "var(--color-accent-900)" : "var(--color-neutral-900)",
+                  borderColor: !tie && i === 0 ? "hsl(var(--primary))" : "var(--color-divider)",
+                }}
               >
-                <p className="flex items-center justify-center gap-1.5 text-xs font-medium">
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: r.color }}
-                  />
+                <p className="flex items-center justify-center gap-1.5 text-[11.5px]">
+                  <span className="h-[7px] w-[7px] rounded-full" style={{ backgroundColor: r.color }} />
                   {r.name}
                 </p>
-                <p className="text-lg font-bold tabular-nums">
-                  {wins.get(r.id) ?? 0}
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  métricas vencidas
-                </p>
+                <p className="text-[17px] font-bold tabular-nums">{wins.get(r.id) ?? 0}</p>
+                <p className="text-[10px] text-muted-foreground">métricas vencidas</p>
               </div>
             ))}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       <Card>
         <CardHeader>
