@@ -90,9 +90,17 @@ def main() -> int:
     email = f"smoke.{stamp}@funneltron-smoke.app"
     password = f"Sm0ke!{stamp}"
 
+    # O cadastro é travado por código de acesso (config.signup_invite_code).
+    from app.core.config import get_settings
+
     signup = client.post(
         "/api/auth/signup",
-        json={"email": email, "password": password, "full_name": "Teste Fumaça"},
+        json={
+            "email": email,
+            "password": password,
+            "full_name": "Teste Fumaça",
+            "invite_code": get_settings().signup_invite_code,
+        },
     )
 
     if signup.status_code in (200, 201):

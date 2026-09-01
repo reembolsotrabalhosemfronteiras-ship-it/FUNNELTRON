@@ -454,6 +454,41 @@ real. `npx tsc --noEmit` passa limpo.
 
 ### ❌ Fila
 
+#### Cadastro com chave + Workspaces (pedido 2026-08-31)
+
+**Decisões do usuário:**
+- **Chave de cadastro fixa** = `100kdia`. Todo cadastro digita a mesma chave;
+  trocar = mudar uma variável no servidor (`SIGNUP_INVITE_CODE`).
+- **Workspaces com trocador de conta** (tipo Slack): um login, alterna entre
+  vários workspaces sem deslogar. Cada workspace tem seus funis isolados.
+- **Compartilhar workspace**: o dono convida outras contas (por email) para um
+  workspace — os convidados veem os MESMOS funis.
+
+**Estágios:**
+
+1. **Gate da chave no cadastro** (pequeno, isolado). Campo "Código de acesso" no
+   `LoginPage` (aba Criar conta). Backend `signup` valida contra
+   `settings.signup_invite_code` ANTES de `supabase.auth.sign_up`. Vazio na env
+   = cadastro aberto (comportamento atual). — **fazer primeiro**
+
+2. **Workspaces** (grande — schema + RLS + todos os routers + shell do front):
+   - tabelas `workspaces (id, name, owner_id)` e `workspace_members
+     (workspace_id, user_id, role)`.
+   - `funnels.user_id` → `funnels.workspace_id`. Steps/edges/métricas/beats já
+     cascateiam a RLS por `funnels` — trocar `funnels.user_id = auth.uid()` por
+     `exists(... workspace_members wm where wm.workspace_id = funnels.workspace_id
+     and wm.user_id = auth.uid())`.
+   - `api_credentials` e `sales_imports`: mover pra `workspace_id` (workspace
+     compartilhado compartilha os tokens de integração).
+   - Migration de backfill: 1 workspace pessoal por usuário existente, move os
+     funis dele pra lá.
+   - Backend: `get_db`/routers passam a filtrar por workspace ativo (header
+     `X-Workspace-Id` ou querystring) em vez de `user_id`. Guarda: o backend
+     confere que `current_user` é membro do workspace pedido.
+   - Frontend: seletor de workspace no topo da Sidebar (estado "workspace
+     ativo", persistido); tela de membros (convidar por email, remover); todas
+     as chamadas de API levam o workspace ativo.
+
 #### Redesign — pixel-match do mockup (em andamento, branch `redesign-nocturne`)
 
 Pedido do usuário (2026-08-31): as telas devem ficar **100% iguais** ao mockup

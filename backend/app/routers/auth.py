@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 from ..core.supabase_client import get_supabase_client
+from ..core.config import get_settings
 from supabase import Client
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -16,6 +17,7 @@ class SignupRequest(BaseModel):
     email: EmailStr
     password: str
     full_name: str = ""
+    invite_code: str = ""
 
 
 class AuthResponse(BaseModel):
@@ -65,6 +67,14 @@ def signup(
     supabase: Client = Depends(get_supabase_client)
 ):
     """Criar nova conta"""
+    # Trava de acesso: sem o código certo, ninguém se cadastra. `""` na config
+    # libera o cadastro (comportamento antigo).
+    required = get_settings().signup_invite_code.strip()
+    if required and data.invite_code.strip() != required:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Código de acesso inválido.",
+        )
     try:
         response = supabase.auth.sign_up({
             "email": data.email,

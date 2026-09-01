@@ -15,6 +15,7 @@ export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,7 +29,7 @@ export function LoginPage() {
       if (mode === "login") {
         await login(email, password);
       } else {
-        await signup(email, password, fullName);
+        await signup(email, password, fullName, inviteCode);
       }
       navigate(from, { replace: true });
     } catch (err) {
@@ -109,6 +110,21 @@ export function LoginPage() {
                 required
               />
             </div>
+
+            {mode === "signup" && (
+              <div className="field">
+                <Label>Código de acesso</Label>
+                <input
+                  className="input"
+                  type="text"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  placeholder="Código fornecido para você"
+                  autoComplete="off"
+                  required
+                />
+              </div>
+            )}
 
             {error && (
               <div className="flex items-center gap-2 text-sm text-danger bg-danger/10 border border-danger/30 p-3 rounded-md">

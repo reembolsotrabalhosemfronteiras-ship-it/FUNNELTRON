@@ -20,7 +20,12 @@ interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, fullName?: string) => Promise<void>;
+  signup: (
+    email: string,
+    password: string,
+    fullName?: string,
+    inviteCode?: string
+  ) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -43,8 +48,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(session.user);
   };
 
-  const signup = async (email: string, password: string, fullName = "") => {
-    const session: AuthSession = await apiSignup(email, password, fullName);
+  const signup = async (
+    email: string,
+    password: string,
+    fullName = "",
+    inviteCode = ""
+  ) => {
+    const session: AuthSession = await apiSignup(email, password, fullName, inviteCode);
     saveSession(session);
     setUser(session.user);
   };

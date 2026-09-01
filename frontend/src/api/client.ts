@@ -1439,17 +1439,18 @@ export async function login(
   };
 }
 
-/** Cria uma conta nova. */
+/** Cria uma conta nova. `inviteCode` é o código de acesso exigido pelo backend. */
 export async function signup(
   email: string,
   password: string,
-  fullName = ""
+  fullName = "",
+  inviteCode = ""
 ): Promise<AuthSession> {
   if (!USE_MOCK) {
     const r = await fetch(`/api/auth/signup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, full_name: fullName }),
+      body: JSON.stringify({ email, password, full_name: fullName, invite_code: inviteCode }),
     });
     if (!r.ok) {
       const msg = await r.json().catch(() => ({}));

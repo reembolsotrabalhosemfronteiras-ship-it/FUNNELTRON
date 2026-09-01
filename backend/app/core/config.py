@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     # Ambiente
     environment: str = "production"
 
+    # Código de acesso exigido no cadastro (`POST /api/auth/signup`). Todo mundo
+    # que se cadastra digita este mesmo valor. Trocar = mudar a env
+    # `SIGNUP_INVITE_CODE` no servidor. Vazio ("") = cadastro aberto.
+    signup_invite_code: str = "100kdia"
+
     # CORS — origens explícitas + regex para subdomínios de plataforma.
     # OBS: Starlette NÃO aceita curingas ("*.vercel.app") em `allow_origins`;
     # por isso o regex existe em separado.
