@@ -649,9 +649,14 @@ uma origem, sem CORS.
 11. **Ao Vivo ainda faz 3 × N requisições a cada 5 s** — melhor que as 4 × N de
     antes, mas continua sendo uma chamada por funil por métrica. O caminho é um
     endpoint que devolva o ao vivo de todos os funis de uma vez.
-12. **Contas de teste no banco** — `qa@funneltron-local.app`, `perf.ui@funneltron-smoke.app` e vários
-   `smoke.*@funneltron-smoke.app` criados durante a verificação. Podem ser
-   apagadas no painel do Supabase → Authentication → Users.
+12. ~~**Contas de teste no banco**~~ — **RESOLVIDO em 2026-09-01.** O usuário
+   pediu "zerar o sistema": apagados os 4 funis + tudo derivado (steps, edges,
+   métricas, ao vivo, vendas, importações, 14 credenciais), todos os 9
+   workspaces, e as 34 contas de teste/antigas. Sobrou **só `t@t.com`** com 1
+   workspace pessoal vazio recriado. Sistema em estado de instalação nova.
+   `smoke_test.py` cria/apaga as suas próprias contas — não deixa lixo se
+   terminar; se interromper no meio, sobram `smoke.*@funneltron-smoke.app`
+   apagáveis no painel do Supabase → Authentication → Users.
 13. **`FunnelListPage` recalculava sozinha** — corrigido: agora usa `computeStats`
    (mesma função da tela de Métricas) em vez de reinventar entrada/saída. Achado
    ao auditar consistência de métrica entre telas: ainda não foi feita uma
