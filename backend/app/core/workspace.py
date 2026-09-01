@@ -54,7 +54,7 @@ def get_active_workspace(
     admin = get_supabase_admin()
     rows = (
         admin.table("workspace_members")
-        .select("workspace_id, workspaces(created_at)")
+        .select("workspace_id, workspaces(created_at, owner_id)")
         .eq("user_id", current_user.id)
         .execute()
         .data
@@ -75,13 +75,30 @@ def get_active_workspace(
             )
         return x_workspace_id
 
-    rows.sort(key=lambda r: ((r.get("workspaces") or {}).get("created_at") or ""))
+    # Sem header: prefere um workspace do qual o usuário é DONO (o pessoal dele),
+    # do mais antigo pro mais novo; só cai num workspace de outra pessoa se ele
+    # não for dono de nenhum. Assim, quem é convidado continua caindo no próprio.
+    def _key(r):
+        w = r.get("workspaces") or {}
+        owned = (w.get("owner_id") == current_user.id)
+        return (0 if owned else 1, w.get("created_at") or "")
+
+    rows.sort(key=_key)
     return rows[0]["workspace_id"]
 
 
 def scope(query, ws_id: Optional[str], user_id: str):
-    """Aplica o filtro de posse: por workspace se disponível, senão por user_id."""
-    return query.eq("workspace_id", ws_id) if ws_id else query.eq("user_id", user_id)
+    """Aplica o filtro de posse: por workspace se disponível, senão por user_id.
+
+    No modo workspace ainda casa linhas legadas (`workspace_id` nulo) do próprio
+    usuário — espelha o OR de transição das políticas RLS da 009, pra nada que o
+    backfill não alcançou sumir da tela.
+    """
+    if not ws_id:
+        return query.eq("user_id", user_id)
+    return query.or_(
+        f"workspace_id.eq.{ws_id},and(workspace_id.is.null,user_id.eq.{user_id})"
+    )
 
 
 def funnel_guard(supabase, funnel_id: str, ws_id: Optional[str], user_id: str):

@@ -493,6 +493,11 @@ def main() -> int:
             )
 
             # -- workspaces: trocador de conta + compartilhamento ----------
+            ws_probe = client.get("/api/workspaces", headers=auth)
+            if ws_probe.status_code == 200 and not ws_probe.json():
+                # Usuário do teste nasce via admin, sem o bootstrap do signup —
+                # cria o workspace pessoal na mão pra exercitar o fluxo.
+                client.post("/api/workspaces", headers=auth, json={"name": f"A pessoal {stamp}"})
             ws_list = client.get("/api/workspaces", headers=auth)
             if ws_list.status_code == 200 and ws_list.json():
                 ws = ws_list.json()
@@ -544,7 +549,11 @@ def main() -> int:
                     "" if sees_funnel else "compartilhamento não propagou aos funis",
                 )
 
-                # B sem o header continua sem ver (workspace pessoal dele).
+                # B ganha um workspace próprio (no app real vem do signup) e,
+                # sem header, o padrão cai nele — não no de A.
+                client.post(
+                    "/api/workspaces", headers=other_auth, json={"name": f"B pessoal {stamp}"}
+                )
                 own = client.get("/api/funnels", headers=other_auth)
                 bleeds = any(f.get("id") == funnel_id for f in (own.json() or []))
                 record(
