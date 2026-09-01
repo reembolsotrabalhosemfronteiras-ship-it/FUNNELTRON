@@ -121,42 +121,62 @@ def signup(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Código de acesso inválido.",
         )
+    # O cadastro já é travado pelo código de acesso, então não faz sentido
+    # depender do email de confirmação do Supabase — que, no SMTP compartilhado,
+    # ainda estoura "email rate limit exceeded". Cria a conta já confirmada pela
+    # API de admin (nenhum email é enviado) e loga em seguida pra devolver a
+    # sessão, igual ao fluxo antigo do ponto de vista do frontend.
+    from ..core.supabase_client import get_supabase_admin
+
+    admin = get_supabase_admin()
+
     try:
-        response = supabase.auth.sign_up({
+        created = admin.auth.admin.create_user({
             "email": data.email,
             "password": data.password,
-            "options": {
-                "data": {
-                    "full_name": data.full_name
-                }
-            }
+            "email_confirm": True,
+            "user_metadata": {"full_name": data.full_name},
         })
-
-        if not response.session:
+        user = created.user
+    except Exception as e:  # noqa: BLE001
+        msg = str(e)
+        if "already been registered" in msg or "already exists" in msg or "duplicate" in msg.lower():
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Erro ao criar conta. Verifique se o email já existe."
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Este email já tem conta. Faça login.",
             )
-
-        # Cria perfil do usuário
-        supabase.table("profiles").insert({
-            "id": response.user.id,
-            "email": data.email,
-            "full_name": data.full_name
-        }).execute()
-
-        _bootstrap_workspace(response.user.id, data.email, data.full_name)
-
-        return {
-            "access_token": response.session.access_token,
-            "refresh_token": response.session.refresh_token,
-            "user": response.user.model_dump()
-        }
-
-    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Erro ao criar conta: {str(e)}"
+            detail=f"Erro ao criar conta: {msg}",
+        )
+
+    # Perfil + workspace pessoal. `upsert` porque pode haver trigger de perfil.
+    try:
+        supabase.table("profiles").upsert({
+            "id": user.id,
+            "email": data.email,
+            "full_name": data.full_name,
+        }).execute()
+    except Exception:  # noqa: BLE001 — não bloqueia o cadastro
+        import logging
+        logging.getLogger(__name__).warning("upsert de profile falhou no cadastro", exc_info=True)
+
+    _bootstrap_workspace(user.id, data.email, data.full_name)
+
+    try:
+        session = supabase.auth.sign_in_with_password({
+            "email": data.email,
+            "password": data.password,
+        })
+        return {
+            "access_token": session.session.access_token,
+            "refresh_token": session.session.refresh_token,
+            "user": session.user.model_dump(),
+        }
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Conta criada, mas o login automático falhou: {str(e)}",
         )
 
 

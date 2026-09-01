@@ -103,18 +103,15 @@ def main() -> int:
         },
     )
 
+    # O cadastro agora nasce já confirmado pela API de admin (nenhum email é
+    # enviado), então deve passar direto — inclusive com domínio de teste.
     if signup.status_code in (200, 201):
         record("POST /api/auth/signup", PASS, f"{signup.status_code}")
     else:
-        # O Supabase exige domínio com MX no cadastro. Um endereço descartável
-        # de teste nunca vai passar — e mandar confirmação para um domínio real
-        # qualquer significaria disparar email para a caixa de um estranho.
-        # Então o usuário do teste nasce pela API de admin, já confirmado, e o
-        # resto do fluxo (login inclusive) segue igual ao do app.
         record(
             "POST /api/auth/signup",
-            SKIP,
-            "Supabase recusa domínio de teste — usuário criado via admin",
+            FAIL,
+            f"{signup.status_code} {signup.text[:160]}",
         )
         if not _create_user_via_admin(email, password):
             print("\n>> Não foi possível criar o usuário de teste.")
