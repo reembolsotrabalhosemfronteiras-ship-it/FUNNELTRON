@@ -385,6 +385,7 @@ isso, rodar o import duas vezes no mesmo dia dobra o número.
 | 98 | **Deploy do redesign na Railway** — merge `redesign-nocturne` → `main`, push, Railway reconstruiu pelo Dockerfile. Verificado no ar (`funneltron-production.up.railway.app`): login repaginado, `smoke_test.py` 44/44 contra o backend de produção. | — |
 | 99 | **Bug de concorrência do backend — RESOLVIDO.** As telas de fan-out (Métricas, Ao Vivo, Visão dos funis) disparavam ~15-20 req em paralelo e o backend devolvia 500 em massa (`Server disconnected`, `_ssl.c:2426`). Causa: `httpx.Client` síncrono do supabase-py não é thread-safe e um cliente cacheado era compartilhado pelo pool de threads do FastAPI. Correção: (a) cliente **por thread** (`threading.local`) — anon/admin/por-token; (b) `_RetryTransport` que repete GET/HEAD 3x quando o Supabase fecha um keep-alive ocioso. Burst de 21 req paralelas × 8 rodadas em produção: **0 falhas** (antes: quase tudo 500). | `backend/app/core/supabase_client.py` |
 | 100 | **Token não renovava (app parava depois de ~1h) — RESOLVIDO.** O access token do Supabase expira em ~1h e nada o renovava; passado isso, tudo 401ava em silêncio. `/api/auth/refresh` já existia mas passava um dict pro supabase-py 2.x (quer string) → sempre 401. Corrigido + body via `RefreshRequest`. No front, patch no `window.fetch`: 401 numa chamada `/api` autenticada → `POST /api/auth/refresh` → salva sessão nova → repete 1x; refresh falhou → limpa e vai pro `/login`. | `backend/app/routers/auth.py`, `frontend/src/api/client.ts` |
+| 101 | **Mapa do Brasil ao vivo — LIGADO.** `services/geo.py` resolve IP→cidade/UF/lat/lon via `ip-api.com` (grátis, sem chave, cache 12h por IP). O IP nunca é gravado, só a praça. `/api/live/track` resolve no 1º heartbeat da sessão; `_upsert_beat` degrada sozinho se a migration não rodou. `GET /api/live/geo?funnel_id=` agrega sessões ativas por cidade. Front: `getLiveGeo()` + `<LiveGeoCard>` (usa o `BrazilLiveMap` que já existia) plugado nas duas vistas do Ao Vivo. **O snippet `tracker.js` NÃO muda** — geo vem do IP da requisição. ⚠️ **Rodar `migration 008_geo_ao_vivo.sql`** no Supabase (colunas `geo_*` em `live_beats`); até lá o mapa fica vazio mas nada quebra. | `backend/app/services/geo.py`, `backend/app/routers/live.py`, `backend/supabase/migrations/008_geo_ao_vivo.sql`, `frontend/src/api/client.ts`, `frontend/src/pages/LivePage.tsx` |
 
 ### ✅ O rastreador ao vivo estava quebrado em silêncio — RESOLVIDO
 
@@ -465,12 +466,13 @@ Pedido do usuário (2026-08-31): as telas devem ficar **100% iguais** ao mockup
 | **Importações** | ✅ warning card + dropzone + prévia `.table` + guardadas |
 | **Métricas** | 🟡 faixa de seleção (chips), KPIs (card-kicker), tabelas `.table`, VSL no tom accent-2, `<Card>` Nocturne — **visão global pronta**. Falta pixel-match de: single (seg "Período atual / Atual x anterior" — precisa de métrica de período anterior no backend), compare (verdict card com troféu, seg Tabela/Cards/Sobreposto) |
 | **Ateliê** | 🟡 toolbar, paleta, legenda, **inspetor e `EdgeTypeMenu`** em token. Falta: wireframe `StepSketch` nos nós do canvas (`AtelierNode`) — hoje mostra "sem print" |
-| **Ao Vivo** | 🟡 cards de resumo (`.card`), filtros de venda (`.seg`), ConversionBar e `<Card>` Nocturne. Falta: card do mapa do Brasil (bloqueado por geolocalização no backend) |
+| **Ao Vivo** | ✅ cards de resumo, filtros, ConversionBar, **mapa do Brasil ao vivo** (item 101). Só falta rodar a migration 008 no Supabase pro mapa popular |
 
-**Mapa do Brasil ao vivo** — `BrazilLiveMap.tsx` está pronto mas **não plugado**:
-falta o backend capturar geolocalização (IP → cidade/UF) no rastreador
-(`/api/live/track`) e devolver as praças em `/api/live`. Arrumar **depois** do
-pixel-match das telas.
+**Métricas — visões single/compare (único item de UI restante):**
+- single: toggle `Período atual / Atual x anterior`. **Não precisa de backend** —
+  `PeriodInput` já aceita `DateRange`, dá pra chamar `getMetrics` 2x (período e
+  período anterior calculado com `periodDays()`).
+- compare: toggle `Tabela / Cards / Sobreposto` (3 modos de exibição; hoje é fixo).
 
 ~~Bug de backend achado no QA (2026-08-31): 500 intermitente em rajada.~~
 ✅ **RESOLVIDO** — itens 99 e 100 acima (cliente por thread + retry + refresh de token).
