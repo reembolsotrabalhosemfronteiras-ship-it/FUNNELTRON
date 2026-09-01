@@ -114,6 +114,7 @@
 }
 
 .text-muted { color: hsl(var(--muted-foreground)); }
+@keyframes livepulse { 0% { opacity: 1 } 50% { opacity: .3 } 100% { opacity: 1 } }
 .elev-sm { box-shadow: var(--shadow-sm); }
 .elev-md { box-shadow: var(--shadow-md); }
 .elev-lg { box-shadow: var(--shadow-lg); }

@@ -1310,6 +1310,54 @@ export async function getLiveFlow(
   );
 }
 
+export interface LiveGeoPoint {
+  city: string;
+  uf: string;
+  lat: number;
+  lon: number;
+  online: number;
+}
+export interface LiveGeo {
+  total: number;
+  places: number;
+  points: LiveGeoPoint[];
+}
+
+/** Praças (cidades) com gente no funil agora — alimenta o mapa do Brasil.
+ *  Sem funnelId, agrega todos os funis do usuário. */
+export async function getLiveGeo(funnelId?: string): Promise<LiveGeo> {
+  if (!USE_MOCK) {
+    const q = funnelId ? `?funnel_id=${funnelId}` : "";
+    return apiGet(`/api/live/geo${q}`).then(okJson);
+  }
+
+  // Mock: distribui um total plausível de "pessoas agora" por praças fixas,
+  // igual ao esboço — reage ao número, não inventa cidade nova.
+  const PRACAS: Omit<LiveGeoPoint, "online">[] = [
+    { city: "São Paulo", uf: "SP", lat: -23.55, lon: -46.63 },
+    { city: "Rio de Janeiro", uf: "RJ", lat: -22.91, lon: -43.17 },
+    { city: "Belo Horizonte", uf: "MG", lat: -19.92, lon: -43.94 },
+    { city: "Brasília", uf: "DF", lat: -15.79, lon: -47.88 },
+    { city: "Curitiba", uf: "PR", lat: -25.43, lon: -49.27 },
+    { city: "Porto Alegre", uf: "RS", lat: -30.03, lon: -51.23 },
+    { city: "Salvador", uf: "BA", lat: -12.97, lon: -38.5 },
+    { city: "Fortaleza", uf: "CE", lat: -3.73, lon: -38.52 },
+    { city: "Recife", uf: "PE", lat: -8.05, lon: -34.88 },
+    { city: "Goiânia", uf: "GO", lat: -16.68, lon: -49.25 },
+  ];
+  const weights = [26, 15, 9, 8, 7, 6, 6, 5, 5, 4];
+  const totalW = weights.reduce((a, b) => a + b, 0);
+  const online = funnelId ? 8 + Math.floor(Math.random() * 30) : 20 + Math.floor(Math.random() * 90);
+  const points = PRACAS.map((p, i) => ({
+    ...p,
+    online: Math.max(0, Math.round((weights[i] / totalW) * online)),
+  })).filter((p) => p.online > 0);
+  return delay(
+    { total: points.reduce((a, p) => a + p.online, 0), places: points.length, points },
+    350
+  );
+}
+
 /** Envia heartbeat/view para o rastreador próprio (backend). */
 export async function trackLiveEvent(
   payload: { funnelId: string; sessionId: string; url: string; stepId?: string; referrer?: string; utm?: Record<string, string> }

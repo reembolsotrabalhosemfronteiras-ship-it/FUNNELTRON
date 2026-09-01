@@ -37,6 +37,8 @@ import type {
   LiveConversion,
   LivePageEntry,
 } from "@/api/client";
+import { getLiveGeo, type LiveGeo } from "@/api/client";
+import { BrazilLiveMap } from "@/components/live/BrazilLiveMap";
 import { LiveFunnelCanvas } from "@/components/funnel/LiveFunnelCanvas";
 import { LiveTabs, type LiveTab } from "@/components/live/LiveTabs";
 import { TimeWindowPicker, windowLabel } from "@/components/live/TimeWindowPicker";
@@ -322,6 +324,8 @@ function FunnelLiveView({
         <SummaryCard label="Conv. compra" value={summary.conversions.toLocaleString("pt-BR")} sub={`${summary.rate.toFixed(1)}%`} icon={<LayoutGrid size={16} className="text-emerald-500" />} />
         <SummaryCard label="Receita (pagas)" value={`R$ ${summary.revenue.toLocaleString("pt-BR")}`} sub={`${summary.paid} pagas`} icon={<Zap size={16} className="text-purple-500" />} />
       </section>
+
+      <LiveGeoCard funnelId={funnel.id} />
 
       {/* Canvas fixo e centralizado */}
       <section className="space-y-3">
@@ -635,6 +639,8 @@ function GeneralLiveView({
         <SummaryCard label="Receita (pagas)" value={`R$ ${totals.revenue.toLocaleString("pt-BR")}`} sub={`${totals.paid} pagas`} icon={<Zap size={16} className="text-purple-500" />} />
       </section>
 
+      <LiveGeoCard />
+
       {/* Conversão por funil */}
       <section className="space-y-3">
         <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
@@ -672,6 +678,85 @@ function GeneralLiveView({
         </div>
         <SalesFeed sales={filteredSales} stepLabels={stepLabels} />
       </section>
+    </div>
+  );
+}
+
+/** Mapa do Brasil ao vivo + lista das praças com mais gente. Aparece nas duas
+ *  vistas (Geral e por funil), logo abaixo dos cards de resumo. */
+function LiveGeoCard({ funnelId }: { funnelId?: string }) {
+  const [geo, setGeo] = useState<LiveGeo | null>(null);
+
+  const load = useCallback(() => {
+    getLiveGeo(funnelId)
+      .then(setGeo)
+      .catch(() => setGeo((g) => g));
+  }, [funnelId]);
+
+  useEffect(() => {
+    load();
+    const i = setInterval(() => {
+      if (document.visibilityState === "visible") load();
+    }, 10000);
+    return () => clearInterval(i);
+  }, [load]);
+
+  const max = Math.max(1, ...(geo?.points ?? []).map((p) => p.online));
+
+  return (
+    <div className="card elev-sm !p-0 overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border px-[18px] py-3.5">
+        <div>
+          <p className="card-title flex items-center gap-2">
+            <span style={{ color: "var(--c-live)" }}>📍</span>
+            De onde estão acessando agora
+          </p>
+          <p className="card-body">
+            Cada ponto de luz é uma praça com gente no funil — quanto mais gente, maior o ponto
+          </p>
+        </div>
+        <span
+          className="flex items-center gap-1.5 text-[10.5px]"
+          style={{ color: "var(--c-live)" }}
+        >
+          <span
+            className="h-2 w-2 rounded-full"
+            style={{ background: "var(--c-live)", animation: "livepulse 1.4s infinite" }}
+          />
+          {geo?.total ?? 0} pessoas · {geo?.places ?? 0} praças
+        </span>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr]">
+        <div style={{ minHeight: 360, background: "var(--color-bg)" }}>
+          <BrazilLiveMap points={geo?.points ?? []} height={360} />
+        </div>
+        <div className="flex max-h-[360px] flex-col gap-2.5 overflow-y-auto border-t border-border p-4 lg:border-l lg:border-t-0">
+          <p className="card-kicker">Praças com mais gente</p>
+          {(geo?.points ?? []).slice(0, 10).map((p) => (
+            <div key={`${p.city}-${p.uf}`}>
+              <div className="mb-1 flex justify-between text-xs">
+                <span>
+                  {p.city} <span className="text-muted-foreground">{p.uf}</span>
+                </span>
+                <span className="font-bold" style={{ color: "var(--c-live)" }}>
+                  {p.online}
+                </span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded bg-neutral-900">
+                <div
+                  className="h-full rounded"
+                  style={{ width: `${(p.online / max) * 100}%`, background: "var(--c-live)" }}
+                />
+              </div>
+            </div>
+          ))}
+          {(!geo || geo.points.length === 0) && (
+            <p className="text-xs text-muted-foreground">
+              Ninguém com localização no funil agora.
+            </p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

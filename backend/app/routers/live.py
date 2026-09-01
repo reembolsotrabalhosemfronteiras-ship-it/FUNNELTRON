@@ -11,6 +11,7 @@ from ..core.supabase_client import get_supabase_client, get_supabase_admin
 from ..core.config import get_settings
 from ..services.vturb import vturb_service
 from ..services.push import notify_sale
+from ..services import geo as geo_service
 from supabase import Client
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,28 @@ router = APIRouter(prefix="/live", tags=["live"])
 
 # Header opcional para validar webhooks de venda (PerfectPay, etc.)
 WEBHOOK_HEADER = APIKeyHeader(name="X-Webhook-Secret", auto_error=False)
+
+# Enquanto a migration 008 (colunas geo_* em live_beats) não rodar no banco, o
+# primeiro heartbeat com geo estoura "column ... does not exist". Este flag
+# desliga o envio de geo até o próximo restart — o heartbeat NUNCA falha por
+# causa disso, só deixa de alimentar o mapa.
+_geo_columns_ok = True
+_GEO_KEYS = ("geo_city", "geo_uf", "geo_lat", "geo_lon")
+
+
+def _upsert_beat(supabase: Client, payload: dict) -> None:
+    global _geo_columns_ok
+    try:
+        supabase.table("live_beats").upsert(payload, on_conflict="session_id").execute()
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc).lower()
+        if any(k in msg for k in _GEO_KEYS) and ("does not exist" in msg or "column" in msg):
+            _geo_columns_ok = False
+            for k in _GEO_KEYS:
+                payload.pop(k, None)
+            supabase.table("live_beats").upsert(payload, on_conflict="session_id").execute()
+        else:
+            raise
 
 
 class LiveBeatRequest(BaseModel):
@@ -69,6 +92,7 @@ async def track_heartbeat(
             "session_id", beat.session_id
         ).execute()
         previous_url = previous.data[0]["url"] if previous.data else None
+        first_beat = not previous.data
 
         if previous_url != beat.url:
             entry = {
@@ -98,17 +122,33 @@ async def track_heartbeat(
             else:
                 supabase.table("live_page_entries").insert(entry).execute()
 
-        # Upsert: se session_id já existe, atualiza last_seen
-        result = supabase.table("live_beats").upsert({
+        # Geolocalização: resolve o IP → cidade/UF/lat/lon UMA vez por sessão (no
+        # primeiro heartbeat). O IP nunca é gravado — só a praça. Falha é
+        # silenciosa: sem geo, o visitante só não entra no mapa.
+        payload = {
             "session_id": beat.session_id,
             "funnel_id": beat.funnel_id,
             "device_id": beat.device_id,
             "url": beat.url,
             "referrer": beat.referrer,
             "utm": beat.utm,
-            "last_seen": "now()"
-        }, on_conflict="session_id").execute()
+            "last_seen": "now()",
+        }
+        if first_beat and _geo_columns_ok:
+            ip = geo_service.client_ip(
+                dict(request.headers),
+                request.client.host if request.client else None,
+            )
+            place = geo_service.resolve(ip)
+            if place:
+                payload.update({
+                    "geo_city": place["city"],
+                    "geo_uf": place["uf"],
+                    "geo_lat": place["lat"],
+                    "geo_lon": place["lon"],
+                })
 
+        _upsert_beat(supabase, payload)
         return None
 
     except Exception:
@@ -191,6 +231,73 @@ def get_live_data(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro ao buscar dados ao vivo: {str(e)}"
+        )
+
+
+@router.get("/geo")
+def get_live_geo(
+    funnel_id: Optional[str] = None,
+    current_user = Depends(get_current_user),
+    supabase: Client = Depends(get_db),
+):
+    """Praças (cidades) com gente no funil agora — alimenta o mapa do Brasil.
+
+    Sem `funnel_id`: agrega todos os funis do usuário. Cada ponto é uma cidade
+    com a contagem de sessões ativas (últimos 90s) que tinham geolocalização.
+    """
+    try:
+        # Funis do usuário — e valida a posse quando um id é pedido.
+        owned = supabase.table("funnels").select("id").eq("user_id", current_user.id).execute()
+        owned_ids = {f["id"] for f in (owned.data or [])}
+        if funnel_id:
+            if funnel_id not in owned_ids:
+                raise HTTPException(status_code=404, detail="Funil não encontrado")
+            target_ids = [funnel_id]
+        else:
+            target_ids = list(owned_ids)
+
+        if not target_ids:
+            return {"total": 0, "places": 0, "points": []}
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=90)).isoformat()
+        try:
+            beats = (
+                supabase.table("live_beats")
+                .select("geo_city, geo_uf, geo_lat, geo_lon")
+                .in_("funnel_id", target_ids)
+                .gte("last_seen", cutoff)
+                .not_.is_("geo_lat", "null")
+                .execute()
+            )
+        except Exception as exc:  # noqa: BLE001
+            # migration 008 ainda não rodou → sem colunas geo, mapa vazio.
+            if "geo_" in str(exc).lower():
+                return {"total": 0, "places": 0, "points": []}
+            raise
+
+        # Agrupa por (cidade, uf) somando sessões; guarda o primeiro lat/lon.
+        buckets: dict[tuple, dict] = {}
+        for b in beats.data or []:
+            key = (b.get("geo_city") or "—", b.get("geo_uf") or "")
+            slot = buckets.setdefault(
+                key,
+                {"city": key[0], "uf": key[1], "lat": b["geo_lat"], "lon": b["geo_lon"], "online": 0},
+            )
+            slot["online"] += 1
+
+        points = sorted(buckets.values(), key=lambda p: p["online"], reverse=True)
+        return {
+            "total": sum(p["online"] for p in points),
+            "places": len(points),
+            "points": points,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar geolocalização ao vivo: {str(e)}",
         )
 
 
