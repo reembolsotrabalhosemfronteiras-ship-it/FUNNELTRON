@@ -334,24 +334,30 @@ export function DashboardPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="h-80 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <RadarChart
-                      data={vsl.map((v) => ({
-                        vsl: v.name.split(" ")[1] || v.name.slice(0, 10),
-                        engajamento: v.engagementRate,
-                        conversao: v.conversionRate * 2,
-                      }))}
-                    >
-                      <PolarGrid />
-                      <PolarAngleAxis dataKey="vsl" />
-                      <PolarRadiusAxis domain={[0, 100]} />
-                      <Radar name="Engajamento" dataKey="engajamento" stroke="#9690c9" fill="#9690c9" fillOpacity={0.4} />
-                      <Radar name="Conversão (x2)" dataKey="conversao" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} />
-                      <Tooltip />
-                    </RadarChart>
-                  </ResponsiveContainer>
-                </div>
+                {vsl.length >= 3 ? (
+                  <div className="h-80 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadarChart
+                        data={vsl.map((v) => ({
+                          vsl: v.name.split(" ")[1] || v.name.slice(0, 10),
+                          engajamento: v.engagementRate,
+                          conversao: v.conversionRate * 2,
+                        }))}
+                      >
+                        <PolarGrid />
+                        <PolarAngleAxis dataKey="vsl" />
+                        <PolarRadiusAxis domain={[0, 100]} />
+                        <Radar name="Engajamento" dataKey="engajamento" stroke="#9690c9" fill="#9690c9" fillOpacity={0.4} />
+                        <Radar name="Conversão (x2)" dataKey="conversao" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} />
+                        <Tooltip />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <p className="card-body py-10 text-center text-muted-foreground">
+                    O radar aparece quando há 3 ou mais VSLs com dados do VTurb no período.
+                  </p>
+                )}
               </CardContent>
             </Card>
           </>

@@ -34,17 +34,31 @@ def notify_sale(funnel_id: str, status_value: str, amount: float, customer: str 
 
     try:
         supabase = get_supabase_admin()
-        funnel = supabase.table("funnels").select("user_id, name").eq(
+        funnel = supabase.table("funnels").select("user_id, name, workspace_id").eq(
             "id", funnel_id
         ).execute()
         if not funnel.data:
             return
-        user_id = funnel.data[0]["user_id"]
         funnel_name = funnel.data[0].get("name") or "seu funil"
+
+        # Todo mundo que enxerga o funil recebe a notificação: se o funil está
+        # num workspace, são todos os membros; senão, cai no dono (legado).
+        recipient_ids: set[str] = {funnel.data[0]["user_id"]}
+        workspace_id = funnel.data[0].get("workspace_id")
+        if workspace_id:
+            try:
+                members = supabase.table("workspace_members").select("user_id").eq(
+                    "workspace_id", workspace_id
+                ).execute()
+                recipient_ids |= {
+                    m["user_id"] for m in (members.data or []) if m.get("user_id")
+                }
+            except Exception:  # noqa: BLE001 — tabela ainda não existe (pré-009)
+                pass
 
         subs = supabase.table("push_subscriptions").select(
             "id, endpoint, p256dh, auth"
-        ).eq("user_id", user_id).execute()
+        ).in_("user_id", list(recipient_ids)).execute()
         if not subs.data:
             return
 
