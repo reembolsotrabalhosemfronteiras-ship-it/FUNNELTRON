@@ -468,11 +468,12 @@ Pedido do usuário (2026-08-31): as telas devem ficar **100% iguais** ao mockup
 | **Ateliê** | 🟡 toolbar, paleta, legenda, **inspetor e `EdgeTypeMenu`** em token. Falta: wireframe `StepSketch` nos nós do canvas (`AtelierNode`) — hoje mostra "sem print" |
 | **Ao Vivo** | ✅ cards de resumo, filtros, ConversionBar, **mapa do Brasil ao vivo** (item 101). Só falta rodar a migration 008 no Supabase pro mapa popular |
 
-**Métricas — visões single/compare (único item de UI restante):**
-- single: toggle `Período atual / Atual x anterior`. **Não precisa de backend** —
-  `PeriodInput` já aceita `DateRange`, dá pra chamar `getMetrics` 2x (período e
-  período anterior calculado com `periodDays()`).
-- compare: toggle `Tabela / Cards / Sobreposto` (3 modos de exibição; hoje é fixo).
+**Métricas — visões single/compare:**
+- ✅ single: toggle `Período atual / Atual x anterior` (item ~102) — busca o
+  período anterior via `getMetrics` com `DateRange`, mostra delta p.p./% nos KPIs.
+- 🟡 compare: toggle `Tabela / Cards / Sobreposto`. Hoje a comparação mostra
+  tabela métrica-a-métrica + gráficos (fixo). Falta o `.seg` de 3 modos —
+  puramente apresentacional, mesmos dados em arranjo diferente.
 
 ~~Bug de backend achado no QA (2026-08-31): 500 intermitente em rajada.~~
 ✅ **RESOLVIDO** — itens 99 e 100 acima (cliente por thread + retry + refresh de token).
