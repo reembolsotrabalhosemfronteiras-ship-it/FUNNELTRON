@@ -1112,24 +1112,24 @@ function SingleFunnelView({
             mainPath.map((c, i) => {
               const top = timeOnPage.find((t) => t.stepId === c.sourceStepId);
               return (
-                <div key={i} className="space-y-2 rounded-lg bg-muted/30 p-3">
+                <div key={i} className="space-y-2 rounded-md bg-neutral-900/50 p-3">
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex min-w-0 items-center gap-2">
                       <span className="truncate font-medium">{c.from}</span>
                       <span className="shrink-0 text-muted-foreground">→</span>
                       <span className="truncate font-medium">{c.to}</span>
                     </div>
-                    <Badge
-                      variant={c.rate >= 80 ? "success" : c.rate >= 50 ? "warning" : "danger"}
-                      className="shrink-0 font-semibold"
+                    <span
+                      className="shrink-0 text-sm font-semibold"
+                      style={{ color: conversionColor(c.rate) }}
                     >
                       {c.rate.toFixed(1)}%
-                    </Badge>
+                    </span>
                   </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-900">
                     <div
-                      className={cn("h-full rounded-full transition-all", conversionBar(c.rate))}
-                      style={{ width: `${Math.min(100, c.rate)}%` }}
+                      className="h-full rounded-full transition-all"
+                      style={{ width: `${Math.min(100, c.rate)}%`, background: conversionColor(c.rate) }}
                     />
                   </div>
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
@@ -1147,7 +1147,7 @@ function SingleFunnelView({
                       </>
                     )}
                     <span>·</span>
-                    <span className="inline-flex items-center gap-1 text-purple-600">
+                    <span className="inline-flex items-center gap-1" style={{ color: "var(--color-accent-2-300)" }}>
                       <Clock size={12} />
                       {fmtDuration(top?.avgSeconds)} em média em "{c.from}"
                     </span>
@@ -1274,7 +1274,7 @@ function VslSection({ bundle }: { bundle: FunnelBundle }) {
                 >
                   Média do funil
                 </MetricLabel>
-                <p className="text-lg font-bold text-purple-600">
+                <p className="text-lg font-bold" style={{ color: "var(--color-accent-2-300)" }}>
                   {pct(vsl.avgConversion)}
                 </p>
               </div>
@@ -1285,7 +1285,7 @@ function VslSection({ bundle }: { bundle: FunnelBundle }) {
                 >
                   Engajamento
                 </MetricLabel>
-                <p className="text-lg font-bold text-purple-600">
+                <p className="text-lg font-bold" style={{ color: "var(--color-accent-2-300)" }}>
                   {pct(vsl.avgEngagement)}
                 </p>
               </div>
@@ -1549,7 +1549,7 @@ function VslConversionCard({
             <MetricLabel metric="vslConversion" className="text-sm text-muted-foreground">
               Conversão de funil da VSL
             </MetricLabel>
-            <p className={cn("text-2xl font-bold", view === "vturb" ? "text-purple-600" : "text-purple-400")}>
+            <p className="text-2xl font-bold" style={{ color: "var(--color-accent-2-300)" }}>
               {value}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
@@ -1617,15 +1617,13 @@ function SourceCard({
                 key={label}
                 className={cn(
                   "rounded-lg p-3",
-                  accent ? "bg-purple-500/10" : "bg-muted/50"
+                  accent ? "bg-[var(--color-accent-2-900)]" : "bg-neutral-900/50"
                 )}
               >
                 <p className="text-xs text-muted-foreground">{label}</p>
                 <p
-                  className={cn(
-                    "text-xl font-bold",
-                    accent && "text-purple-600"
-                  )}
+                  className="text-xl font-bold"
+                  style={accent ? { color: "var(--color-accent-2-300)" } : undefined}
                 >
                   {value ?? 0}
                 </p>

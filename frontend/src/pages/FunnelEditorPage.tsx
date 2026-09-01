@@ -1049,16 +1049,16 @@ function EdgeTypeMenu({
   onClose: () => void;
 }) {
   return (
-    <div className="absolute left-1/2 top-20 z-30 w-[230px] -translate-x-1/2 rounded-xl border border-slate-700 bg-slate-900/98 p-2.5 shadow-2xl backdrop-blur">
+    <div
+      className="absolute left-1/2 top-20 z-30 w-[230px] -translate-x-1/2 rounded-md border p-2.5"
+      style={{ borderColor: "var(--color-divider)", background: "var(--color-surface)", boxShadow: "var(--shadow-lg)" }}
+    >
       <div className="mb-2 flex items-center justify-between">
-        <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-          <Link2 size={12} className="text-sky-400" />
+        <span className="flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <Link2 size={12} className="text-primary" />
           Tipo da seta
         </span>
-        <button
-          onClick={onClose}
-          className="rounded p-0.5 text-slate-500 hover:bg-slate-800 hover:text-slate-200"
-        >
+        <button onClick={onClose} className="btn btn-ghost !px-1 !py-0.5">
           <X size={13} />
         </button>
       </div>
@@ -1068,29 +1068,23 @@ function EdgeTypeMenu({
           <button
             key={c}
             onClick={() => onPick(c)}
-            className={cn(
-              "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors",
-              edge.condition === c
-                ? "bg-slate-800 text-slate-100"
-                : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
-            )}
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs transition-colors"
+            style={{
+              background: edge.condition === c ? "var(--color-neutral-900)" : "transparent",
+              color: edge.condition === c ? "var(--color-text)" : "hsl(var(--muted-foreground))",
+            }}
           >
             <span
               className="h-0.5 w-6 shrink-0 rounded-full"
               style={{ backgroundColor: EDGE_CONDITION_COLOR[c] }}
             />
             {EDGE_CONDITION_LABEL[c]}
-            {edge.condition === c && (
-              <Check size={12} className="ml-auto text-sky-400" />
-            )}
+            {edge.condition === c && <Check size={12} className="ml-auto text-primary" />}
           </button>
         ))}
       </div>
 
-      <button
-        onClick={onDelete}
-        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-500/30 px-2 py-1.5 text-xs text-red-400 transition-colors hover:bg-red-500/10"
-      >
+      <button onClick={onDelete} className="btn btn-danger btn-block mt-2 !text-xs">
         <Trash2 size={12} />
         Remover seta
       </button>
