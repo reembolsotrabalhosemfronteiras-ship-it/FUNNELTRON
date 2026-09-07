@@ -62,6 +62,8 @@ export interface FunnelStep {
   subFunnelId?: string | null;
   /** Preenchido quando `type === "vsl"`: player do VTurb para o proxy de live users. */
   playerId?: string | null;
+  /** Flag de validação em tempo de edição (apenas para steps VSL). */
+  _playerIdValid?: boolean;
 }
 
 export interface FunnelEdge {

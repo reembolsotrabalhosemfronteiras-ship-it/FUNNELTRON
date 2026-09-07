@@ -13,7 +13,7 @@ import {
   Heart,
   ArrowClockwise,
   Spinner as SpinnerIcon,
-  ChevronDown,
+  CaretDown,
   Funnel,
   Download,
 } from "@phosphor-icons/react";
@@ -428,11 +428,14 @@ export function QuizAdsTab({ funnelId }: { funnelId: string }) {
               {adIds.length > 1 && (
                 <Select
                   value={selectedAdId ?? "all"}
-                  onChange={(v) => setSelectedAdId(v === "all" ? undefined : v)}
-                  options={[{ value: "all", label: "Todos os Ad IDs (agregado)" }, ...adIds.map((id) => ({ value: id, label: id }))]}
-                  placeholder="Filtrar por Ad ID"
+                  onChange={(e) => setSelectedAdId(e.target.value === "all" ? undefined : e.target.value)}
                   className="w-full sm:w-auto sm:min-w-[220px] min-h-[44px]"
-                />
+                >
+                  <option value="all">Todos os Ad IDs (agregado)</option>
+                  {adIds.map((id) => (
+                    <option key={id} value={id}>{id}</option>
+                  ))}
+                </Select>
               )}
             </div>
           </CardHeader>
@@ -480,7 +483,7 @@ export function QuizAdsTab({ funnelId }: { funnelId: string }) {
                                 }}
                               >
                                 <span className="text-[12px] text-muted-foreground min-w-[80px] truncate">
-                                  {key === "location" ? `${item.city} - ${item.state}` : (item as any).range || (item as any).label}
+                                  {key === "location" && "city" in item ? `${(item as { city: string; state: string }).city} - ${(item as { city: string; state: string }).state}` : ((item as any).range || (item as any).label)}
                                 </span>
                                 <div className="flex-1 h-1.5 bg-muted/50 rounded-full overflow-hidden">
                                   <div

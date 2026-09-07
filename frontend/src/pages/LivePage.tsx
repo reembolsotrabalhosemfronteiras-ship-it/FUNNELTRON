@@ -975,24 +975,33 @@ export function LivePage() {
             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Filtros UTM
             </span>
-            <Select
+            <select
               value={filterPlacement}
-              onChange={setFilterPlacement}
-              options={placementOptions}
-              className="w-full sm:w-48 min-h-[44px]"
-            />
-            <Select
+              onChange={(e) => setFilterPlacement(e.target.value)}
+              className="w-full sm:w-48 min-h-[44px] flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+            >
+              {placementOptions.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            <select
               value={filterCreative}
-              onChange={setFilterCreative}
-              options={creativeOptions}
-              className="w-full sm:w-52 min-h-[44px]"
-            />
-            <Select
+              onChange={(e) => setFilterCreative(e.target.value)}
+              className="w-full sm:w-52 min-h-[44px] flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+            >
+              {creativeOptions.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            <select
               value={filterCampaign}
-              onChange={setFilterCampaign}
-              options={campaignOptions}
-              className="w-full sm:w-56 min-h-[44px]"
-            />
+              onChange={(e) => setFilterCampaign(e.target.value)}
+              className="w-full sm:w-56 min-h-[44px] flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+            >
+              {campaignOptions.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
             {(filterPlacement || filterCreative || filterCampaign) && (
               <Button
                 size="sm"

@@ -23,8 +23,8 @@ import {
   getQuizByCampaign,
   type ParsedCampaign,
   type QuizByCampaignRow,
-  type PeriodInput,
 } from "@/api/client";
+import { type PeriodInput } from "@/types";
 import { useWorkspace } from "@/components/common/WorkspaceContext";
 
 // ---------------------------------------------------------------------------
@@ -363,7 +363,7 @@ export function ParsedCampaignsTab({ funnelId }: { funnelId: string }) {
                           {c.campaignCode}
                         </td>
                         <td className="px-4 py-3">
-                          <Badge variant="neutral" className="text-[10px]">
+                          <Badge variant="default" className="text-[10px]">
                             {c.placement}
                           </Badge>
                         </td>

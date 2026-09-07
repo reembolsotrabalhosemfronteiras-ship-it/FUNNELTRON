@@ -70,11 +70,15 @@ export function AttributionSettingsCard(_props?: Props) {
         <div className="w-full sm:max-w-xs">
           <Select
             value={model}
-            onChange={handleChange}
-            options={OPTIONS}
-            placeholder="Selecione o modelo"
+            onChange={(e) => handleChange(e.target.value)}
             className="min-h-[44px]"
-          />
+          >
+            {OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
         </div>
 
         <div className="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground space-y-1">
