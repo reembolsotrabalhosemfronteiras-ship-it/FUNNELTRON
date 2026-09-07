@@ -50,6 +50,9 @@ class ParsedUtm:
         placement só é considerado significativo se houver pelo menos um
         campo do padrão de slug (creative_code, campaign_code, etc.),
         pois utm_term pode conter qualquer valor genérico.
+
+        UPDATE: Agora também considera válido se houver utm_source ou utm_campaign
+        padrão, para não ignorar tráfego pago comum que não usa o slug complexo.
         """
         slug_fields = [
             self.creative_code,
@@ -60,7 +63,10 @@ class ParsedUtm:
         has_slug_pattern = any(slug_fields)
 
         if not has_slug_pattern:
-            # Sem padrão de slug, considera vazio mesmo se placement existir
+            # Fallback: se não tem o padrão complexo, mas tem UTM source/campaign,
+            # considera válido para criar uma campanha "genérica" baseada no nome.
+            if self.raw_source or (self.raw_slug and self.raw_slug != "||||"):
+                return False
             return True
 
         # Com padrão de slug, placement também conta

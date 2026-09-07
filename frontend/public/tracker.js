@@ -410,10 +410,13 @@
 
   /**
    * Delegação de evento para cliques em elementos de quiz.
-   * Captura cliques em: buttons, inputs radio, labels, elementos com data-funneltron-answer.
+   * MODO AGRESSIVO: Escuta TODOS os cliques em botões/inputs e tenta inferir se é quiz.
+   * Isso garante captura mesmo em ferramentas de terceiros (Typeform, Tally) que não usam
+   * as classes .quiz/.pergunta esperadas.
    */
   function initQuizTracking() {
-    var quizSelectors = [
+    // Seletores explícitos (prioridade) + genéricos (fallback)
+    var explicitSelectors = [
       '[data-funneltron-answer]',
       '[data-funneltron-question] [data-funneltron-answer-value]',
       '.quiz button, .quiz input[type=radio], .quiz label',
@@ -423,7 +426,20 @@
 
     document.addEventListener('click', function (e) {
       var target = e.target;
-      var match = target.closest(quizSelectors);
+
+      // 1. Tenta match explícito primeiro (mais rápido e preciso)
+      var match = target.closest(explicitSelectors);
+
+      // 2. Se não achou explícito, verifica se é um elemento interativo genérico
+      //    (botão, link, input) e tenta inferir contexto de quiz
+      if (!match) {
+        if (target.tagName === 'BUTTON' || target.tagName === 'A' ||
+            (target.tagName === 'INPUT' && (target.type === 'radio' || target.type === 'checkbox' || target.type === 'submit')) ||
+            target.getAttribute('role') === 'button') {
+          match = target;
+        }
+      }
+
       if (!match) return;
 
       var quizData = extrairQuizDoElemento(match);
