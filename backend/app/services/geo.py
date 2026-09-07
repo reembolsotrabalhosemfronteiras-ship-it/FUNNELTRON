@@ -21,6 +21,10 @@ logger = logging.getLogger(__name__)
 
 _ENDPOINT = "http://ip-api.com/json/{ip}"
 _FIELDS = "status,message,country,countryCode,regionName,region,city,lat,lon"
+# Fallback: ip-api.com bloqueia/limita IPs de datacenter (Railway) com frequência,
+# mesmo funcionando de um IP residencial. ipapi.co é HTTPS e aceita baixo volume
+# sem chave — entra quando o primário falha, pra o mapa não ficar vazio em produção.
+_FALLBACK_ENDPOINT = "https://ipapi.co/{ip}/json/"
 _TTL = 12 * 60 * 60  # 12h
 _NEGATIVE_TTL = 30 * 60  # não achou / erro: tenta de novo em 30 min
 _TIMEOUT = 4.0
@@ -98,7 +102,28 @@ def resolve(ip: Optional[str]) -> Optional[Geo]:
                 lon=float(data["lon"]),
             )
     except Exception:  # noqa: BLE001 — resolução é best-effort
-        logger.debug("Falha ao resolver geo do IP (silencioso)", exc_info=True)
+        logger.debug("Falha no primário ip-api.com (tenta fallback)", exc_info=True)
+
+    # Fallback: ip-api.com costuma bloquear IPs de datacenter (Railway). Se o
+    # primário não resolveu, tenta ipapi.co (HTTPS, sem chave em baixo volume).
+    if geo is None:
+        try:
+            r2 = httpx.get(
+                _FALLBACK_ENDPOINT.format(ip=ip),
+                timeout=_TIMEOUT,
+                headers={"User-Agent": "Funneltron-Geo/1.0"},
+            )
+            d2 = r2.json()
+            # ipapi.co sinaliza erro com a chave "error"; sucesso tem latitude/longitude.
+            if not d2.get("error") and d2.get("latitude") is not None:
+                geo = Geo(
+                    city=d2.get("city") or d2.get("region") or "—",
+                    uf=(d2.get("region_code") or d2.get("country_code") or "").upper(),
+                    lat=float(d2["latitude"]),
+                    lon=float(d2["longitude"]),
+                )
+        except Exception:  # noqa: BLE001 — resolução é best-effort
+            logger.debug("Falha no fallback ipapi.co (silencioso)", exc_info=True)
 
     with _lock:
         _cache[ip] = (geo, now + (_TTL if geo else _NEGATIVE_TTL))
