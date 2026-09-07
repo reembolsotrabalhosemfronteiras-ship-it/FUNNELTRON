@@ -37,6 +37,11 @@ WORKDIR /app
 COPY backend/requirements.txt ./backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt
 
+# Garante que o Chromium esteja instalado e compatível com a versão do playwright.
+# A imagem base já tem, mas às vezes há mismatch de versão ou o binário não está no PATH esperado.
+# Rodar isso no build garante que o navegador certo esteja lá.
+RUN playwright install chromium
+
 COPY backend/ ./backend/
 COPY --from=frontend /app/frontend/dist ./frontend/dist
 
