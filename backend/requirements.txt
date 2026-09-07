@@ -25,3 +25,5 @@ Pillow>=11
 playwright>=1.48.0
 # Notificação push (PIX gerado/pago) no navegador/SO via Web Push (VAPID).
 pywebpush>=2.0
+# Cache TTL em memória (usado no clarity_service para evitar chamadas repetidas à API).
+cachetools>=5.3
