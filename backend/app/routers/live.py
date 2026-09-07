@@ -56,6 +56,361 @@ class LiveBeatRequest(BaseModel):
     url: str
     referrer: Optional[str] = None
     utm: Optional[dict] = None
+    # UTM da primeira página visitada na sessão (first-touch).
+    # O tracker persiste isso no sessionStorage e envia em todo heartbeat/quiz.
+    first_utm: Optional[dict] = None
+    # Quiz answer (opcional) — se presente, event_type = 'quiz_answer'
+    event_type: Optional[str] = None  # 'pageview' | 'quiz_answer' | 'contact_form'
+    question_id: Optional[str] = None
+    answer_id: Optional[str] = None
+    answer_value: Optional[str] = None
+    # Campos de contato capturados por auto-detect de formulário no tracker.js.
+    # Nullable: nem todo lead preenche, e o quiz continua funcionando sem elas.
+    contact_name: Optional[str] = None
+    contact_email: Optional[str] = None
+
+
+def _salvar_quiz_answer(supabase: Client, beat: LiveBeatRequest) -> None:
+    """Salva resposta de quiz e atualiza lead_profile."""
+    if not beat.question_id or not beat.answer_id:
+        return
+
+    # Extrai UTM do beat.utm
+    utm = beat.utm or {}
+    utm_source = utm.get("utm_source")
+    utm_medium = utm.get("utm_medium")
+    utm_campaign = utm.get("utm_campaign")
+    utm_content = utm.get("utm_content")
+    utm_term = utm.get("utm_term")
+
+    # Resolve step_id pela URL (mesma lógica do trigger do banco)
+    step_id = None
+    try:
+        steps = supabase.table("funnel_steps").select("id, url").eq(
+            "funnel_id", beat.funnel_id
+        ).execute()
+        target = beat.url.split("?")[0].split("#")[0].rstrip("/")
+        for s in steps.data or []:
+            if (s.get("url") or "").split("?")[0].split("#")[0].rstrip("/") == target:
+                step_id = s["id"]
+                break
+    except Exception:
+        pass
+
+    # Salva quiz_answer
+    quiz_row = {
+        "funnel_id": beat.funnel_id,
+        "session_id": beat.session_id,
+        "device_id": beat.device_id,
+        "step_id": step_id,
+        "question_id": beat.question_id,
+        "answer_id": beat.answer_id,
+        "answer_value": beat.answer_value,
+        "utm_source": utm_source,
+        "utm_medium": utm_medium,
+        "utm_campaign": utm_campaign,
+        "utm_content": utm_content,
+        "utm_term": utm_term,
+        "timestamp": beat.timestamp if hasattr(beat, 'timestamp') and beat.timestamp else "now()",
+    }
+    supabase.table("quiz_answers").insert(quiz_row).execute()
+
+    # Atualiza/cria lead_profile
+    _atualizar_lead_profile(supabase, beat, utm, step_id)
+
+
+def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, step_id: str | None) -> None:
+    """Upsert do lead_profile consolidando quiz + UTM com atribuição por parsing de slug."""
+    from app.services.utm_parser import parse_utm_slug
+
+    try:
+        ws_id = _get_workspace_id(supabase, beat.funnel_id)
+
+        # Busca modelo de atribuição do workspace (first_touch ou last_touch)
+        attribution_model = "first_touch"
+        try:
+            ws_result = supabase.table("workspaces").select("attribution_model").eq(
+                "id", ws_id
+            ).execute()
+            if ws_result.data and ws_result.data[0].get("attribution_model"):
+                attribution_model = ws_result.data[0]["attribution_model"]
+        except Exception:
+            pass
+
+        # Escolhe UTM de atribuição baseado no modelo
+        first_utm = beat.first_utm or {}
+        attribution_utm = first_utm if attribution_model == "first_touch" else utm
+
+        # --- AUTO-CRIAÇÃO DE CAMPANHA POR PARSING DE SLUG UTM ---
+        parsed_campaign_id = None
+        parsed = parse_utm_slug(attribution_utm)
+        if not parsed.is_empty():
+            try:
+                rpc_result = supabase.rpc("resolve_or_create_parsed_campaign", {
+                    "p_slug_key": parsed.to_campaign_key(),
+                    "p_creative_code": parsed.creative_code,
+                    "p_campaign_code": parsed.campaign_code,
+                    "p_page_code": parsed.page_code,
+                    "p_platform_ad_id": parsed.platform_ad_id,
+                    "p_placement": parsed.placement,
+                    "p_sequence": parsed.sequence,
+                    "p_version_date": parsed.version_date,
+                    "p_raw_source": parsed.raw_source,
+                    "p_raw_slug": parsed.raw_slug,
+                    "p_workspace_id": ws_id,
+                }).execute()
+                if rpc_result.data:
+                    # BUG FIX: RPC pode retornar parsed_campaign de outro workspace
+                    # (quando mesma slug_key existe em múltiplos workspaces).
+                    # Verifica se o workspace_id bate; se não, força fallback manual.
+                    rpc_pc_id = rpc_result.data
+                    pc_check = supabase.table("parsed_campaigns").select("workspace_id").eq(
+                        "id", rpc_pc_id
+                    ).execute()
+                    if pc_check.data and pc_check.data[0].get("workspace_id") == ws_id:
+                        parsed_campaign_id = rpc_pc_id
+                    else:
+                        logger.warning(
+                            "RPC retornou parsed_campaign de outro workspace (session=%s, "
+                            "rpc_ws=%s, expected_ws=%s). Forçando fallback manual.",
+                            beat.session_id,
+                            pc_check.data[0].get("workspace_id") if pc_check.data else "unknown",
+                            ws_id,
+                        )
+                        raise Exception("Workspace mismatch - forcing fallback")
+            except Exception as exc:  # noqa: BLE001
+                # BUG-11 fix: log explícito + fallback gracioso. O heartbeat NUNCA
+                # deve falhar por causa do RPC de parsed_campaign — a venda e o
+                # lead_profile continuam sendo salvos, só sem vínculo com campanha
+                # parseada. Sem esse try/except amplo, um erro no RPC (ex: coluna
+                # nova não migrada ainda) derrubava o heartbeat inteiro.
+                logger.warning(
+                    "RPC resolve_or_create_parsed_campaign falhou (session=%s): %s. "
+                    "Tentando fallback manual.",
+                    beat.session_id, str(exc),
+                )
+                # Fallback manual: faz upsert direto na tabela parsed_campaigns
+                # (funciona tanto em modo local quanto Supabase quando o RPC falha).
+                # A lógica espelha o RPC do Supabase: busca por slug_key, se não
+                # existe insere, senão retorna o ID existente.
+                try:
+                    slug_key = parsed.to_campaign_key()
+                    # Busca primeiro com workspace_id correto
+                    existing_correct = supabase.table("parsed_campaigns").select("id").eq(
+                        "slug_key", slug_key
+                    ).eq("workspace_id", ws_id).execute()
+                    if existing_correct.data:
+                        parsed_campaign_id = existing_correct.data[0]["id"]
+                    else:
+                        # Verifica se existe em outro workspace (constraint global de slug_key)
+                        existing_any = supabase.table("parsed_campaigns").select("id, workspace_id").eq(
+                            "slug_key", slug_key
+                        ).execute()
+                        if existing_any.data:
+                            # Existe em outro workspace - atualiza workspace_id
+                            old_pc_id = existing_any.data[0]["id"]
+                            old_ws = existing_any.data[0]["workspace_id"]
+                            logger.warning(
+                                "Fallback: slug_key existe em outro workspace (session=%s, old_ws=%s, new_ws=%s). "
+                                "Atualizando workspace_id do parsed_campaign.",
+                                beat.session_id, old_ws, ws_id,
+                            )
+                            supabase.table("parsed_campaigns").update(
+                                {"workspace_id": ws_id, "last_seen_at": "now()"}
+                            ).eq("id", old_pc_id).execute()
+                            parsed_campaign_id = old_pc_id
+                        else:
+                            # Não existe em nenhum workspace - cria novo
+                            import uuid as _uuid
+                            new_pc = {
+                                "id": str(_uuid.uuid4()),
+                                "workspace_id": ws_id,
+                                "slug_key": slug_key,
+                                "creative_code": parsed.creative_code,
+                                "campaign_code": parsed.campaign_code,
+                                "page_code": parsed.page_code,
+                                "platform_ad_id": parsed.platform_ad_id,
+                                "placement": parsed.placement,
+                                "sequence": parsed.sequence,
+                                "version_date": parsed.version_date,
+                                "raw_source": parsed.raw_source,
+                                "raw_slug": parsed.raw_slug,
+                                "session_count": 1,
+                            }
+                            result_pc = supabase.table("parsed_campaigns").insert(new_pc).execute()
+                            if result_pc.data:
+                                parsed_campaign_id = result_pc.data[0]["id"]
+                            logger.info(
+                                "Fallback manual: parsed_campaign criada (session=%s, id=%s)",
+                                beat.session_id, parsed_campaign_id,
+                            )
+                except Exception as fallback_exc:  # noqa: BLE001
+                    logger.warning(
+                        "Fallback manual de parsed_campaign também falhou (session=%s): %s",
+                        beat.session_id, str(fallback_exc),
+                    )
+                    parsed_campaign_id = None
+
+        # Busca profile existente
+        existing = supabase.table("lead_profiles").select("*").eq(
+            "session_id", beat.session_id
+        ).execute()
+
+        # Busca ad_campaign pelo UTM de atribuição para preencher FKs explícitas
+        attributed_ad_id = None
+        attributed_campaign_id = None
+        ad_id_text = None
+        campaign_id_text = None
+        audience_json = None
+        if attribution_utm.get("utm_source") or attribution_utm.get("utm_campaign"):
+            try:
+                query = supabase.table("ad_campaigns").select(
+                    "id, ad_id, campaign_id, audience_json"
+                ).eq("workspace_id", ws_id)
+                if attribution_utm.get("utm_content"):
+                    query = query.eq("utm_json->>utm_content", attribution_utm["utm_content"])
+                if attribution_utm.get("utm_campaign"):
+                    query = query.eq("utm_json->>utm_campaign", attribution_utm["utm_campaign"])
+                if attribution_utm.get("utm_source"):
+                    query = query.eq("utm_json->>utm_source", attribution_utm["utm_source"])
+                result = query.limit(1).execute()
+                if result.data:
+                    attributed_ad_id = result.data[0].get("id")
+                    attributed_campaign_id = result.data[0].get("id")  # mesma tabela, campanha é outro campo
+                    ad_id_text = result.data[0].get("ad_id")
+                    campaign_id_text = result.data[0].get("campaign_id")
+                    audience_json = result.data[0].get("audience_json")
+            except Exception:
+                pass
+
+        # Novo quiz answer para adicionar ao array
+        novo_quiz = {
+            "question_id": beat.question_id,
+            "answer_id": beat.answer_id,
+            "answer_value": beat.answer_value,
+            "step_id": step_id,
+            "timestamp": beat.timestamp if hasattr(beat, 'timestamp') and beat.timestamp else "now()",
+        }
+
+        if existing.data:
+            profile = existing.data[0]
+            quiz_answers = profile.get("quiz_answers_json") or []
+            quiz_answers.append(novo_quiz)
+            update_data = {
+                "quiz_answers_json": quiz_answers,
+                "utm_json": utm or profile.get("utm_json"),
+                "last_utm_json": utm or profile.get("last_utm_json"),
+                "funnel_id": beat.funnel_id,
+                "device_id": beat.device_id or profile.get("device_id"),
+            }
+            # Garante que workspace_id seja preenchido mesmo em updates
+            # (perfis criados antes da correção tinham workspace_id=NULL)
+            if ws_id and not profile.get("workspace_id"):
+                update_data["workspace_id"] = ws_id
+            # Só sobrescreve first_utm se ainda não existe (preserva primeira visita)
+            if not profile.get("first_utm_json") and first_utm:
+                update_data["first_utm_json"] = first_utm
+            # Campos de contato capturados por auto-detect de formulário.
+            # Só sobrescreve se o tracker enviou valor novo (evita apagar
+            # nome/email já preenchidos com dados vazios de heartbeat).
+            if beat.contact_name:
+                update_data["contact_name"] = beat.contact_name
+            if beat.contact_email:
+                update_data["contact_email"] = beat.contact_email
+            # Atribuição só muda se encontrou ad_campaign correspondente
+            if attributed_ad_id:
+                update_data["attributed_ad_id"] = attributed_ad_id
+                update_data["attributed_campaign_id"] = attributed_campaign_id
+                update_data["ad_id"] = ad_id_text
+                update_data["campaign_id"] = campaign_id_text
+                update_data["audience_json"] = audience_json
+            else:
+                update_data["ad_id"] = ad_id_text or profile.get("ad_id")
+                update_data["campaign_id"] = campaign_id_text or profile.get("campaign_id")
+                update_data["audience_json"] = audience_json or profile.get("audience_json")
+            # Vincula à campanha detectada por parsing de slug UTM
+            if parsed_campaign_id and not profile.get("parsed_campaign_id"):
+                update_data["parsed_campaign_id"] = parsed_campaign_id
+            supabase.table("lead_profiles").update(update_data).eq(
+                "session_id", beat.session_id
+            ).execute()
+        else:
+            insert_data = {
+                "workspace_id": ws_id,
+                "funnel_id": beat.funnel_id,
+                "session_id": beat.session_id,
+                "device_id": beat.device_id,
+                "quiz_answers_json": [novo_quiz],
+                "utm_json": utm,
+                "first_utm_json": first_utm or None,
+                "last_utm_json": utm or None,
+                "ad_id": ad_id_text,
+                "campaign_id": campaign_id_text,
+                "attributed_ad_id": attributed_ad_id,
+                "attributed_campaign_id": attributed_campaign_id,
+                "audience_json": audience_json,
+                "contact_name": beat.contact_name or None,
+                "contact_email": beat.contact_email or None,
+            }
+            # Vincula à campanha detectada por parsing de slug UTM
+            if parsed_campaign_id:
+                insert_data["parsed_campaign_id"] = parsed_campaign_id
+
+            # Tenta insert com todos os campos; se falhar por coluna ausente
+            # (migration 012 não aplicada), remove campos problemáticos e tenta novamente
+            try:
+                supabase.table("lead_profiles").insert(insert_data).execute()
+            except Exception as insert_exc:
+                error_msg = str(insert_exc)
+                if "contact_email" in error_msg or "contact_name" in error_msg:
+                    # Remove campos que não existem no schema
+                    insert_data.pop("contact_name", None)
+                    insert_data.pop("contact_email", None)
+                    logger.warning(
+                        "Removendo campos contact_name/contact_email do insert (migration 012 pendente) - session=%s",
+                        beat.session_id,
+                    )
+                    try:
+                        supabase.table("lead_profiles").insert(insert_data).execute()
+                    except Exception:
+                        raise
+                else:
+                    raise
+    except Exception:
+        # Falha silenciosa: não derruba o heartbeat
+        logger.exception("Erro ao atualizar lead_profile (session_id=%s)", beat.session_id)
+
+
+def _get_workspace_id(supabase: Client, funnel_id: str) -> str | None:
+    """Resolve workspace_id do funil, com fallback para o primeiro workspace do dono.
+
+    Funis criados antes da migration 009 não têm workspace_id. Sem fallback,
+    o lead_profile ficava com workspace_id=NULL e attributed_ad_id nunca era
+    resolvido (a query de ad_campaigns filtra por workspace_id). O fallback
+    pega o primeiro workspace do dono do funil — todo usuário pós-009 tem
+    pelo menos um workspace criado automaticamente no cadastro.
+    """
+    try:
+        result = supabase.table("funnels").select("workspace_id, user_id").eq(
+            "id", funnel_id
+        ).execute()
+        if not result.data:
+            return None
+        ws_id = result.data[0].get("workspace_id")
+        if ws_id:
+            return ws_id
+        # Fallback: primeiro workspace do dono do funil
+        user_id = result.data[0].get("user_id")
+        if not user_id:
+            return None
+        member = supabase.table("workspace_members").select("workspace_id").eq(
+            "user_id", user_id
+        ).order("created_at").limit(1).execute()
+        if member.data:
+            return member.data[0].get("workspace_id")
+    except Exception:
+        pass
+    return None
 
 
 @router.post("/track", status_code=status.HTTP_204_NO_CONTENT)
@@ -82,7 +437,19 @@ async def track_heartbeat(
         # devolver erro pra ele (sendBeacon ignora a resposta mesmo). Mas o
         # erro precisa ficar visível no log do servidor, não só engolido: foi
         # exatamente esse silêncio que escondeu a migration 002 não rodada.
-        logger.exception("Erro no track: corpo inválido")
+        logger.warning("Erro no track: corpo inválido")
+        return None
+
+    # Quiz answer: processa e retorna (não faz heartbeat de página)
+    if beat.event_type == "quiz_answer":
+        try:
+            _salvar_quiz_answer(supabase, beat)
+        except Exception:
+            logger.exception(
+                "Erro no track: falha ao gravar quiz answer (session_id=%s, funnel_id=%s)",
+                beat.session_id,
+                beat.funnel_id,
+            )
         return None
 
     try:
@@ -126,6 +493,8 @@ async def track_heartbeat(
         # Geolocalização: resolve o IP → cidade/UF/lat/lon UMA vez por sessão (no
         # primeiro heartbeat). O IP nunca é gravado — só a praça. Falha é
         # silenciosa: sem geo, o visitante só não entra no mapa.
+        # Usa asyncio.to_thread para não bloquear o event loop com o httpx síncrono
+        # do geo_service.resolve (timeout 4s).
         payload = {
             "session_id": beat.session_id,
             "funnel_id": beat.funnel_id,
@@ -140,7 +509,7 @@ async def track_heartbeat(
                 dict(request.headers),
                 request.client.host if request.client else None,
             )
-            place = geo_service.resolve(ip)
+            place = await asyncio.to_thread(geo_service.resolve, ip)
             if place:
                 payload.update({
                     "geo_city": place["city"],
@@ -364,7 +733,6 @@ def get_page_entries(
                 # Nunca expõe o session_id inteiro: o log é para reconhecer
                 # "é a mesma pessoa de novo", não para identificar alguém.
                 "visitor": row["session_id"][-5:],
-                "device": row.get("device"),
                 "source": source,
                 "url": row["url"],
             })
@@ -419,6 +787,13 @@ async def get_live_vsl_data(
         # pra uma VSL que nunca foi ligada ao VTurb seria inventar um dado,
         # não reportar ausência dele.
         configured = [s for s in steps.data if s.get("player_id")]
+
+        # Verifica se tem credenciais VTurb ANTES de chamar a API.
+        # Sem token não há o que consultar — evita queimar rate limit do VTurb
+        # com chamadas que vão falhar em _make_request (401/403).
+        creds = await vturb_service.get_credentials(current_user.id, ws_id)
+        if not creds:
+            return []
 
         # Em paralelo, não uma de cada vez: as chamadas ao VTurb não dependem
         # entre si, e um funil com várias VSLs esperava a soma das latências
@@ -700,8 +1075,8 @@ def receive_sale_webhook(
         settings = get_settings()
 
         # Segredo esperado: global (env) OU o configurado pelo dono do funil
-        # em Configurações -> Webhook. Se algum estiver definido e não bater,
-        # rejeita.
+        # em Configurações -> Webhook. Se NENHUM estiver definido, REJEITA
+        # o webhook — nunca aceitar webhook sem segredo configurado.
         expected = settings.webhook_secret or ""
         if not expected and payload.get("funnel_id"):
             owner = (
@@ -723,7 +1098,12 @@ def receive_sale_webhook(
                 if cred.data and cred.data[0].get("api_token"):
                     expected = cred.data[0]["api_token"]
 
-        if expected and secret != expected:
+        if not expected:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Segredo de webhook não configurado. Defina WEBHOOK_SECRET no ambiente ou configure o token nas integrações do funil."
+            )
+        if secret != expected:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Segredo de webhook inválido"
@@ -847,9 +1227,14 @@ def receive_perfectpay_webhook(
         expected = (
             cred.data[0]["api_token"]
             if cred.data and cred.data[0].get("api_token")
-            else ""
+            else None
         )
-        if expected and payload.get("token") != expected:
+        if not expected:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token do webhook não configurado. Configure o token nas integrações para receber webhooks."
+            )
+        if payload.get("token") != expected:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token do webhook inválido"

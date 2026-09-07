@@ -11,12 +11,13 @@ import {
   WebhooksLogo,
 } from "@phosphor-icons/react";
 import { Header } from "@/components/common/Header";
-import { getCredentials, saveCredentials, testConnection, listFunnels } from "@/api/client";
+import { getCredentials, saveCredentials, testConnection, listFunnels, updateWorkspaceAttributionModel } from "@/api/client";
 import type { IntegrationCredentials } from "@/api/client";
 import type { Funnel } from "@/types";
 import { cn } from "@/lib/cn";
 import { TrackerCard } from "@/components/settings/TrackerCard";
 import { SlugRulesCard } from "@/components/settings/SlugRulesCard";
+import { AttributionSettingsCard } from "@/components/settings/AttributionSettingsCard";
 
 // `{click_id}` é o placeholder oficial da PerfectPay: ela substitui isso pelo
 // valor do parâmetro `click_id` que estava na URL do checkout na hora da
@@ -384,6 +385,9 @@ export function SettingsPage() {
 
         {/* Tipo de página por slug */}
         <SlugRulesCard />
+
+        {/* Modelo de atribuição de leads */}
+        <AttributionSettingsCard />
 
         {/* Salvar tudo */}
         <div className="flex justify-end gap-2">

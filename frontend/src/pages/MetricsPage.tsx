@@ -11,6 +11,7 @@ import {
   Globe,
   Trophy,
   Clock,
+  SquaresFour as LayoutGrid,
 } from "@phosphor-icons/react";
 import {
   ResponsiveContainer,
@@ -52,6 +53,8 @@ import {
   type TrackerVslEstimate,
 } from "@/lib/funnelStats";
 import { FunnelCanvas } from "@/components/funnel";
+import { QuizAdsTab } from "@/components/metrics/QuizAdsTab";
+import { ParsedCampaignsTab } from "@/components/metrics/ParsedCampaignsTab";
 import {
   getFunnel,
   listFunnels,
@@ -420,8 +423,8 @@ function FunnelStrip({
             </button>
           );
         })}
+</div>
       </div>
-    </div>
   );
 }
 
@@ -1114,6 +1117,8 @@ function SingleFunnelView({
   const d = (now: number | null | undefined, before: number | null | undefined, unit: "%" | "p.p." | "") =>
     showDelta ? makeDelta(now, before, unit) : null;
 
+  const [activeTab, setActiveTab] = useState<"geral" | "quiz-ads" | "campaigns">("geral");
+
   return (
     <main className="space-y-6 p-4 md:px-7">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1137,6 +1142,49 @@ function SingleFunnelView({
         </div>
       </div>
 
+      {/* Tab Navigation */}
+      <div className="seg self-start" role="tablist" aria-label="Seções do funil">
+        <label
+          role="tab"
+          aria-selected={activeTab === "geral"}
+          className={cn("seg-opt", activeTab === "geral" && "active")}
+          onClick={() => setActiveTab("geral")}
+        >
+          <input type="radio" name="funnelTab" readOnly checked={activeTab === "geral"} />
+          Geral
+        </label>
+        <label
+          role="tab"
+          aria-selected={activeTab === "quiz-ads"}
+          className={cn("seg-opt", activeTab === "quiz-ads" && "active")}
+          onClick={() => setActiveTab("quiz-ads")}
+        >
+          <input type="radio" name="funnelTab" readOnly checked={activeTab === "quiz-ads"} />
+          <LayoutGrid size={14} className="shrink-0" />
+          Quiz & Ads
+        </label>
+        <label
+          role="tab"
+          aria-selected={activeTab === "campaigns"}
+          className={cn("seg-opt", activeTab === "campaigns" && "active")}
+          onClick={() => setActiveTab("campaigns")}
+        >
+          <input type="radio" name="funnelTab" readOnly checked={activeTab === "campaigns"} />
+          <TrendingUp size={14} className="shrink-0" />
+          Campanhas
+        </label>
+      </div>
+
+      {activeTab === "quiz-ads" && (
+        <QuizAdsTab funnelId={funnel.id} />
+      )}
+
+      {activeTab === "campaigns" && (
+        <ParsedCampaignsTab funnelId={funnel.id} />
+      )}
+
+      {activeTab === "geral" && (
+        <div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-6">
         <KpiCard
           metric="visitors"
@@ -1419,8 +1467,10 @@ function SingleFunnelView({
               </div>
             ) : undefined
           }
-        />
-      </div>
+/>
+</div>
+        </div>
+      )}
     </main>
   );
 }

@@ -18,6 +18,7 @@ máximo uma thread de cada vez. O custo de construir um cliente (~860ms, medido)
 some depois do aquecimento, igual ao cache antigo — só que sem o bug.
 """
 import threading
+from collections import OrderedDict
 from functools import lru_cache
 from pathlib import Path
 
@@ -109,7 +110,10 @@ def is_local_mode() -> bool:
 _tl = threading.local()
 
 # Teto de clientes de usuário por thread: JWTs rodam de hora em hora, e uma
-# thread de vida longa juntaria uma entrada por token sem esse limite.
+# thread de vida longa juntaria uma entrada por token sem esse limite. Ao
+# encher, a evicção é LRU (só o mais antigo sai) — não um clear geral, que
+# jogava fora os 8 clientes válidos e fazia churn de recriação a cada request
+# depois do 8º usuário na thread.
 _MAX_USER_CLIENTS_PER_THREAD = 8
 
 
@@ -144,21 +148,38 @@ def make_user_client(access_token: str):
 
     store = getattr(_tl, "user_clients", None)
     if store is None:
-        store = {}
+        store = OrderedDict()
         _tl.user_clients = store
 
     client = store.get(access_token)
-    if client is None:
-        if len(store) >= _MAX_USER_CLIENTS_PER_THREAD:
-            store.clear()
-        settings = get_settings()
-        client = _harden(create_client(settings.supabase_url, settings.supabase_key))
-        # Manda o JWT do usuário nas chamadas ao PostgREST, para o `auth.uid()`
-        # das políticas de RLS resolver para ele.
-        client.postgrest.auth(access_token)
-        store[access_token] = client
+    if client is not None:
+        # Usado agora: move para o fim (mais recente) para escapar da evicção.
+        store.move_to_end(access_token)
+        return client
+
+    # Abre espaço removendo o(s) mais antigo(s), sem tocar nos demais.
+    while len(store) >= _MAX_USER_CLIENTS_PER_THREAD:
+        store.popitem(last=False)
+    settings = get_settings()
+    client = _harden(create_client(settings.supabase_url, settings.supabase_key))
+    # Manda o JWT do usuário nas chamadas ao PostgREST, para o `auth.uid()`
+    # das políticas de RLS resolver para ele.
+    client.postgrest.auth(access_token)
+    store[access_token] = client  # entra no fim = mais recente
 
     return client
+
+
+def invalidate_user_client(access_token: str) -> None:
+    """
+    Remove um cliente de usuário específico do cache por-thread.
+    Usado quando o token é renovado (refresh) para evitar entry órfã.
+    """
+    if is_local_mode():
+        return
+    store = getattr(_tl, "user_clients", None)
+    if store is not None:
+        store.pop(access_token, None)
 
 
 def get_supabase_admin():
@@ -183,4 +204,11 @@ def get_local_client() -> LocalClient:
 
 
 # Reexportado para os routers continuarem anotando `supabase: Client`.
-__all__ = ["get_supabase_client", "get_supabase_admin", "is_local_mode", "Client"]
+__all__ = [
+    "get_supabase_client",
+    "get_supabase_admin",
+    "is_local_mode",
+    "make_user_client",
+    "invalidate_user_client",
+    "Client",
+]

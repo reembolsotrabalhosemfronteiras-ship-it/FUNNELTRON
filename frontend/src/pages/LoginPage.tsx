@@ -53,20 +53,22 @@ export function LoginPage() {
         </div>
 
         <div className="card elev-md !p-6">
-          <div className="seg w-full mb-[18px]">
+          <div className="seg w-full mb-[18px]" role="tablist">
             {(["login", "signup"] as const).map((m) => (
-              <label
+              <button
                 key={m}
+                type="button"
+                role="tab"
+                aria-selected={mode === m}
                 className="seg-opt flex-1 justify-center"
                 onClick={() => {
                   setMode(m);
                   setError(null);
                 }}
               >
-                <input type="radio" name="loginmode" readOnly checked={mode === m} />
                 {m === "login" ? <SignIn size={15} /> : <UserPlus size={15} />}
                 {m === "login" ? "Entrar" : "Criar conta"}
-              </label>
+              </button>
             ))}
           </div>
 

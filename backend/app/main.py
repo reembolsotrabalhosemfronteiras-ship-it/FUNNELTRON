@@ -1,17 +1,19 @@
 """Core FastAPI application"""
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .core import scheduler
+from .core.auth import get_current_user
 from .core.config import get_settings
 from .core.supabase_client import is_local_mode, LOCAL_DATA_DIR
+from .services.screenshot import shutdown_browser
 from .routers import (
     auth, funnels, layout, screenshots, metrics, integrations, imports, live,
-    sources, push, workspaces
+    sources, push, workspaces, quiz
 )
 
 # Configurações
@@ -41,7 +43,7 @@ if settings.environment == "production" and is_local_mode():
         print(f"   • {nome}")
     print(
         "\nPegue os valores no painel do Supabase:"
-        "\n   Project Settings → API"
+        "\n   Project Settings -> API"
         "\n      SUPABASE_URL          = Project URL"
         "\n      SUPABASE_KEY          = chave anon / publishable"
         "\n      SUPABASE_SERVICE_KEY  = chave service_role / secret"
@@ -104,9 +106,19 @@ async def cors_aberto_no_rastreador(request, call_next):
     if request.method == "OPTIONS":
         return Response(status_code=204, headers=_TRACK_CORS)
 
-    response = await call_next(request)
-    for chave, valor in _TRACK_CORS.items():
-        response.headers[chave] = valor
+    try:
+        response = await call_next(request)
+    except Exception:
+        # Em erro, devolve resposta 500 com CORS para o snippet nao falhar silenciosamente
+        response = Response(
+            status_code=500,
+            content='{"detail":"Internal Server Error"}',
+            media_type="application/json",
+            headers=_TRACK_CORS
+        )
+    else:
+        for chave, valor in _TRACK_CORS.items():
+            response.headers[chave] = valor
     return response
 
 
@@ -122,6 +134,88 @@ app.include_router(live.router, prefix="/api")
 app.include_router(sources.router, prefix="/api")
 app.include_router(push.router, prefix="/api")
 app.include_router(workspaces.router, prefix="/api")
+app.include_router(quiz.router, prefix="/api")
+
+
+@app.get("/api/parsed-campaigns", tags=["parsed-campaigns"])
+def parsed_campaigns_alias(
+    workspace_id: str = None,
+    limit: int = 100,
+    current_user=Depends(get_current_user),
+):
+    """Alias para /api/quiz/parsed-campaigns — compatibilidade com frontend.
+
+    O frontend na página Ao Vivo chama /api/parsed-campaigns (sem prefixo quiz).
+    Esta rota replica a mesma lógica de quiz.list_parsed_campaigns mas como
+    função standalone para evitar problemas de resolução de Depends() quando
+    chamada como função interna.
+    """
+    import logging
+    _alias_logger = logging.getLogger(__name__)
+
+    from .routers.quiz import _assert_ws_member
+    from .core.supabase_client import get_supabase_admin
+
+    try:
+        supabase = get_supabase_admin()
+
+        # Extrai user_id de forma robusta (pode ser attr ou dict)
+        user_id = getattr(current_user, 'id', None) or current_user.get('id') if isinstance(current_user, dict) else getattr(current_user, 'id', None)
+        if not user_id:
+            raise HTTPException(401, "Não foi possível extrair user_id do token")
+
+        # Se workspace_id não fornecido, busca o primeiro workspace do usuário
+        ws_id = workspace_id
+        if not ws_id:
+            try:
+                member_rows = (
+                    supabase.table("workspace_members")
+                    .select("workspace_id")
+                    .eq("user_id", user_id)
+                    .execute()
+                    .data
+                )
+                if member_rows:
+                    ws_id = member_rows[0]["workspace_id"]
+            except Exception as ws_exc:
+                _alias_logger.warning("Erro ao buscar workspace do usuário %s: %s", user_id, str(ws_exc))
+
+        if not ws_id:
+            raise HTTPException(
+                422, "workspace_id é obrigatório (usuário sem workspace encontrado)"
+            )
+
+        _assert_ws_member(supabase, ws_id, user_id)
+
+        rows = (
+            supabase.table("parsed_campaigns")
+            .select(
+                "id, slug_key, creative_code, campaign_code, page_code, "
+                "platform_ad_id, placement, sequence, version_date, raw_source, "
+                "session_count, quiz_response_count, first_seen_at, last_seen_at"
+            )
+            .eq("workspace_id", ws_id)
+            .order("last_seen_at", desc=True)
+            .limit(min(limit, 500))
+            .execute()
+        )
+
+        # Adiciona métrica de conversão: quiz_responses / sessions * 100
+        result = []
+        for row in (rows.data or []):
+            sessions = row.get("session_count") or 0
+            quiz_responses = row.get("quiz_response_count") or 0
+            conversion_rate = round(quiz_responses / sessions * 100, 1) if sessions > 0 else None
+            row["conversion_rate"] = conversion_rate
+            result.append(row)
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _alias_logger.exception("Erro inesperado em /api/parsed-campaigns: %s", str(exc))
+        raise HTTPException(500, detail=f"Erro interno: {type(exc).__name__}: {str(exc)}")
 
 
 # Prints capturados no modo local são servidos daqui. No Supabase o Storage
@@ -141,6 +235,12 @@ async def _iniciar_agendador():
     `live_page_entries`. Ver `core/scheduler.py`.
     """
     scheduler.start()
+
+
+@app.on_event("shutdown")
+async def _encerrar_browser():
+    """Fecha o Chromium singleton para não vazar processo a cada restart."""
+    await shutdown_browser()
 
 
 @app.get("/api/health")

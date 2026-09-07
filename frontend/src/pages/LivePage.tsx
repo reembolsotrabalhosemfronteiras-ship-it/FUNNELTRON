@@ -44,9 +44,12 @@ import { LiveTabs, type LiveTab } from "@/components/live/LiveTabs";
 import { TimeWindowPicker, windowLabel } from "@/components/live/TimeWindowPicker";
 import { ClarityLiveView } from "@/components/live/ClarityLiveView";
 import { SourceSelector, useDataSource } from "@/components/common/SourceSelector";
+import { Select } from "@/components/common/Select";
 import { ConversionBar } from "@/components/live/ConversionBar";
 import { SalesFeed } from "@/components/live/SalesFeed";
 import { PageEntriesFeed } from "@/components/live/PageEntriesFeed";
+import { useWorkspace } from "@/components/common/WorkspaceContext";
+import { getParsedCampaigns, type ParsedCampaign } from "@/api/client";
 
 type SaleFilter = "all" | "paid" | "pending";
 
@@ -140,6 +143,10 @@ function useLiveFunnel(
   const [structureLoading, setStructureLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isPolling, setIsPolling] = useState(true);
+  // Verdadeiro quando o último ciclo de polling falhou: a tela segue mostrando
+  // os números velhos, então precisa avisar que eles pararam de atualizar em
+  // vez de fingir que continua "ao vivo".
+  const [stale, setStale] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -204,8 +211,13 @@ function useLiveFunnel(
         entries: ents,
       });
       setLastUpdated(new Date());
+      setStale(false);
     } catch (err) {
       console.error("Erro ao atualizar métricas ao vivo:", err);
+      // Não zera o snapshot: melhor mostrar número velho marcado como velho do
+      // que cair pra "Sem dados." a cada falha de rede passageira. O próprio
+      // intervalo de 5s tenta de novo e se recupera sozinho.
+      setStale(true);
     } finally {
       setLoading(false);
     }
@@ -239,6 +251,7 @@ function useLiveFunnel(
     lastUpdated,
     refresh,
     isPolling,
+    stale,
   };
 }
 
@@ -256,7 +269,7 @@ function FunnelLiveView({
   convWindow: number;
   salesWindow: number;
 }) {
-  const { data, loading, lastUpdated, refresh, isPolling } = useLiveFunnel(
+  const { data, loading, lastUpdated, refresh, isPolling, stale } = useLiveFunnel(
     funnel.id,
     vslWindow,
     convWindow,
@@ -312,7 +325,25 @@ function FunnelLiveView({
     : false;
 
   if (loading && !data) return <Spinner size={32} />;
-  if (!data) return <div className="p-8 text-center text-muted-foreground">Sem dados.</div>;
+  if (!data)
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        {stale ? (
+          <div className="space-y-3">
+            <p>Não consegui carregar os dados ao vivo.</p>
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted"
+            >
+              Tentar de novo
+            </button>
+          </div>
+        ) : (
+          "Sem dados."
+        )}
+      </div>
+    );
 
   return (
     <div className="space-y-6">
@@ -342,14 +373,27 @@ function FunnelLiveView({
               {totalOnline} pessoas agora
             </Badge>
           </div>
-          <span className="flex items-center gap-1.5 text-[10px] font-medium text-red-600/80 dark:text-red-400/80">
+          <span
+            className={cn(
+              "flex items-center gap-1.5 text-[10px] font-medium",
+              stale
+                ? "text-amber-600 dark:text-amber-400"
+                : "text-red-600/80 dark:text-red-400/80"
+            )}
+          >
             <span
               className={cn(
                 "h-2 w-2 rounded-full",
-                isPolling ? "bg-red-500" : "bg-muted-foreground"
+                stale
+                  ? "bg-amber-500"
+                  : isPolling
+                    ? "bg-red-500"
+                    : "bg-muted-foreground"
               )}
             />
-            {isPolling ? "ao vivo" : "pausado"} · {lastUpdated.toLocaleTimeString()}
+            {stale
+              ? `sem sinal · dados de ${lastUpdated.toLocaleTimeString()}`
+              : `${isPolling ? "ao vivo" : "pausado"} · ${lastUpdated.toLocaleTimeString()}`}
           </span>
         </div>
 
@@ -690,7 +734,10 @@ function LiveGeoCard({ funnelId }: { funnelId?: string }) {
   const load = useCallback(() => {
     getLiveGeo(funnelId)
       .then(setGeo)
-      .catch(() => setGeo((g) => g));
+      .catch((err) => {
+        console.warn("Erro ao carregar geo ao vivo:", err);
+        // Mantém o geo anterior em vez de zerar — dados velhos são melhores que "sem dados"
+      });
   }, [funnelId]);
 
   useEffect(() => {
@@ -797,6 +844,44 @@ export function LivePage() {
   // tirar conclusão errada. Trocar a janela agora vale para a tela inteira.
   const [liveWindow, setLiveWindow] = useState(30);
   const { source, setSource } = useDataSource();
+  const { active } = useWorkspace();
+
+  // Filtros UTM populados dinamicamente via /api/parsed-campaigns
+  const [utmCampaigns, setUtmCampaigns] = useState<ParsedCampaign[]>([]);
+  const [filterPlacement, setFilterPlacement] = useState("");
+  const [filterCreative, setFilterCreative] = useState("");
+  const [filterCampaign, setFilterCampaign] = useState("");
+
+  useEffect(() => {
+    if (!active?.id) return;
+    let cancelled = false;
+    getParsedCampaigns(active.id)
+      .then((data) => {
+        if (!cancelled) setUtmCampaigns(data);
+      })
+      .catch(() => {
+        /* silencioso — filtros ficam vazios */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [active?.id]);
+
+  // Extrai valores únicos para os selects
+  const placementOptions = useMemo(() => {
+    const set = new Set(utmCampaigns.map((c) => c.placement).filter(Boolean));
+    return [{ value: "", label: "Todos os Placements" }, ...Array.from(set).sort().map((v) => ({ value: v, label: v }))];
+  }, [utmCampaigns]);
+
+  const creativeOptions = useMemo(() => {
+    const set = new Set(utmCampaigns.map((c) => c.creativeCode).filter(Boolean));
+    return [{ value: "", label: "Todos os Creatives" }, ...Array.from(set).sort().map((v) => ({ value: v, label: v }))];
+  }, [utmCampaigns]);
+
+  const campaignOptions = useMemo(() => {
+    const set = new Set(utmCampaigns.map((c) => c.campaignCode).filter(Boolean));
+    return [{ value: "", label: "Todas as Campanhas" }, ...Array.from(set).sort().map((v) => ({ value: v, label: v }))];
+  }, [utmCampaigns]);
 
   // O seletor de janela é do NOSSO rastreador. O Clarity agrega por dia:
   // oferecer "últimos 5 minutos" para ele prometeria um recorte que a fonte
@@ -884,6 +969,47 @@ export function LivePage() {
       />
 
       <main className="p-4 space-y-6">
+        {/* Filtros UTM — populados dinamicamente via /api/parsed-campaigns */}
+        {utmCampaigns.length > 0 && (
+          <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-3 sm:flex-row sm:flex-wrap sm:items-center">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Filtros UTM
+            </span>
+            <Select
+              value={filterPlacement}
+              onChange={setFilterPlacement}
+              options={placementOptions}
+              className="w-full sm:w-48 min-h-[44px]"
+            />
+            <Select
+              value={filterCreative}
+              onChange={setFilterCreative}
+              options={creativeOptions}
+              className="w-full sm:w-52 min-h-[44px]"
+            />
+            <Select
+              value={filterCampaign}
+              onChange={setFilterCampaign}
+              options={campaignOptions}
+              className="w-full sm:w-56 min-h-[44px]"
+            />
+            {(filterPlacement || filterCreative || filterCampaign) && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="min-h-[44px] w-full sm:w-auto"
+                onClick={() => {
+                  setFilterPlacement("");
+                  setFilterCreative("");
+                  setFilterCampaign("");
+                }}
+              >
+                Limpar
+              </Button>
+            )}
+          </div>
+        )}
+
         <LiveTabs tabs={tabs} active={activeTab} onChange={setActiveTab} />
 
         {/* Uma fonte de cada vez. Em "Comparar" as duas aparecem empilhadas e

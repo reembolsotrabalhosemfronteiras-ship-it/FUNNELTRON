@@ -26,7 +26,17 @@ class PreferenceRequest(BaseModel):
 
 class SlugTypeRule(BaseModel):
     keyword: str
-    type: str
+    type: Literal[
+        "landing",
+        "vsl",
+        "checkout",
+        "order_bump",
+        "upsell",
+        "downsell",
+        "thank_you",
+        "other",
+        "sub_funnel",
+    ]
 
 
 class SlugRulesRequest(BaseModel):
@@ -304,7 +314,7 @@ def get_clarity_history(
             {
                 "date": r["date"],
                 "period": r["period"],
-                "pageUrl": r["page_url"] or None,
+                "pageUrl": None if r["page_url"] == "__none__" else r["page_url"],
                 "fetchedAt": r["fetched_at"],
                 "metrics": r["payload"],
             }

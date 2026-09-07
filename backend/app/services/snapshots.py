@@ -20,9 +20,15 @@ def normalize_url(url: Optional[str]) -> str:
     devolve a URL do jeito que o navegador mandou (com utm, com barra, com
     maiúscula no host) — sem normalizar, a mesma página vira três páginas
     diferentes e o histórico nunca casa com o nosso.
+
+    IMPORTANTE: Para page_url=None/ausente do Clarity, retorna '__none__'
+    (sentinela) em vez de string vazia. Isso garante que o UNIQUE INDEX
+    (project_id, page_url, period, date) funcione: no Postgres, NULL não
+    conflita com NULL em índice único, então múltiplos imports com page_url
+    NULL duplicariam linhas. Com sentinela, todos colidem e o upsert substitui.
     """
     if not url:
-        return ""
+        return "__none__"
 
     parts = urlsplit(url if "//" in url else f"https://{url}")
     host = (parts.netloc or "").lower()

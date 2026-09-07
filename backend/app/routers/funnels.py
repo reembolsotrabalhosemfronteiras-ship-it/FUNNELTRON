@@ -6,6 +6,10 @@ from datetime import datetime
 from ..core.auth import get_current_user, get_db
 from ..core.supabase_client import get_supabase_client
 from ..core.workspace import get_active_workspace, scope
+
+# Trechos que o PostgREST devolve quando o insert bate na unique constraint
+# de (workspace_id, slug) — traduzidos para 409 em vez de 500/400 genérico.
+_UNIQUE_VIOLATION_MARKERS = ("23505", "duplicate key", "already exists", "unique constraint")
 from supabase import Client
 
 router = APIRouter(prefix="/funnels", tags=["funnels"])
@@ -93,6 +97,19 @@ def create_funnel(
 ):
     """Cria um novo funil no workspace ativo"""
     try:
+        # Slug único por escopo: é ele que resolve GET /funnel/{slug}. Sem esta
+        # checagem, um slug repetido ou estoura 500 genérico (se o DB tem a
+        # unique constraint) ou cria um duplicado que quebra a busca por slug.
+        existing = scope(
+            supabase.table("funnels").select("id").eq("slug", funnel.slug),
+            ws_id, current_user.id,
+        ).execute()
+        if existing.data:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Já existe um funil com o slug '{funnel.slug}' neste workspace.",
+            )
+
         row = {
             "user_id": current_user.id,
             "name": funnel.name,
@@ -107,10 +124,20 @@ def create_funnel(
 
         return result.data[0]
 
+    except HTTPException:
+        raise
     except Exception as e:
+        message = str(e)
+        # Corrida: outra requisição criou o mesmo slug entre a checagem e o
+        # insert, e o DB barrou na unique constraint. Também é 409.
+        if any(marker in message.lower() for marker in _UNIQUE_VIOLATION_MARKERS):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Já existe um funil com o slug '{funnel.slug}' neste workspace.",
+            )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Erro ao criar funil: {str(e)}"
+            detail=f"Erro ao criar funil: {message}"
         )
 
 

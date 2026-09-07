@@ -26,9 +26,18 @@ build/
 *.sqlite
 *.sqlite3
 
+# Credenciais reais do Supabase (anon e service_role keys)
+backend/.env
+
 # Banco local do modo sem Supabase — contém dados reais e o segredo de
 # assinatura dos tokens (.local-secret). Nunca vai para o repositório.
 backend/data/
+
+# Padrões específicos solicitados para proteção explícita
+backend/data/*.db
+backend/data/e2e_*.py
+backend/data/test_*.py
+backend/data/final_*.py
 
 # Screenshots
 backend/data/screenshots/

@@ -1,4 +1,6 @@
 """Autenticação e middleware de segurança"""
+import hashlib
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -13,7 +15,11 @@ security = HTTPBearer()
 # protegida — inclusive nas dezenas que uma única tela dispara. Um minuto é
 # curto o bastante para que um token revogado pare de valer quase imediatamente,
 # e longo o bastante para tirar a rede do caminho comum.
-_validated_tokens = TTLCache(maxsize=64, ttl_seconds=60.0)
+#
+# A chave é o SHA-256 do token (não o token cru, que tem 500+ chars). maxsize
+# alto o bastante para segurar os usuários ativos de um minuto sem a evicção LRU
+# derrubar entradas antes do TTL.
+_validated_tokens = TTLCache(maxsize=2048, ttl_seconds=60.0)
 # Mesma coisa, mas sem erro automático: rotas públicas que aceitam token
 # opcional (o snippet do rastreador, o webhook) precisam poder vir sem header.
 optional_security = HTTPBearer(auto_error=False)
@@ -33,8 +39,9 @@ def get_current_user(
     """
     try:
         token = credentials.credentials
+        cache_key = hashlib.sha256(token.encode()).hexdigest()
 
-        em_cache = _validated_tokens.get(token)
+        em_cache = _validated_tokens.get(cache_key)
         if em_cache is not None:
             return em_cache
 
@@ -50,7 +57,7 @@ def get_current_user(
 
         # Só o sucesso é cacheado. Guardar a falha faria um token recém-emitido
         # continuar sendo recusado por um minuto depois de já valer.
-        _validated_tokens.get_or_create(token, lambda: user_response.user)
+        _validated_tokens.get_or_create(cache_key, lambda: user_response.user)
         return user_response.user
 
     except HTTPException:

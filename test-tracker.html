@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teste Tracker - FUNNELTRON</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; }
+    .question { border: 2px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0; }
+    .question h3 { margin-top: 0; color: #1f2937; }
+    button { background: #2563eb; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin: 5px; }
+    button:hover { background: #1d4ed8; }
+    .log { background: #f3f4f6; padding: 15px; border-radius: 6px; margin-top: 20px; font-family: monospace; font-size: 12px; max-height: 400px; overflow-y: auto; }
+    .info { background: #dbeafe; padding: 15px; border-radius: 6px; margin: 20px 0; }
+    code { background: #e5e7eb; padding: 2px 6px; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <h1>🧪 Teste do Tracker FUNNELTRON</h1>
+
+  <div class="info">
+    <strong>Instruções:</strong>
+    <ol>
+      <li>Abra esta página com UTMs na URL, ex: <code>?utm_source=facebook&utm_campaign=teste1&utm_content=criativo_a</code></li>
+      <li>Verifique no console se <code>sessionStorage.funneltron:first_utm</code> foi salvo</li>
+      <li>Clique nos botões abaixo para simular respostas de quiz</li>
+      <li>Verifique no console os payloads enviados para <code>/api/live/track</code></li>
+      <li>Navegue para outra página sem UTMs e responda outro quiz — o <code>first_utm</code> deve persistir</li>
+    </ol>
+  </div>
+
+  <div class="question">
+    <h3>Qual sua faixa etária?</h3>
+    <button data-funneltron-question="idade" data-funneltron-answer="18-25">18-25 anos</button>
+    <button data-funneltron-question="idade" data-funneltron-answer="26-35">26-35 anos</button>
+    <button data-funneltron-question="idade" data-funneltron-answer="36+">36+ anos</button>
+  </div>
+
+  <div class="question">
+    <h3>Qual seu objetivo principal?</h3>
+    <button>Emagrecer</button>
+    <button>Ganhar massa muscular</button>
+    <button>Melhorar saúde</button>
+  </div>
+
+  <div class="question">
+    <h3>Você já tentou outros métodos?</h3>
+    <label><input type="radio" name="metodos" value="sim"> Sim, vários</label><br>
+    <label><input type="radio" name="metodos" value="alguns"> Alguns</label><br>
+    <label><input type="radio" name="metodos" value="nao"> Não, é minha primeira vez</label>
+  </div>
+
+  <div class="log" id="log">
+    <strong>Log de eventos:</strong><br>
+  </div>
+
+  <script>
+    // Configuração de teste
+    var FUNNEL_ID = "test-funnel-001";
+    var API_URL = "http://localhost:8000/api/live/track";
+
+    function log(msg) {
+      var el = document.getElementById('log');
+      el.innerHTML += new Date().toLocaleTimeString() + ' - ' + msg + '<br>';
+      el.scrollTop = el.scrollHeight;
+      console.log(msg);
+    }
+
+    // Intercepta fetch para logar payloads
+    var originalFetch = window.fetch;
+    window.fetch = function(url, options) {
+      if (url.includes('/api/live/track')) {
+        try {
+          var payload = JSON.parse(options.body);
+          log('📤 Payload enviado: ' + JSON.stringify(payload, null, 2));
+        } catch(e) {}
+      }
+      return originalFetch.apply(this, arguments);
+    };
+
+    log('✅ Página carregada');
+    log('URL atual: ' + window.location.href);
+
+    // Verifica sessionStorage
+    try {
+      var stored = sessionStorage.getItem('funneltron:first_utm');
+      if (stored) {
+        log(' first_utm no sessionStorage: ' + stored);
+      } else {
+        log('⚠️ first_utm ainda não salvo no sessionStorage');
+      }
+    } catch(e) {
+      log('❌ Erro ao acessar sessionStorage: ' + e.message);
+    }
+  </script>
+
+  <!-- Carrega o tracker real -->
+  <script src="/tracker.js" data-funnel-id="test-funnel-001"></script>
+
+  <script>
+    log('🎯 Tracker carregado — clique nos botões acima para testar');
+  </script>
+</body>
+</html>

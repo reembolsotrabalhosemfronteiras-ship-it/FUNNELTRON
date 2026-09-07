@@ -69,6 +69,9 @@ _TIME_DEFAULTS: dict[str, tuple[str, ...]] = {
     "live_page_entries": ("entered_at",),
     "live_sales": ("created_at",),
     "live_snapshots": ("captured_at",),
+    "quiz_answers": ("timestamp", "created_at"),
+    "lead_profiles": ("first_seen", "last_seen"),
+    "ad_campaigns": ("synced_at", "updated_at"),
 }
 
 
@@ -148,6 +151,7 @@ class LocalQuery:
         self._payload: Any = None
         self._on_conflict: str | None = None
         self._filters: list[tuple[str, str, Any]] = []
+        self._or_filters: list[list[tuple[str, str, Any]]] = []  # OR groups
         self._order: tuple[str, bool] | None = None
         self._limit: int | None = None
         self._single = False
@@ -212,6 +216,51 @@ class LocalQuery:
         self._filters.append((column, "is", value))
         return self
 
+    def or_(self, *conditions) -> "LocalQuery":
+        """
+        Filtro OR no estilo PostgREST.
+
+        Aceita duas sintaxes:
+        1. String: "col1.eq.val1,col2.eq.val2,col3.gte.val3"
+        2. Tuplas: (("col1", "eq", val1), ("col2", "eq", val2), ...)
+
+        Cada grupo de OR é avaliado independentemente: a linha passa se
+        QUALQUER condição do grupo for verdadeira. Múltiplas chamadas a or_()
+        criam grupos AND entre si (linha deve passar em TODOS os grupos OR).
+        """
+        if not conditions:
+            return self
+
+        # Sintaxe string: "col.eq.val,col2.gte.val2"
+        if len(conditions) == 1 and isinstance(conditions[0], str):
+            parts = conditions[0].split(",")
+            group = []
+            for part in parts:
+                part = part.strip()
+                if not part:
+                    continue
+                # Parse "col.op.val" - operador pode ter ponto (ex: not.ilike)
+                # Usamos split limitado: coluna, operador, valor
+                try:
+                    col, op_val = part.split(".", 1)
+                    op, val = op_val.split(".", 1)
+                except ValueError:
+                    continue
+                group.append((col.strip(), op.strip(), val.strip()))
+            if group:
+                self._or_filters.append(group)
+            return self
+
+        # Sintaxe tuplas: (("col", "eq", val), ("col2", "gte", val2), ...)
+        group = []
+        for cond in conditions:
+            if isinstance(cond, (tuple, list)) and len(cond) == 3:
+                col, op, val = cond
+                group.append((str(col), str(op), val))
+        if group:
+            self._or_filters.append(group)
+        return self
+
     # -- modificadores --
     def order(self, column: str, desc: bool = False, **_kwargs) -> "LocalQuery":
         self._order = (column, desc)
@@ -231,6 +280,7 @@ class LocalQuery:
 
     # -- execução --
     def _matches(self, row: dict) -> bool:
+        # AND filters: todos devem passar
         for column, op, expected in self._filters:
             actual = row.get(column)
             if op == "eq" and actual != expected:
@@ -240,13 +290,10 @@ class LocalQuery:
             if op == "in" and actual not in expected:
                 return False
             if op == "is":
-                # `.is_("col", "null")` e `.is_("col", None)` significam o mesmo.
                 wants_null = expected is None or expected == "null"
                 if wants_null != (actual is None):
                     return False
             if op in ("gt", "gte", "lt", "lte"):
-                # Ausência nunca satisfaz comparação — em Postgres NULL some do
-                # filtro do mesmo jeito.
                 if actual is None:
                     return False
                 try:
@@ -260,6 +307,45 @@ class LocalQuery:
                         return False
                 except TypeError:
                     return False
+
+        # OR filters: cada grupo é um OR (pelo menos um deve passar)
+        # Múltiplos grupos são AND entre si
+        for group in self._or_filters:
+            if not group:
+                continue
+            group_ok = False
+            for column, op, expected in group:
+                actual = row.get(column)
+                cond_ok = False
+                if op == "eq" and actual == expected:
+                    cond_ok = True
+                elif op == "neq" and actual != expected:
+                    cond_ok = True
+                elif op == "in" and actual in expected:
+                    cond_ok = True
+                elif op == "is":
+                    wants_null = expected is None or expected == "null"
+                    if wants_null == (actual is None):
+                        cond_ok = True
+                elif op in ("gt", "gte", "lt", "lte"):
+                    if actual is not None:
+                        try:
+                            if op == "gt" and actual > expected:
+                                cond_ok = True
+                            elif op == "gte" and actual >= expected:
+                                cond_ok = True
+                            elif op == "lt" and actual < expected:
+                                cond_ok = True
+                            elif op == "lte" and actual <= expected:
+                                cond_ok = True
+                        except TypeError:
+                            pass
+                if cond_ok:
+                    group_ok = True
+                    break
+            if not group_ok:
+                return False
+
         return True
 
     def _prepare(self, record: dict) -> dict:
@@ -275,8 +361,9 @@ class LocalQuery:
 
     def _resolve_step(self, record: dict) -> str | None:
         target = _normalize_url(record.get("url"))
+        funnel_id = record.get("funnel_id")
         for step in self._store.all("funnel_steps"):
-            if step.get("funnel_id") != record.get("funnel_id"):
+            if funnel_id is not None and step.get("funnel_id") != funnel_id:
                 continue
             if _normalize_url(step.get("url")) == target:
                 return step.get("id")
@@ -302,9 +389,10 @@ class LocalQuery:
             for payload in payloads:
                 record = self._prepare(dict(payload))
                 if self._mode == "upsert":
-                    key = self._on_conflict or "id"
+                    # Suporta chave composta: "col1,col2,col3" (estilo PostgREST)
+                    conflict_keys = [k.strip() for k in (self._on_conflict or "id").split(",")]
                     existing = next(
-                        (r for r in rows if r.get(key) == record.get(key)), None
+                        (r for r in rows if all(r.get(k) == record.get(k) for k in conflict_keys)), None
                     )
                     if existing:
                         merged = {**existing, **record, "id": existing["id"]}
@@ -477,6 +565,42 @@ class LocalAuth:
         # Sem lista de revogação: o token é curto e o frontend o descarta. Não
         # fingir que revoga é melhor do que uma revogação que não revoga.
         return None
+
+    # -- admin interface (compatibilidade com supabase.auth.admin) --
+    @property
+    def admin(self):
+        """Stub para compatibilidade com routers que chamam admin.auth.admin.create_user()."""
+        return self
+
+    def create_user(self, payload: dict):
+        """Cria usuário via admin (signup já confirmado). Retorna objeto com .user."""
+        email = payload["email"].lower().strip()
+        existing = [u for u in self._store.all("auth_users") if u["email"] == email]
+        if existing:
+            raise ValueError("User already exists")
+
+        salt = secrets.token_hex(16)
+        record = {
+            "id": str(uuid.uuid4()),
+            "email": email,
+            "salt": salt,
+            "password_hash": self._hash(payload["password"], salt),
+            "full_name": (payload.get("user_metadata") or {}).get("full_name", ""),
+            "created_at": _now_iso(),
+        }
+        self._store.put("auth_users", record)
+
+        class _UserWrapper:
+            def __init__(self, rec):
+                self.id = rec["id"]
+                self.email = rec["email"]
+                self.user_metadata = {"full_name": rec.get("full_name", "")}
+
+        class _CreateResult:
+            def __init__(self, rec):
+                self.user = _UserWrapper(rec)
+
+        return _CreateResult(record)
 
 
 # --- Storage de arquivos ----------------------------------------------------

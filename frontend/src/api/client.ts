@@ -1275,6 +1275,426 @@ export async function captureTrackerSnapshot(
   ).then(okJson);
 }
 
+// --- Quiz & Ads ---
+export type QuizDataSource = "tracker" | "utmfy" | "compare";
+
+export interface QuizAnswerMetric {
+  id: string;
+  funnelId: string;
+  questionId: string;
+  questionLabel: string;
+  questionType: "single" | "multiple" | "open";
+  optionId: string | null;
+  optionLabel: string;
+  count: number;
+  percentage: number;
+  campaignId: string;
+  campaignName: string;
+  source: QuizDataSource;
+}
+
+export interface QuizHeatmapRow {
+  questionId: string;
+  questionLabel: string;
+  questionType: "single" | "multiple" | "open";
+  totalResponses: number;
+  byCampaign: Record<string, { count: number; percentage: number }>;
+}
+
+export interface DropOffBySource {
+  source: string;
+  medium: string;
+  campaign: string;
+  campaignName: string;
+  entryCount: number;
+  step1To2: { count: number; rate: number };
+  step2To3: { count: number; rate: number };
+  step3ToOffer: { count: number; rate: number };
+  offerToPurchase: { count: number; rate: number };
+  overallRate: number;
+}
+
+export interface AudienceBreakdown {
+  adId: string;
+  adName: string;
+  campaignId: string;
+  age: { range: string; percentage: number }[];
+  gender: { label: string; percentage: number }[];
+  location: { city: string; state: string; percentage: number }[];
+  device: { label: string; percentage: number }[];
+  peakHours: { range: string; percentage: number }[];
+  interests: { label: string; percentage: number }[];
+}
+
+export interface AdPerformanceRow {
+  adId: string;
+  adName: string;
+  campaignId: string;
+  campaignName: string;
+  channel: "google_search" | "google_display" | "meta_ads" | "tiktok" | "email" | "other";
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  quizStarted: number;
+  quizCompleted: number;
+  purchases: number;
+  cpa: number | null;
+  roas: number | null;
+}
+
+/** Heatmap de respostas por pergunta × campanha. */
+export async function getQuizHeatmap(
+  funnelId: string,
+  period: PeriodInput,
+  source: QuizDataSource = "tracker"
+): Promise<QuizHeatmapRow[]> {
+  if (!USE_MOCK) {
+    const parts = [periodQuery(period)];
+    if (source !== "tracker") parts.push(`source=${source}`);
+    return apiGet(`/api/quiz/heatmap?funnel_id=${funnelId}&${parts.join("&")}`).then(okJson);
+  }
+  // Mock data
+  return delay([
+    {
+      questionId: "q1",
+      questionLabel: "Qual seu objetivo principal?",
+      questionType: "multiple",
+      totalResponses: 47800,
+      byCampaign: {
+        summer_sale: { count: 12400, percentage: 89 },
+        bf_promo: { count: 8900, percentage: 76 },
+        evergreen: { count: 6200, percentage: 65 },
+        tiktok_test: { count: 3100, percentage: 52 },
+        meta_retarget: { count: 2100, percentage: 41 },
+      },
+    },
+    {
+      questionId: "q2",
+      questionLabel: "Qual sua faixa de renda?",
+      questionType: "single",
+      totalResponses: 42100,
+      byCampaign: {
+        summer_sale: { count: 11200, percentage: 72 },
+        bf_promo: { count: 7800, percentage: 68 },
+        evergreen: { count: 5400, percentage: 59 },
+        tiktok_test: { count: 2800, percentage: 48 },
+        meta_retarget: { count: 1900, percentage: 38 },
+      },
+    },
+    {
+      questionId: "q3",
+      questionLabel: "Já comprou produtos similares?",
+      questionType: "single",
+      totalResponses: 38900,
+      byCampaign: {
+        summer_sale: { count: 9800, percentage: 64 },
+        bf_promo: { count: 6500, percentage: 58 },
+        evergreen: { count: 4800, percentage: 51 },
+        tiktok_test: { count: 3200, percentage: 44 },
+        meta_retarget: { count: 2400, percentage: 35 },
+      },
+    },
+    {
+      questionId: "q4",
+      questionLabel: "Como prefere receber ofertas?",
+      questionType: "multiple",
+      totalResponses: 35200,
+      byCampaign: {
+        summer_sale: { count: 8400, percentage: 55 },
+        bf_promo: { count: 5600, percentage: 49 },
+        evergreen: { count: 4200, percentage: 42 },
+        tiktok_test: { count: 2500, percentage: 38 },
+        meta_retarget: { count: 1800, percentage: 31 },
+      },
+    },
+    {
+      questionId: "q5",
+      questionLabel: "Qual seu maior desafio hoje?",
+      questionType: "open",
+      totalResponses: 28700,
+      byCampaign: {
+        summer_sale: { count: 6800, percentage: 48 },
+        bf_promo: { count: 4800, percentage: 42 },
+        evergreen: { count: 3500, percentage: 37 },
+        tiktok_test: { count: 2200, percentage: 32 },
+        meta_retarget: { count: 1600, percentage: 26 },
+      },
+    },
+  ], 500);
+}
+
+/** Drop-off por source (UTM) — funil P1→P2→P3→Oferta→Compra. */
+export async function getDropOffBySource(
+  funnelId: string,
+  period: PeriodInput,
+  source: QuizDataSource = "tracker"
+): Promise<DropOffBySource[]> {
+  if (!USE_MOCK) {
+    const parts = [periodQuery(period)];
+    if (source !== "tracker") parts.push(`source=${source}`);
+    return apiGet(`/api/quiz/dropoff-by-source?funnel_id=${funnelId}&${parts.join("&")}`).then(okJson);
+  }
+  return delay([
+    {
+      source: "google",
+      medium: "cpc",
+      campaign: "summer_sale",
+      campaignName: "Summer Sale 2024",
+      entryCount: 12400,
+      step1To2: { count: 10800, rate: 87 },
+      step2To3: { count: 8900, rate: 72 },
+      step3ToOffer: { count: 5600, rate: 45 },
+      offerToPurchase: { count: 3500, rate: 28 },
+      overallRate: 28,
+    },
+    {
+      source: "meta",
+      medium: "social",
+      campaign: "bf_promo",
+      campaignName: "Black Friday Promo",
+      entryCount: 8900,
+      step1To2: { count: 7000, rate: 79 },
+      step2To3: { count: 5400, rate: 61 },
+      step3ToOffer: { count: 3400, rate: 38 },
+      offerToPurchase: { count: 2000, rate: 22 },
+      overallRate: 22,
+    },
+    {
+      source: "tiktok",
+      medium: "cpm",
+      campaign: "evergreen",
+      campaignName: "Evergreen TikTok",
+      entryCount: 6200,
+      step1To2: { count: 4400, rate: 71 },
+      step2To3: { count: 3300, rate: 54 },
+      step3ToOffer: { count: 1900, rate: 31 },
+      offerToPurchase: { count: 1100, rate: 18 },
+      overallRate: 18,
+    },
+    {
+      source: "email",
+      medium: "newsletter",
+      campaign: "loyalty",
+      campaignName: "Newsletter Fidelidade",
+      entryCount: 3100,
+      step1To2: { count: 2900, rate: 92 },
+      step2To3: { count: 2600, rate: 84 },
+      step3ToOffer: { count: 2100, rate: 67 },
+      offerToPurchase: { count: 1600, rate: 52 },
+      overallRate: 52,
+    },
+  ], 400);
+}
+
+/** Audience breakdown por Ad ID (dados UTMfy). */
+export async function getAudienceBreakdown(
+  funnelId: string,
+  adId?: string,
+  period: PeriodInput = "30d"
+): Promise<AudienceBreakdown[]> {
+  if (!USE_MOCK) {
+    const parts = [periodQuery(period)];
+    if (adId) parts.push(`ad_id=${adId}`);
+    return apiGet(`/api/quiz/audience?funnel_id=${funnelId}&${parts.join("&")}`).then(okJson);
+  }
+  return delay([
+    {
+      adId: "ad_7x9k2m1p",
+      adName: "Summer Sale - Search",
+      campaignId: "summer_sale",
+      age: [
+        { range: "18-24", percentage: 24 },
+        { range: "25-34", percentage: 41 },
+        { range: "35-44", percentage: 22 },
+        { range: "45-54", percentage: 9 },
+        { range: "55+", percentage: 4 },
+      ],
+      gender: [
+        { label: "Feminino", percentage: 67 },
+        { label: "Masculino", percentage: 31 },
+        { label: "Outro/Pref. não dizer", percentage: 2 },
+      ],
+      location: [
+        { city: "São Paulo", state: "SP", percentage: 28 },
+        { city: "Rio de Janeiro", state: "RJ", percentage: 14 },
+        { city: "Belo Horizonte", state: "MG", percentage: 8 },
+        { city: "Brasília", state: "DF", percentage: 6 },
+        { city: "Curitiba", state: "PR", percentage: 5 },
+      ],
+      device: [
+        { label: "Mobile", percentage: 78 },
+        { label: "Desktop", percentage: 20 },
+        { label: "Tablet", percentage: 2 },
+      ],
+      peakHours: [
+        { range: "19h-22h", percentage: 34 },
+        { range: "12h-14h", percentage: 22 },
+        { range: "09h-11h", percentage: 18 },
+        { range: "22h-00h", percentage: 15 },
+      ],
+      interests: [
+        { label: "Saúde e Bem-estar", percentage: 31 },
+        { label: "Educação e Carreira", percentage: 24 },
+        { label: "Finanças Pessoais", percentage: 19 },
+        { label: "Beleza e Moda", percentage: 14 },
+      ],
+    },
+    {
+      adId: "ad_3q8z4n7v",
+      adName: "BF Promo - Meta",
+      campaignId: "bf_promo",
+      age: [
+        { range: "18-24", percentage: 32 },
+        { range: "25-34", percentage: 38 },
+        { range: "35-44", percentage: 18 },
+        { range: "45-54", percentage: 8 },
+        { range: "55+", percentage: 4 },
+      ],
+      gender: [
+        { label: "Feminino", percentage: 58 },
+        { label: "Masculino", percentage: 40 },
+        { label: "Outro/Pref. não dizer", percentage: 2 },
+      ],
+      location: [
+        { city: "São Paulo", state: "SP", percentage: 25 },
+        { city: "Rio de Janeiro", state: "RJ", percentage: 16 },
+        { city: "Belo Horizonte", state: "MG", percentage: 10 },
+        { city: "Brasília", state: "DF", percentage: 7 },
+        { city: "Porto Alegre", state: "RS", percentage: 6 },
+      ],
+      device: [
+        { label: "Mobile", percentage: 82 },
+        { label: "Desktop", percentage: 16 },
+        { label: "Tablet", percentage: 2 },
+      ],
+      peakHours: [
+        { range: "19h-22h", percentage: 38 },
+        { range: "12h-14h", percentage: 20 },
+        { range: "09h-11h", percentage: 15 },
+        { range: "22h-00h", percentage: 18 },
+      ],
+      interests: [
+        { label: "Beleza e Moda", percentage: 28 },
+        { label: "Saúde e Bem-estar", percentage: 22 },
+        { label: "Educação e Carreira", percentage: 20 },
+        { label: "Finanças Pessoais", percentage: 18 },
+      ],
+    },
+  ], 400);
+}
+
+/** Performance detalhada por Ad ID. */
+export async function getAdPerformance(
+  funnelId: string,
+  period: PeriodInput = "30d",
+  source: QuizDataSource = "tracker"
+): Promise<AdPerformanceRow[]> {
+  if (!USE_MOCK) {
+    const parts = [periodQuery(period)];
+    if (source !== "tracker") parts.push(`source=${source}`);
+    return apiGet(`/api/quiz/ad-performance?funnel_id=${funnelId}&${parts.join("&")}`).then(okJson);
+  }
+  return delay([
+    {
+      adId: "ad_7x9k2m1p",
+      adName: "Summer Sale - Search",
+      campaignId: "summer_sale",
+      campaignName: "Summer Sale 2024",
+      channel: "google_search",
+      impressions: 2100000,
+      clicks: 42300,
+      ctr: 2.01,
+      quizStarted: 12400,
+      quizCompleted: 8500,
+      purchases: 3500,
+      cpa: 9.80,
+      roas: 5.2,
+    },
+    {
+      adId: "ad_3q8z4n7v",
+      adName: "BF Promo - Meta",
+      campaignId: "bf_promo",
+      campaignName: "Black Friday Promo",
+      channel: "meta_ads",
+      impressions: 3400000,
+      clicks: 68100,
+      ctr: 2.00,
+      quizStarted: 8900,
+      quizCompleted: 5400,
+      purchases: 2000,
+      cpa: 15.60,
+      roas: 3.8,
+    },
+    {
+      adId: "ad_5w1r6t9y",
+      adName: "Evergreen - TikTok",
+      campaignId: "evergreen",
+      campaignName: "Evergreen TikTok",
+      channel: "tiktok",
+      impressions: 1800000,
+      clicks: 27400,
+      ctr: 1.52,
+      quizStarted: 6200,
+      quizCompleted: 3300,
+      purchases: 1100,
+      cpa: 18.90,
+      roas: 2.9,
+    },
+    {
+      adId: "ad_2u4i8o0p",
+      adName: "Loyalty - Email",
+      campaignId: "loyalty",
+      campaignName: "Newsletter Fidelidade",
+      channel: "email",
+      impressions: 156000,
+      clicks: 12800,
+      ctr: 8.21,
+      quizStarted: 3100,
+      quizCompleted: 2600,
+      purchases: 1600,
+      cpa: 4.20,
+      roas: 8.4,
+    },
+    {
+      adId: "ad_9m1n3b5v",
+      adName: "Retargeting - Meta",
+      campaignId: "retargeting",
+      campaignName: "Retargeting Meta Ads",
+      channel: "meta_ads",
+      impressions: 890000,
+      clicks: 18200,
+      ctr: 2.04,
+      quizStarted: 4700,
+      quizCompleted: 3800,
+      purchases: 2200,
+      cpa: 11.30,
+      roas: 4.6,
+    },
+    {
+      adId: "ad_6c8x2z4q",
+      adName: "Lookalike - Display",
+      campaignId: "lookalike",
+      campaignName: "Lookalike Google Display",
+      channel: "google_display",
+      impressions: 4200000,
+      clicks: 31500,
+      ctr: 0.75,
+      quizStarted: 5100,
+      quizCompleted: 2900,
+      purchases: 980,
+      cpa: 22.40,
+      roas: 2.1,
+    },
+  ], 400);
+}
+
+/** Sincroniza dados do UTMfy (POST). */
+export async function syncUtmfy(funnelId: string): Promise<{ ok: boolean; message: string }> {
+  if (!USE_MOCK) {
+    return apiSend(`/api/quiz/sync-utmfy`, "POST", { funnel_id: funnelId }).then(okJson);
+  }
+  return delay({ ok: true, message: "Sincronização UTMfy simulada (mock)" }, 800);
+}
 
 // --- Aba "Ao Vivo" ---
 
@@ -1549,6 +1969,18 @@ export async function renameWorkspace(id: string, name: string): Promise<void> {
     return;
   }
   writeMockWs(readMockWs().map((w) => (w.id === id ? { ...w, name } : w)));
+}
+
+export async function updateWorkspaceAttributionModel(
+  id: string,
+  model: "first_touch" | "last_touch"
+): Promise<void> {
+  if (!USE_MOCK) {
+    await apiSend(`/api/workspaces/${id}`, "PATCH", { attribution_model: model }).then(okJson);
+    return;
+  }
+  // Mock: apenas log, sem persistência real
+  console.log("[mock] attribution_model updated to", model);
   return delay(undefined, 150);
 }
 
@@ -1920,4 +2352,105 @@ export async function subscribePush(subscription: {
 
 export async function unsubscribePush(endpoint: string): Promise<void> {
   await apiSend(`/api/push/unsubscribe`, "POST", { endpoint }).then(okVoid);
+}
+
+// --- Campanhas Parseadas (UTM) ---
+
+export interface ParsedCampaign {
+  creativeCode: string;
+  campaignCode: string;
+  placement: string;
+  sessions: number;
+  quizResponses: number;
+  lastSeen: string;
+}
+
+export interface QuizByCampaignRow {
+  date: string;
+  hour: number;
+  responses: number;
+  completions: number;
+  dropoffs: number;
+}
+
+/** Lista campanhas detectadas automaticamente via UTM no workspace. */
+export async function getParsedCampaigns(
+  workspaceId: string
+): Promise<ParsedCampaign[]> {
+  if (!USE_MOCK) {
+    return apiGet(`/api/parsed-campaigns?workspace_id=${workspaceId}`).then(okJson);
+  }
+  return delay([
+    {
+      creativeCode: "CRE-2024-SUMMER-01",
+      campaignCode: "summer_sale_2024",
+      placement: "meta_feed",
+      sessions: 12400,
+      quizResponses: 8500,
+      lastSeen: new Date(Date.now() - 3600000).toISOString(),
+    },
+    {
+      creativeCode: "CRE-BF-META-03",
+      campaignCode: "bf_promo_meta",
+      placement: "meta_stories",
+      sessions: 8900,
+      quizResponses: 5400,
+      lastSeen: new Date(Date.now() - 7200000).toISOString(),
+    },
+    {
+      creativeCode: "CRE-EVER-TT-07",
+      campaignCode: "evergreen_tiktok",
+      placement: "tiktok_fyp",
+      sessions: 6200,
+      quizResponses: 3300,
+      lastSeen: new Date(Date.now() - 1800000).toISOString(),
+    },
+    {
+      creativeCode: "CRE-LOYAL-EMAIL-02",
+      campaignCode: "loyalty_newsletter",
+      placement: "email_body",
+      sessions: 3100,
+      quizResponses: 2600,
+      lastSeen: new Date(Date.now() - 86400000).toISOString(),
+    },
+    {
+      creativeCode: "CRE-RETARGET-DISP-05",
+      campaignCode: "retargeting_display",
+      placement: "google_display",
+      sessions: 4700,
+      quizResponses: 3800,
+      lastSeen: new Date(Date.now() - 5400000).toISOString(),
+    },
+  ], 400);
+}
+
+/** Heatmap de respostas do quiz filtrado por campaign code. */
+export async function getQuizByCampaign(
+  funnelId: string,
+  campaignCode: string,
+  period: PeriodInput = "30d"
+): Promise<QuizByCampaignRow[]> {
+  if (!USE_MOCK) {
+    return apiGet(
+      `/api/quiz/by-campaign?funnel_id=${funnelId}&campaign_code=${encodeURIComponent(campaignCode)}&${periodQuery(period)}`
+    ).then(okJson);
+  }
+  // Mock: gera distribuição horária realista para 7 dias
+  const rows: QuizByCampaignRow[] = [];
+  for (let d = 6; d >= 0; d--) {
+    const date = new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+    for (let h = 0; h < 24; h++) {
+      const base = h >= 18 && h <= 22 ? 80 : h >= 10 && h <= 16 ? 45 : 15;
+      const responses = Math.floor(base + Math.random() * base * 0.4);
+      const completions = Math.floor(responses * (0.55 + Math.random() * 0.2));
+      rows.push({
+        date,
+        hour: h,
+        responses,
+        completions,
+        dropoffs: responses - completions,
+      });
+    }
+  }
+  return delay(rows, 350);
 }

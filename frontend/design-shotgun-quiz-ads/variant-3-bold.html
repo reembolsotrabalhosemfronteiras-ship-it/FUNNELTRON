@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quiz & Ads — Ousada</title>
+<style>
+:root {
+  --bg: #0a0f1a; --surface: #111827; --surface-elevated: #1a2234;
+  --text: #f1f5f9; --text-muted: #94a3b8; --text-dim: #64748b;
+  --border: #1f2a44; --border-bright: #2d3a5c;
+  --primary: #3b82f6; --primary-glow: rgba(59, 130, 246, 0.4);
+  --accent: #a855f7; --accent-glow: rgba(168, 85, 247, 0.4);
+  --cyan: #06b6d4; --cyan-glow: rgba(6, 182, 212, 0.4);
+  --success: #10b981; --success-glow: rgba(16, 185, 129, 0.4);
+  --warning: #f59e0b; --danger: #ef4444;
+  --radius: 12px; --radius-sm: 8px; --radius-lg: 16px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.3), 0 0 0 1px var(--border);
+  --shadow-lg: 0 12px 48px rgba(0,0,0,0.4), 0 0 0 1px var(--border-bright);
+  --shadow-glow: 0 0 32px var(--primary-glow), 0 0 0 1px var(--border-bright);
+  --font: "Inter", system-ui, sans-serif;
+  --space: 16px; --space-lg: 24px; --space-xl: 32px;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f7fb; --surface: #ffffff; --surface-elevated: #fafbfc;
+    --text: #0f172a; --text-muted: #475569; --text-dim: #94a3b8;
+    --border: #e2e8f0; --border-bright: #cbd5e1;
+    --shadow: 0 4px 24px rgba(15, 23, 42, 0.08), 0 0 0 1px var(--border);
+    --shadow-lg: 0 12px 48px rgba(15, 23, 42, 0.12), 0 0 0 1px var(--border-bright);
+    --shadow-glow: 0 0 32px var(--primary-glow), 0 0 0 1px var(--border-bright);
+  }
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 14px; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh; }
+.page { max-width: 1520px; margin: 0 auto; padding: var(--space-xl); }
+.bg-pattern { position: fixed; inset: 0; background: radial-gradient(ellipse 80% 50% at 20% 0%, rgba(59,130,246,0.08) 0%, transparent 70%), radial-gradient(ellipse 60% 40% at 80% 100%, rgba(168,85,247,0.06) 0%, transparent 60%); pointer-events: none; z-index: -1; }
+@media (prefers-color-scheme: light) {
+  .bg-pattern { background: radial-gradient(ellipse 80% 50% at 20% 0%, rgba(59,130,246,0.06) 0%, transparent 70%), radial-gradient(ellipse 60% 40% at 80% 100%, rgba(168,85,247,0.04) 0%, transparent 60%); }
+}
+.header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space); margin-bottom: var(--space-xl); flex-wrap: wrap; position: relative; }
+.header::after { content: ""; position: absolute; bottom: calc(var(--space-xl) * -1); left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--border-bright) 20%, var(--border-bright) 80%, transparent); }
+.header-brand { flex: 1; min-width: 280px; }
+.header h1 { font-size: clamp(1.75rem, 4vw, 2.25rem); font-weight: 800; letter-spacing: -0.03em; background: linear-gradient(135deg, var(--text) 0%, var(--primary) 50%, var(--accent) 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.header .subtitle { color: var(--text-muted); font-size: 1rem; margin-top: 4px; font-weight: 400; max-width: 480px; }
+.toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.seg { display: inline-flex; background: var(--surface-elevated); border: 1px solid var(--border); border-radius: var(--radius); padding: 3px; box-shadow: var(--shadow); }
+.seg button { padding: 10px 18px; background: transparent; border: none; cursor: pointer; font: inherit; font-size: 0.85rem; font-weight: 600; color: var(--text-dim); border-radius: calc(var(--radius) - 3px); transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); position: relative; overflow: hidden; }
+.seg button::before { content: ""; position: absolute; inset: 0; background: linear-gradient(135deg, var(--primary), var(--accent)); opacity: 0; transition: opacity 0.2s; }
+.seg button.active { color: white; }
+.seg button.active::before { opacity: 1; }
+.seg button.active span { position: relative; z-index: 1; }
+.seg button:not(.active):hover { color: var(--text); background: var(--border); }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: var(--radius-sm); font-size: 0.85rem; font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+.btn-primary { background: linear-gradient(135deg, var(--primary), var(--accent)); color: white; border-color: transparent; box-shadow: 0 4px 16px var(--primary-glow); }
+.btn-primary:hover { box-shadow: 0 6px 24px var(--primary-glow); transform: translateY(-1px); }
+.btn-secondary { background: var(--surface-elevated); color: var(--text); border-color: var(--border); }
+.btn-secondary:hover { background: var(--border); border-color: var(--border-bright); }
+.btn-ghost { background: transparent; color: var(--primary); border-color: transparent; }
+.btn-ghost:hover { background: rgba(59,130,246,0.1); }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space); margin-bottom: var(--space-xl); }
+.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-lg); box-shadow: var(--shadow); position: relative; overflow: hidden; }
+.kpi::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px; background: var(--gradient); }
+.kpi:nth-child(1) { --gradient: linear-gradient(90deg, var(--primary), var(--accent)); }
+.kpi:nth-child(2) { --gradient: linear-gradient(90deg, var(--cyan), var(--primary)); }
+.kpi:nth-child(3) { --gradient: linear-gradient(90deg, var(--accent), var(--cyan)); }
+.kpi:nth-child(4) { --gradient: linear-gradient(90deg, var(--warning), var(--primary)); }
+.kpi:nth-child(5) { --gradient: linear-gradient(90deg, var(--success), var(--cyan)); }
+.kpi:hover { box-shadow: var(--shadow-lg); transform: translateY(-2px); transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+.kpi .label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-dim); margin-bottom: 6px; font-weight: 700; }
+.kpi .value { font-size: clamp(1.75rem, 3.5vw, 2.5rem); font-weight: 800; color: var(--text); line-height: 1.1; background: linear-gradient(135deg, var(--text), var(--primary)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.kpi .sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 6px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); overflow: hidden; margin-bottom: var(--space); transition: box-shadow 0.2s, border-color 0.2s; }
+.card:hover { box-shadow: var(--shadow-lg); border-color: var(--border-bright); }
+.card-header { display: flex; align-items: center; justify-content: space-between; padding: var(--space) var(--space-lg); border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: var(--space); background: linear-gradient(180deg, var(--surface-elevated), var(--surface)); }
+.card-header h2 { font-size: 1rem; font-weight: 700; letter-spacing: -0.01em; }
+.card-header .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.card-body { padding: var(--space-lg); }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border); }
+th { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); font-weight: 700; background: var(--surface-elevated); white-space: nowrap; }
+tbody tr { transition: background 0.15s; }
+tbody tr:hover { background: var(--surface-elevated); }
+tbody tr:last-child td { border-bottom: none; }
+.heatmap-cell { display: inline-flex; align-items: center; justify-content: center; min-width: 48px; height: 36px; border-radius: var(--radius-sm); font-size: 0.8rem; font-weight: 700; color: #0a0f1a; box-shadow: inset 0 -2px 4px rgba(0,0,0,0.15); }
+@media (prefers-color-scheme: light) {
+  .heatmap-cell { color: #0a0f1a; box-shadow: inset 0 -2px 4px rgba(0,0,0,0.1); }
+}
+.heatmap-legend { display: flex; flex-wrap: wrap; gap: var(--space); margin-top: var(--space); padding-top: var(--space); border-top: 1px solid var(--border); font-size: 0.75rem; color: var(--text-muted); }
+.heatmap-legend span { display: flex; align-items: center; gap: 6px; }
+.heatmap-legend i { width: 16px; height: 16px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+.drop-off-grid { display: grid; gap: var(--space); grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.drop-off-card { background: var(--surface-elevated); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space); position: relative; overflow: hidden; }
+.drop-off-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--source-gradient); }
+.drop-off-card:nth-child(1) { --source-gradient: linear-gradient(90deg, var(--primary), var(--accent)); }
+.drop-off-card:nth-child(2) { --source-gradient: linear-gradient(90deg, var(--accent), var(--cyan)); }
+.drop-off-card:nth-child(3) { --source-gradient: linear-gradient(90deg, var(--cyan), var(--success)); }
+.drop-off-card:nth-child(4) { --source-gradient: linear-gradient(90deg, var(--success), var(--primary)); }
+.drop-off-card .source-name { font-size: 0.7rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+.drop-off-card .source-meta { font-size: 0.8rem; color: var(--text-muted); margin-bottom: var(--space); font-weight: 500; }
+.drop-off-step { margin-bottom: 10px; }
+.drop-off-step:last-child { margin-bottom: 0; }
+.drop-off-step-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.drop-off-step-label { font-size: 0.8rem; font-weight: 600; color: var(--text); min-width: 120px; }
+.drop-off-step-value { font-size: 0.8rem; font-weight: 700; color: var(--primary); font-variant-numeric: tabular-nums; }
+.drop-off-track { flex: 1; height: 10px; background: var(--border); border-radius: 5px; overflow: hidden; margin: 0 12px; position: relative; }
+.drop-off-fill { height: 100%; border-radius: 5px; transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1); position: relative; }
+.drop-off-fill::after { content: ""; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(180deg, rgba(255,255,255,0.3) 0%, transparent 50%, rgba(0,0,0,0.1) 100%); }
+.drop-off-fill.step-1 { background: linear-gradient(90deg, var(--primary), #60a5fa); box-shadow: 0 0 16px var(--primary-glow); }
+.drop-off-fill.step-2 { background: linear-gradient(90deg, var(--accent), #c084fc); box-shadow: 0 0 16px var(--accent-glow); }
+.drop-off-fill.step-3 { background: linear-gradient(90deg, var(--cyan), #22d3ee); box-shadow: 0 0 16px var(--cyan-glow); }
+.drop-off-fill.purchase { background: linear-gradient(90deg, var(--success), #34d399); box-shadow: 0 0 16px var(--success-glow); }
+.audience-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space); }
+.audience-card { background: var(--surface-elevated); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space); position: relative; overflow: hidden; }
+.audience-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--card-gradient); }
+.audience-card:nth-child(1) { --card-gradient: linear-gradient(90deg, var(--primary), var(--accent)); }
+.audience-card:nth-child(2) { --card-gradient: linear-gradient(90deg, var(--accent), var(--cyan)); }
+.audience-card:nth-child(3) { --card-gradient: linear-gradient(90deg, var(--cyan), var(--success)); }
+.audience-card:nth-child(4) { --card-gradient: linear-gradient(90deg, var(--warning), var(--primary)); }
+.audience-card:nth-child(5) { --card-gradient: linear-gradient(90deg, var(--success), var(--cyan)); }
+.audience-card:nth-child(6) { --card-gradient: linear-gradient(90deg, var(--primary), var(--success)); }
+.audience-card h3 { font-size: 0.7rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: var(--space); }
+.audience-item { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.audience-item:last-child { border-bottom: none; }
+.audience-item .name { color: var(--text-muted); flex: 1; font-size: 0.875rem; }
+.audience-item .bar-container { flex: 3; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+.audience-item .bar { height: 100%; border-radius: 4px; transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1); position: relative; }
+.audience-item .bar::after { content: ""; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(180deg, rgba(255,255,255,0.3), transparent); }
+.audience-item .bar.age { background: linear-gradient(90deg, var(--primary), #60a5fa); box-shadow: 0 0 12px var(--primary-glow); }
+.audience-item .bar.gender { background: linear-gradient(90deg, var(--accent), #c084fc); box-shadow: 0 0 12px var(--accent-glow); }
+.audience-item .bar.location { background: linear-gradient(90deg, var(--cyan), #22d3ee); box-shadow: 0 0 12px var(--cyan-glow); }
+.audience-item .bar.device { background: linear-gradient(90deg, var(--warning), #fbbf24); box-shadow: 0 0 12px rgba(245,158,11,0.4); }
+.audience-item .bar.time { background: linear-gradient(90deg, var(--accent), var(--primary)); box-shadow: 0 0 12px var(--accent-glow); }
+.audience-item .bar.interest { background: linear-gradient(90deg, var(--success), #34d399); box-shadow: 0 0 12px var(--success-glow); }
+.audience-item .value { font-weight: 700; color: var(--text); min-width: 52px; text-align: right; font-variant-numeric: tabular-nums; font-size: 0.875rem; }
+.utmfy-badge { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; background: linear-gradient(135deg, var(--primary), var(--accent)); color: white; border-radius: 999px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.02em; box-shadow: 0 4px 24px var(--primary-glow), 0 0 0 1px var(--border-bright); animation: badgePulse 3s infinite; }
+.utmfy-badge::before { content: ""; width: 8px; height: 8px; background: white; border-radius: 50%; opacity: 0.9; }
+@keyframes badgePulse { 0%, 100% { box-shadow: 0 4px 24px var(--primary-glow), 0 0 0 1px var(--border-bright); } 50% { box-shadow: 0 6px 32px var(--accent-glow), 0 0 0 1px var(--border-bright); } }
+.chip { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 6px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.02em; }
+.chip-primary { background: rgba(59,130,246,0.15); color: var(--primary); border: 1px solid rgba(59,130,246,0.3); }
+.chip-success { background: rgba(16,185,129,0.15); color: var(--success); border: 1px solid rgba(16,185,129,0.3); }
+.chip-warning { background: rgba(245,158,11,0.15); color: var(--warning); border: 1px solid rgba(245,158,11,0.3); }
+.chip-danger { background: rgba(239,68,68,0.15); color: var(--danger); border: 1px solid rgba(239,68,68,0.3); }
+.chip-cyan { background: rgba(6,182,212,0.15); color: var(--cyan); border: 1px solid rgba(6,182,212,0.3); }
+.empty-state { text-align: center; padding: var(--space-xl); color: var(--text-dim); }
+.empty-state svg { width: 56px; height: 56px; margin-bottom: var(--space); opacity: 0.3; }
+@media (max-width: 768px) {
+  .page { padding: var(--space); }
+  .header { flex-direction: column; align-items: flex-start; }
+  .toolbar { width: 100%; justify-content: space-between; }
+  .kpi .value { font-size: 1.75rem; }
+}
+</style>
+</head>
+<body>
+<div class="bg-pattern"></div>
+<div class="page">
+  <header class="header">
+    <div class="header-brand">
+      <h1>Quiz & Ads</h1>
+      <p class="subtitle">Inteligência de quizzes + performance de anúncios — powered by UTMfy</p>
+    </div>
+    <div class="toolbar">
+      <div class="seg" role="tablist" aria-label="Fonte de dados">
+        <button class="active" role="tab" aria-selected="true"><span>Tracker</span></button>
+        <button role="tab" aria-selected="false"><span>UTMfy Ads</span></button>
+        <button role="tab" aria-selected="false"><span>Comparar</span></button>
+      </div>
+      <button class="btn btn-primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Sincronizar Agora</button>
+      <span class="utmfy-badge">UTMfy Live · pack2TGy7k93DTB0Vq8DNthlZXydS1tztvpq</span>
+    </div>
+  </header>
+
+  <div class="kpi-grid">
+    <article class="kpi"><div class="label">Quizzes Ativos</div><div class="value">12</div><div class="sub">+3 novos este mês</div></article>
+    <article class="kpi"><div class="label">Respostas Coletadas</div><div class="value">47.8K</div><div class="sub">Últimos 30 dias</div></article>
+    <article class="kpi"><div class="label">Conclusão Média</div><div class="value">68.4%</div><div class="sub">Ponderado por volume</div></article>
+    <article class="kpi"><div class="label">CPA Blended</div><div class="value">R$ 12,40</div><div class="sub">Todas campanhas ativas</div></article>
+    <article class="kpi"><div class="label">ROAS Quiz→Compra</div><div class="value">4.2x</div><div class="sub">Atribuição last-click</div></article>
+  </div>
+
+  <section class="card" aria-labelledby="heatmap-title">
+    <header class="card-header">
+      <h2 id="heatmap-title">Heatmap de Respostas por Pergunta × Campanha</h2>
+      <div class="actions">
+        <label class="btn btn-ghost" style="cursor:pointer;"><input type="checkbox" checked style="margin-right:8px;"> Normalizar %</label>
+        <select class="btn btn-secondary" style="padding: 10px 14px; font-size: 0.85rem;">
+          <option>Todas as campanhas</option>
+          <option>summer_sale (Google)</option>
+          <option>bf_promo (Meta)</option>
+          <option>evergreen (TikTok)</option>
+        </select>
+      </div>
+    </header>
+    <div class="card-body">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="min-width:220px;">Pergunta</th>
+              <th style="width:100px;">Tipo</th>
+              <th style="width:80px;">Total</th>
+              <th>summer_sale</th>
+              <th>bf_promo</th>
+              <th>evergreen</th>
+              <th>tiktok_test</th>
+              <th>meta_retarget</th>
+              <th style="width:90px;">Gap</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="font-weight:600;">Qual seu objetivo principal?</td>
+              <td><span class="chip chip-primary">Múltipla escolha</span></td>
+              <td>47.8K</td>
+              <td><span class="heatmap-cell" style="background:#dbeafe;">89%</span></td>
+              <td><span class="heatmap-cell" style="background:#93c5fd;">76%</span></td>
+              <td><span class="heatmap-cell" style="background:#60a5fa;">65%</span></td>
+              <td><span class="heatmap-cell" style="background:#3b82f6;">52%</span></td>
+              <td><span class="heatmap-cell" style="background:#2563eb;">41%</span></td>
+              <td style="color:var(--danger);font-weight:700;">−48 pp</td>
+            </tr>
+            <tr>
+              <td style="font-weight:600;">Qual sua faixa de renda?</td>
+              <td><span class="chip chip-success">Única escolha</span></td>
+              <td>42.1K</td>
+              <td><span class="heatmap-cell" style="background:#93c5fd;">72%</span></td>
+              <td><span class="heatmap-cell" style="background:#60a5fa;">68%</span></td>
+              <td><span class="heatmap-cell" style="background:#3b82f6;">59%</span></td>
+              <td><span class="heatmap-cell" style="background:#2563eb;">48%</span></td>
+              <td><span class="heatmap-cell" style="background:#1e40af;">38%</span></td>
+              <td style="color:var(--danger);font-weight:700;">−34 pp</td>
+            </tr>
+            <tr>
+              <td style="font-weight:600;">Já comprou produtos similares?</td>
+              <td><span class="chip chip-warning">Sim / Não</span></td>
+              <td>38.9K</td>
+              <td><span class="heatmap-cell" style="background:#60a5fa;">64%</span></td>
+              <td><span class="heatmap-cell" style="background:#3b82f6;">58%</span></td>
+              <td><span class="heatmap-cell" style="background:#2563eb;">51%</span></td>
+              <td><span class="heatmap-cell" style="background:#1e40af;">44%</span></td>
+              <td><span class="heatmap-cell" style="background:#1e3a8a;">35%</span></td>
+              <td style="color:var(--danger);font-weight:700;">−29 pp</td>
+            </tr>
+            <tr>
+              <td style="font-weight:600;">Como prefere receber ofertas?</td>
+              <td><span class="chip chip-primary">Múltipla escolha</span></td>
+              <td>35.2K</td>
+              <td><span class="heatmap-cell" style="background:#3b82f6;">55%</span></td>
+              <td><span class="heatmap-cell" style="background:#2563eb;">49%</span></td>
+              <td><span class="heatmap-cell" style="background:#1e40af;">42%</span></td>
+              <td><span class="heatmap-cell" style="background:#1e3a8a;">38%</span></td>
+              <td><span class="heatmap-cell" style="background:#1e3a8a;">31%</span></td>
+              <td style="color:var(--danger);font-weight:700;">−24 pp</td>
+            </tr>
+            <tr>
+              <td style="font-weight:600;">Qual seu maior desafio hoje?</td>
+              <td><span class="chip chip-danger">Aberta (categorizada)</span></td>
+              <td>28.7K</td>
+              <td><span class="heatmap-cell" style="background:#2563eb;">48%</span></td>
+              <td><span class="heatmap-cell" style="background:#1e40af;">42%</span></td>
+              <td><span class="heatmap-cell" style="background:#1e3a8a;">37%</span></td>
+              <td><span class="heatmap-cell" style="background:#1e3a8a;">32%</span></td>
+              <td><span class="heatmap-cell" style="background:#1e3a8a;">26%</span></td>
+              <td style="color:var(--danger);font-weight:700;">−22 pp</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="heatmap-legend">
+        <span><i style="background:#dbeafe;"></i> ≥ 80%</span>
+        <span><i style="background:#93c5fd;"></i> 60–79%</span>
+        <span><i style="background:#60a5fa;"></i> 40–59%</span>
+        <span><i style="background:#3b82f6;"></i> 20–39%</span>
+        <span><i style="background:#2563eb;"></i> < 20%</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="dropoff-title">
+    <header class="card-header">
+      <h2 id="dropoff-title">Funil de Drop-off por Source (UTM)</h2>
+      <div class="actions">
+        <select class="btn btn-secondary" style="padding: 10px 14px; font-size: 0.85rem;">
+          <option>Últimos 30 dias</option>
+          <option>Últimos 7 dias</option>
+          <option>Últimos 90 dias</option>
+          <option>Período personalizado</option>
+        </select>
+      </div>
+    </header>
+    <div class="card-body">
+      <div class="drop-off-grid">
+        <article class="drop-off-card">
+          <div class="source-name">google / cpc</div>
+          <div class="source-meta">summer_sale · 12.4K entraram no quiz</div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Entrada (P1)</span><span class="drop-off-step-value">12.4K</span></div><div class="drop-off-track"><div class="drop-off-fill step-1" style="width:100%"></div></div></div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Pergunta 1 → 2</span><span class="drop-off-step-value">10.8K</span></div><div class="drop-off-track"><div class="drop-off-fill step-2" style="width:87%"></div></div></div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Pergunta 2 → 3</span><span class="drop-off-step-value">8.9K</span></div><div class="drop-off-track"><div class="drop-off-fill step-3" style="width:72%"></div></div></div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Pergunta 3 → Oferta</span><span class="drop-off-step-value">5.6K</span></div><div class="drop-off-track"><div class="drop-off-fill purchase" style="width:45%"></div></div></div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Compra Final</span><span class="drop-off-step-value">3.5K</span></div><div class="drop-off-track"><div class="drop-off-fill purchase" style="width:28%"></div></div></div>
+        </article>
+        <article class="drop-off-card">
+          <div class="source-name">meta / social</div>
+          <div class="source-meta">bf_promo · 8.9K entraram no quiz</div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Entrada (P1)</span><span class="drop-off-step-value">8.9K</span></div><div class="drop-off-track"><div class="drop-off-fill step-1" style="width:100%"></div></div></div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Pergunta 1 → 2</span><span class="drop-off-step-value">7.0K</span></div><div class="drop-off-track"><div class="drop-off-fill step-2" style="width:79%"></div></div></div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Pergunta 2 → 3</span><span class="drop-off-step-value">5.4K</span></div><div class="drop-off-track"><div class="drop-off-fill step-3" style="width:61%"></div></div></div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Pergunta 3 → Oferta</span><span class="drop-off-step-value">3.4K</span></div><div class="drop-off-track"><div class="drop-off-fill purchase" style="width:38%"></div></div></div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Compra Final</span><span class="drop-off-step-value">2.0K</span></div><div class="drop-off-track"><div class="drop-off-fill purchase" style="width:22%"></div></div></div>
+        </article>
+        <article class="drop-off-card">
+          <div class="source-name">tiktok / cpm</div>
+          <div class="source-meta">evergreen · 6.2K entraram no quiz</div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Entrada (P1)</span><span class="drop-off-step-value">6.2K</span></div><div class="drop-off-track"><div class="drop-off-fill step-1" style="width:100%"></div></div></div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Pergunta 1 → 2</span><span class="drop-off-step-value">4.4K</span></div><div class="drop-off-track"><div class="drop-off-fill step-2" style="width:71%"></div></div></div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Pergunta 2 → 3</span><span class="drop-off-step-value">3.3K</span></div><div class="drop-off-track"><div class="drop-off-fill step-3" style="width:54%"></div></div></div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Pergunta 3 → Oferta</span><span class="drop-off-step-value">1.9K</span></div><div class="drop-off-track"><div class="drop-off-fill purchase" style="width:31%"></div></div></div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Compra Final</span><span class="drop-off-step-value">1.1K</span></div><div class="drop-off-track"><div class="drop-off-fill purchase" style="width:18%"></div></div></div>
+        </article>
+        <article class="drop-off-card">
+          <div class="source-name">email / newsletter</div>
+          <div class="source-meta">loyalty · 3.1K entraram no quiz</div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Entrada (P1)</span><span class="drop-off-step-value">3.1K</span></div><div class="drop-off-track"><div class="drop-off-fill step-1" style="width:100%"></div></div></div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Pergunta 1 → 2</span><span class="drop-off-step-value">2.9K</span></div><div class="drop-off-track"><div class="drop-off-fill step-2" style="width:92%"></div></div></div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Pergunta 2 → 3</span><span class="drop-off-step-value">2.6K</span></div><div class="drop-off-track"><div class="drop-off-fill step-3" style="width:84%"></div></div></div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Pergunta 3 → Oferta</span><span class="drop-off-step-value">2.1K</span></div><div class="drop-off-track"><div class="drop-off-fill purchase" style="width:67%"></div></div></div>
+          <div class="drop-off-step"><div class="drop-off-step-header"><span class="drop-off-step-label">Compra Final</span><span class="drop-off-step-value">1.6K</span></div><div class="drop-off-track"><div class="drop-off-fill purchase" style="width:52%"></div></div></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="audience-title">
+    <header class="card-header">
+      <h2 id="audience-title">Audience Breakdown por Ad ID (UTMfy)</h2>
+      <div class="actions">
+        <select class="btn btn-secondary" style="padding: 10px 14px; font-size: 0.85rem;">
+          <option>Agregrado: todos os Ad IDs</option>
+          <option>ad_7x9k2m1p — summer_sale (Google)</option>
+          <option>ad_3q8z4n7v — bf_promo (Meta)</option>
+          <option>ad_5w1r6t9y — evergreen (TikTok)</option>
+          <option>ad_2u4i8o0p — tiktok_test</option>
+        </select>
+      </div>
+    </header>
+    <div class="card-body">
+      <div class="audience-grid">
+        <article class="audience-card">
+          <h3>Distribuição Etária</h3>
+          <div class="audience-item"><span class="name">18–24 anos</span><div class="bar-container"><div class="bar age" style="width:24%"></div></div><span class="value">24%</span></div>
+          <div class="audience-item"><span class="name">25–34 anos</span><div class="bar-container"><div class="bar age" style="width:41%"></div></div><span class="value">41%</span></div>
+          <div class="audience-item"><span class="name">35–44 anos</span><div class="bar-container"><div class="bar age" style="width:22%"></div></div><span class="value">22%</span></div>
+          <div class="audience-item"><span class="name">45–54 anos</span><div class="bar-container"><div class="bar age" style="width:9%"></div></div><span class="value">9%</span></div>
+          <div class="audience-item"><span class="name">55+ anos</span><div class="bar-container"><div class="bar age" style="width:4%"></div></div><span class="value">4%</span></div>
+        </article>
+        <article class="audience-card">
+          <h3>Gênero</h3>
+          <div class="audience-item"><span class="name">Feminino</span><div class="bar-container"><div class="bar gender" style="width:67%"></div></div><span class="value">67%</span></div>
+          <div class="audience-item"><span class="name">Masculino</span><div class="bar-container"><div class="bar gender" style="width:31%"></div></div><span class="value">31%</span></div>
+          <div class="audience-item"><span class="name">Outro / Pref. não dizer</span><div class="bar-container"><div class="bar gender" style="width:2%"></div></div><span class="value">2%</span></div>
+        </article>
+        <article class="audience-card">
+          <h3>Top 5 Localizações</h3>
+          <div class="audience-item"><span class="name">São Paulo – SP</span><div class="bar-container"><div class="bar location" style="width:28%"></div></div><span class="value">28%</span></div>
+          <div class="audience-item"><span class="name">Rio de Janeiro – RJ</span><div class="bar-container"><div class="bar location" style="width:14%"></div></div><span class="value">14%</span></div>
+          <div class="audience-item"><span class="name">Belo Horizonte – MG</span><div class="bar-container"><div class="bar location" style="width:8%"></div></div><span class="value">8%</span></div>
+          <div class="audience-item"><span class="name">Brasília – DF</span><div class="bar-container"><div class="bar location" style="width:6%"></div></div><span class="value">6%</span></div>
+          <div class="audience-item"><span class="name">Curitiba – PR</span><div class="bar-container"><div class="bar location" style="width:5%"></div></div><span class="value">5%</span></div>
+        </article>
+        <article class="audience-card">
+          <h3>Dispositivo</h3>
+          <div class="audience-item"><span class="name">Mobile</span><div class="bar-container"><div class="bar device" style="width:78%"></div></div><span class="value">78%</span></div>
+          <div class="audience-item"><span class="name">Desktop</span><div class="bar-container"><div class="bar device" style="width:20%"></div></div><span class="value">20%</span></div>
+          <div class="audience-item"><span class="name">Tablet</span><div class="bar-container"><div class="bar device" style="width:2%"></div></div><span class="value">2%</span></div>
+        </article>
+        <article class="audience-card">
+          <h3>Horários de Pico</h3>
+          <div class="audience-item"><span class="name">19h–22h (prime time)</span><div class="bar-container"><div class="bar time" style="width:34%"></div></div><span class="value">34%</span></div>
+          <div class="audience-item"><span class="name">12h–14h (almoço)</span><div class="bar-container"><div class="bar time" style="width:22%"></div></div><span class="value">22%</span></div>
+          <div class="audience-item"><span class="name">09h–11h (manhã)</span><div class="bar-container"><div class="bar time" style="width:18%"></div></div><span class="value">18%</span></div>
+          <div class="audience-item"><span class="name">22h–00h (noite)</span><div class="bar-container"><div class="bar time" style="width:15%"></div></div><span class="value">15%</span></div>
+        </article>
+        <article class="audience-card">
+          <h3>Interesse Principal</h3>
+          <div class="audience-item"><span class="name">Saúde e Bem-estar</span><div class="bar-container"><div class="bar interest" style="width:31%"></div></div><span class="value">31%</span></div>
+          <div class="audience-item"><span class="name">Educação e Carreira</span><div class="bar-container"><div class="bar interest" style="width:24%"></div></div><span class="value">24%</span></div>
+          <div class="audience-item"><span class="name">Finanças Pessoais</span><div class="bar-container"><div class="bar interest" style="width:19%"></div></div><span class="value">19%</span></div>
+          <div class="audience-item"><span class="name">Beleza e Moda</span><div class="bar-container"><div class="bar interest" style="width:14%"></div></div><span class="value">14%</span></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="ad-table-title">
+    <header class="card-header">
+      <h2 id="ad-table-title">Performance Detalhada por Ad ID</h2>
+    </header>
+    <div class="card-body">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Ad ID</th>
+              <th>Campanha</th>
+              <th>Canal</th>
+              <th style="text-align:right;">Impressões</th>
+              <th style="text-align:right;">Cliques</th>
+              <th style="text-align:right;">CTR</th>
+              <th style="text-align:right;">Iniciaram</th>
+              <th style="text-align:right;">Concluíram</th>
+              <th style="text-align:right;">Compras</th>
+              <th style="text-align:right;">CPA</th>
+              <th style="text-align:right;">ROAS</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code style="font-size:0.8rem;">ad_7x9k2m1p</code></td><td>summer_sale</td><td><span class="chip chip-primary">Google Search</span></td><td style="text-align:right;">2.1M</td><td style="text-align:right;">42.3K</td><td style="text-align:right;">2.01%</td><td style="text-align:right;">12.4K</td><td style="text-align:right;">8.5K</td><td style="text-align:right;">3.5K</td><td style="text-align:right;">R$ 9,80</td><td style="text-align:right;"><span style="color:var(--success);font-weight:700;">5.2x</span></td></tr>
+            <tr><td><code style="font-size:0.8rem;">ad_3q8z4n7v</code></td><td>bf_promo</td><td><span class="chip chip-warning">Meta Ads</span></td><td style="text-align:right;">3.4M</td><td style="text-align:right;">68.1K</td><td style="text-align:right;">2.00%</td><td style="text-align:right;">8.9K</td><td style="text-align:right;">5.4K</td><td style="text-align:right;">2.0K</td><td style="text-align:right;">R$ 15,60</td><td style="text-align:right;">3.8x</td></tr>
+            <tr><td><code style="font-size:0.8rem;">ad_5w1r6t9y</code></td><td>evergreen</td><td><span class="chip chip-danger">TikTok</span></td><td style="text-align:right;">1.8M</td><td style="text-align:right;">27.4K</td><td style="text-align:right;">1.52%</td><td style="text-align:right;">6.2K</td><td style="text-align:right;">3.3K</td><td style="text-align:right;">1.1K</td><td style="text-align:right;">R$ 18,90</td><td style="text-align:right;">2.9x</td></tr>
+            <tr><td><code style="font-size:0.8rem;">ad_2u4i8o0p</code></td><td>loyalty</td><td><span class="chip chip-success">Email</span></td><td style="text-align:right;">156K</td><td style="text-align:right;">12.8K</td><td style="text-align:right;">8.21%</td><td style="text-align:right;">3.1K</td><td style="text-align:right;">2.6K</td><td style="text-align:right;">1.6K</td><td style="text-align:right;">R$ 4,20</td><td style="text-align:right;"><span style="color:var(--success);font-weight:700;">8.4x</span></td></tr>
+            <tr><td><code style="font-size:0.8rem;">ad_9m1n3b5v</code></td><td>retargeting</td><td><span class="chip chip-warning">Meta Ads</span></td><td style="text-align:right;">890K</td><td style="text-align:right;">18.2K</td><td style="text-align:right;">2.04%</td><td style="text-align:right;">4.7K</td><td style="text-align:right;">3.8K</td><td style="text-align:right;">2.2K</td><td style="text-align:right;">R$ 11,30</td><td style="text-align:right;">4.6x</td></tr>
+            <tr><td><code style="font-size:0.8rem;">ad_6c8x2z4q</code></td><td>lookalike</td><td><span class="chip chip-cyan">Google Display</span></td><td style="text-align:right;">4.2M</td><td style="text-align:right;">31.5K</td><td style="text-align:right;">0.75%</td><td style="text-align:right;">5.1K</td><td style="text-align:right;">2.9K</td><td style="text-align:right;">980</td><td style="text-align:right;">R$ 22,40</td><td style="text-align:right;">2.1x</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

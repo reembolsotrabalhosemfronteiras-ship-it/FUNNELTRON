@@ -1,8 +1,9 @@
 """Router de workspaces — trocador de conta + compartilhamento por email."""
 import logging
+import time
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr
 
 from ..core.auth import get_current_user
@@ -13,16 +14,63 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
 
-class WorkspaceCreate(BaseModel):
-    name: str
+# Cache simples em memória: email -> (user_id, timestamp)
+# TTL de 5 minutos para evitar lookups repetidos em convites rápidos
+_email_user_cache: dict[str, tuple[str, float]] = {}
+_EMAIL_CACHE_TTL = 300.0  # 5 minutos
 
 
-class WorkspaceRename(BaseModel):
-    name: str
+def _find_user_id_by_email(email: str) -> Optional[str]:
+    """Procura um usuário do Supabase Auth pelo email.
 
+    Otimização: tenta filtro direto via API (Supabase suporta filter por email).
+    Fallback: scan paginado se o provider não suportar filtro.
+    Cache temporal evita lookups repetidos do mesmo email.
+    """
+    admin = get_supabase_admin()
+    email = email.strip().lower()
 
-class MemberInvite(BaseModel):
-    email: EmailStr
+    # 1) Cache hit
+    cached = _email_user_cache.get(email)
+    if cached:
+        user_id, ts = cached
+        if time.time() - ts < _EMAIL_CACHE_TTL:
+            return user_id
+        # expirado — remove e continua
+        _email_user_cache.pop(email, None)
+
+    # 2) Tenta filtro direto (Supabase Admin API aceita `filters={"email": email}`)
+    try:
+        resp = admin.auth.admin.list_users(filters={"email": email})
+        users = getattr(resp, "users", resp) or []
+        if users:
+            user_id = getattr(users[0], "id", None)
+            if user_id:
+                _email_user_cache[email] = (user_id, time.time())
+                return user_id
+            return None
+    except (TypeError, AttributeError):
+        # Provider não suporta filtro — cai no fallback
+        pass
+
+    # 3) Fallback: scan paginado completo (comportamento original)
+    page = 1
+    while True:
+        try:
+            resp = admin.auth.admin.list_users(page=page, per_page=200)
+        except TypeError:
+            resp = admin.auth.admin.list_users()  # versões sem paginação
+        users = getattr(resp, "users", resp) or []
+        for u in users:
+            if (getattr(u, "email", "") or "").lower() == email:
+                user_id = getattr(u, "id", None)
+                if user_id:
+                    _email_user_cache[email] = (user_id, time.time())
+                return user_id
+        if len(users) < 200:
+            break
+        page += 1
+    return None
 
 
 def _require_ready():
@@ -33,24 +81,17 @@ def _require_ready():
         )
 
 
-def _find_user_id_by_email(email: str) -> Optional[str]:
-    """Procura um usuário do Supabase Auth pelo email (paginando)."""
-    admin = get_supabase_admin()
-    email = email.strip().lower()
-    page = 1
-    while page <= 20:  # teto de segurança
-        try:
-            resp = admin.auth.admin.list_users(page=page, per_page=200)
-        except TypeError:
-            resp = admin.auth.admin.list_users()  # versões sem paginação
-        users = getattr(resp, "users", resp) or []
-        for u in users:
-            if (getattr(u, "email", "") or "").lower() == email:
-                return getattr(u, "id", None)
-        if len(users) < 200:
-            break
-        page += 1
-    return None
+class WorkspaceCreate(BaseModel):
+    name: str
+
+
+class WorkspaceRename(BaseModel):
+    name: Optional[str] = None
+    attribution_model: Optional[str] = None
+
+
+class MemberInvite(BaseModel):
+    email: EmailStr
 
 
 @router.get("")
@@ -136,20 +177,41 @@ def rename_workspace(
 ):
     _require_ready()
     _assert_owner(workspace_id, current_user.id)
-    name = body.name.strip()
-    if not name:
-        raise HTTPException(status_code=422, detail="Nome não pode ser vazio.")
-    get_supabase_admin().table("workspaces").update({"name": name}).eq(
+
+    updates = {}
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="Nome não pode ser vazio.")
+        updates["name"] = name
+
+    if body.attribution_model is not None:
+        if body.attribution_model not in ("first_touch", "last_touch"):
+            raise HTTPException(status_code=422, detail="attribution_model deve ser 'first_touch' ou 'last_touch'.")
+        updates["attribution_model"] = body.attribution_model
+
+    if not updates:
+        raise HTTPException(status_code=422, detail="Nenhum campo para atualizar.")
+
+    get_supabase_admin().table("workspaces").update(updates).eq(
         "id", workspace_id
     ).execute()
-    return {"id": workspace_id, "name": name}
+    return {"id": workspace_id, **updates}
 
 
 @router.delete("/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_workspace(workspace_id: str, current_user=Depends(get_current_user)):
+def delete_workspace(
+    workspace_id: str,
+    current_user=Depends(get_current_user),
+    confirm: str = Query(
+        "",
+        description="Confirmação explícita obrigatória. Use 'DELETE_WORKSPACE' para confirmar se houver outros membros ou funis (de qualquer usuário) no workspace.",
+    ),
+):
     _require_ready()
     _assert_owner(workspace_id, current_user.id)
     admin = get_supabase_admin()
+
     # Todo mundo precisa de pelo menos 1 workspace.
     mine = (
         admin.table("workspace_members")
@@ -164,6 +226,57 @@ def delete_workspace(workspace_id: str, current_user=Depends(get_current_user)):
             status_code=400,
             detail="Este é seu único workspace — crie outro antes de apagar este.",
         )
+
+    # Verifica se há outros membros (além do dono)
+    other_members = (
+        admin.table("workspace_members")
+        .select("user_id")
+        .eq("workspace_id", workspace_id)
+        .neq("user_id", current_user.id)
+        .execute()
+        .data
+        or []
+    )
+
+    # Verifica se há funis de OUTROS usuários neste workspace
+    other_funnels = (
+        admin.table("funnels")
+        .select("id, user_id")
+        .eq("workspace_id", workspace_id)
+        .neq("user_id", current_user.id)
+        .execute()
+        .data
+        or []
+    )
+
+    # Verifica se há funis do PRÓPRIO usuário neste workspace
+    own_funnels = (
+        admin.table("funnels")
+        .select("id")
+        .eq("workspace_id", workspace_id)
+        .eq("user_id", current_user.id)
+        .execute()
+        .data
+        or []
+    )
+
+    has_third_party_content = len(other_members) > 0 or len(other_funnels) > 0
+    has_own_content = len(own_funnels) > 0
+
+    needs_confirm = has_third_party_content or has_own_content
+    if needs_confirm and confirm != "DELETE_WORKSPACE":
+        detail = "Este workspace tem "
+        parts = []
+        if len(other_members) > 0:
+            parts.append("{} membro(s) adicional(is)".format(len(other_members)))
+        if len(other_funnels) > 0:
+            parts.append("{} funil(es) de outros usuários".format(len(other_funnels)))
+        if len(own_funnels) > 0:
+            parts.append("{} funil(es) seus".format(len(own_funnels)))
+        detail += ", ".join(parts)
+        detail += ". A exclusão em cascata apagará todo esse conteúdo. Para confirmar, adicione ?confirm=DELETE_WORKSPACE à requisição."
+        raise HTTPException(status_code=409, detail=detail)
+
     admin.table("workspaces").delete().eq("id", workspace_id).execute()
     return None
 

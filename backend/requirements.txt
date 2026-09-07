@@ -20,6 +20,8 @@ Pillow>=11
 # não achava o executável do navegador — captura de print e "Sincronizar"
 # quebravam em produção, mesmo funcionando local (onde o venv tinha
 # `playwright install` rodado manualmente para a versão nova).
-playwright==1.48.0
+# Local: versão aberta para pegar wheel pronto no Python 3.14 (greenlet 3.1.1
+# não tem wheel e exige Build Tools). Em produção o Docker continua com 1.48.0.
+playwright>=1.48.0
 # Notificação push (PIX gerado/pago) no navegador/SO via Web Push (VAPID).
 pywebpush>=2.0

@@ -57,6 +57,7 @@ async def get_clarity_metrics(
     period: str = "30d",
     funnel_id: Optional[str] = None,
     current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db)
 ):
     """
@@ -86,7 +87,7 @@ async def get_clarity_metrics(
     try:
         dias_pedidos = period_to_days(period)
         resultado = await clarity_service.get_live_insights(
-            current_user.id, dias_pedidos
+            current_user.id, dias_pedidos, ws_id=ws_id
         )
 
         if resultado.get("error"):
@@ -102,9 +103,16 @@ async def get_clarity_metrics(
         # continua sendo a chave de deduplicação do snapshot. Quem informou um
         # no cadastro mantém o dele; quem não informou usa o próprio id de
         # usuário, que é igualmente estável e único.
-        creds = supabase.table("api_credentials").select("extra_config").eq(
+        query = supabase.table("api_credentials").select("extra_config").eq(
             "user_id", current_user.id
-        ).eq("provider", "clarity").execute()
+        ).eq("provider", "clarity")
+
+        if ws_id:
+            query = query.eq("workspace_id", ws_id)
+        else:
+            query = query.or_(f"workspace_id.is.null,user_id.eq.{current_user.id}")
+
+        creds = query.execute()
 
         extra = (creds.data[0].get("extra_config") if creds.data else None) or {}
         project_id = extra.get("project_id") or current_user.id
@@ -374,10 +382,18 @@ def _tracker_step_metrics(
                 # causa de uma edição do desenho): conversão de página não se
                 # aplica, só "chegou" ou não.
                 rate = 100.0 if visitors > 0 else 0.0
+                # Sem anterior, "vindos da anterior" = todo mundo que chegou.
+                advanced = visitors
             elif prev_visitors == 0:
                 rate = 0.0
+                advanced = 0
             else:
                 rate = round((visitors / prev_visitors) * 100, 1)
+                # Quem veio da etapa anterior não pode passar de quem esteve
+                # nela. O excedente (`visitors > prev_visitors`) é tráfego
+                # direto nesta página, não avanço do funil — contá-lo aqui
+                # inflava a "conversão" das etapas do meio.
+                advanced = min(visitors, prev_visitors)
 
             result.append({
                 "id": f"{step['id']}:{start_date}:{end_date}",
@@ -389,7 +405,7 @@ def _tracker_step_metrics(
                 # anterior (página → página), não venda — a conversão de
                 # compra é medida à parte, por `conversion_goal_step_id` +
                 # `live_sales`, e não depende deste campo.
-                "conversions": visitors,
+                "conversions": advanced,
                 "conversion_rate": rate,
                 "source": "tracker",
             })
@@ -909,7 +925,7 @@ def get_funnel_ticket(
         )
 
 
-@router.post("/funnels/{funnel_id}/sync", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/funnels/{funnel_id}/sync")
 def sync_funnel_metrics(
     funnel_id: str,
     current_user = Depends(get_current_user),
@@ -918,30 +934,264 @@ def sync_funnel_metrics(
 ):
     """
     Sincroniza métricas do funil com VTurb e Clarity.
-    TODO: Implementar lógica real de sincronização.
+    NÃO IMPLEMENTADO — retorna 501 para o frontend saber que a funcionalidade
+    não existe ainda, em vez de 204 vazio que parece "sucesso sem conteúdo".
+    """
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Sincronização de métricas não implementada"
+    )
+
+
+# ============================================================================
+# QUIZ METRICS
+# ============================================================================
+
+@router.get("/funnels/{funnel_id}/quiz-answers")
+def get_quiz_answers(
+    funnel_id: str,
+    period: Optional[str] = "30d",
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    campaign: Optional[str] = None,
+    current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
+    supabase: Client = Depends(get_db)
+):
+    """
+    Agregado de respostas de quiz por pergunta/opção.
+    
+    Returns:
+        [
+            {
+                "question_id": str,
+                "question_text": str,  # se houver
+                "answers": [
+                    {"answer_id": str, "answer_value": str, "count": int, "rate": float}
+                ],
+                "total_responses": int
+            }
+        ]
     """
     try:
         funnel_guard(supabase, funnel_id, ws_id, current_user.id)
-        funnel = supabase.table("funnels").select("id").eq("id", funnel_id).execute()
+        
+        start_date, end_date = parse_period(period, from_date, to_date)
+        start_ts = datetime.fromisoformat(start_date).replace(tzinfo=timezone.utc).isoformat()
+        end_ts = (datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc) + timedelta(days=1)).isoformat()
 
-        if not funnel.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Funil não encontrado"
-            )
+        # Busca quiz answers no período
+        query = supabase.table("quiz_answers").select("*").eq(
+            "funnel_id", funnel_id
+        ).gte("timestamp", start_ts).lt("timestamp", end_ts)
+        
+        if campaign:
+            query = query.eq("utm_campaign", campaign)
+            
+        result = query.execute()
+        
+        # Agrupa por question_id -> answer_id
+        by_question: dict = {}
+        for row in result.data or []:
+            qid = row["question_id"]
+            aid = row["answer_id"]
+            aval = row.get("answer_value") or aid
+            
+            if qid not in by_question:
+                by_question[qid] = {"answers": {}, "total": 0}
+            by_question[qid]["answers"][aid] = by_question[qid]["answers"].get(aid, 0) + 1
+            by_question[qid]["total"] += 1
 
-        # TODO: Implementar sincronização real
-        # 1. Buscar steps do funil
-        # 2. Para cada step do tipo VSL, buscar dados do VTurb
-        # 3. Para outros steps, buscar do Clarity
-        # 4. Inserir/atualizar step_metrics e vsl_insights
+        response = []
+        for qid, data in by_question.items():
+            answers_list = []
+            for aid, count in data["answers"].items():
+                # Busca o answer_value mais comum
+                sample = next((r for r in result.data if r["question_id"] == qid and r["answer_id"] == aid), {})
+                aval = sample.get("answer_value") or aid
+                answers_list.append({
+                    "answer_id": aid,
+                    "answer_value": aval,
+                    "count": count,
+                    "rate": round((count / data["total"]) * 100, 1) if data["total"] > 0 else 0
+                })
+            # Ordena por count desc
+            answers_list.sort(key=lambda x: x["count"], reverse=True)
+            response.append({
+                "question_id": qid,
+                "answers": answers_list,
+                "total_responses": data["total"]
+            })
 
-        return None
+        return response
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro ao sincronizar métricas: {str(e)}"
+            detail=f"Erro ao buscar quiz answers: {str(e)}"
+        )
+
+
+@router.get("/funnels/{funnel_id}/quiz-by-utm")
+def get_quiz_by_utm(
+    funnel_id: str,
+    period: Optional[str] = "30d",
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
+    supabase: Client = Depends(get_db)
+):
+    """
+    Breakdown de respostas de quiz por UTM (source/medium/campaign/content).
+    
+    Returns:
+        {
+            "by_source": {"source": {"responses": int, "questions": {...}}},
+            "by_medium": {...},
+            "by_campaign": {...},
+            "by_content": {...}
+        }
+    """
+    try:
+        funnel_guard(supabase, funnel_id, ws_id, current_user.id)
+        
+        start_date, end_date = parse_period(period, from_date, to_date)
+        start_ts = datetime.fromisoformat(start_date).replace(tzinfo=timezone.utc).isoformat()
+        end_ts = (datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc) + timedelta(days=1)).isoformat()
+
+        result = supabase.table("quiz_answers").select("*").eq(
+            "funnel_id", funnel_id
+        ).gte("timestamp", start_ts).lt("timestamp", end_ts).execute()
+
+        def agrupar_por(campo: str) -> dict:
+            grupos: dict = {}
+            for row in result.data or []:
+                key = row.get(campo) or "(não informado)"
+                if key not in grupos:
+                    grupos[key] = {"responses": 0, "questions": {}}
+                grupos[key]["responses"] += 1
+                qid = row["question_id"]
+                aid = row["answer_id"]
+                if qid not in grupos[key]["questions"]:
+                    grupos[key]["questions"][qid] = {}
+                grupos[key]["questions"][qid][aid] = grupos[key]["questions"][qid].get(aid, 0) + 1
+            return grupos
+
+        return {
+            "by_source": agrupar_por("utm_source"),
+            "by_medium": agrupar_por("utm_medium"),
+            "by_campaign": agrupar_por("utm_campaign"),
+            "by_content": agrupar_por("utm_content"),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar quiz por UTM: {str(e)}"
+        )
+
+
+@router.get("/funnels/{funnel_id}/drop-off-by-source")
+def get_drop_off_by_source(
+    funnel_id: str,
+    period: Optional[str] = "30d",
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    current_user = Depends(get_current_user),
+    ws_id: Optional[str] = Depends(get_active_workspace),
+    supabase: Client = Depends(get_db)
+):
+    """
+    Funil etapa a etapa por source (UTM).
+    
+    Returns:
+        [
+            {
+                "source": str,
+                "steps": [
+                    {"step_id": str, "step_label": str, "visitors": int, "conversions": int, "rate": float}
+                ]
+            }
+        ]
+    """
+    try:
+        funnel_guard(supabase, funnel_id, ws_id, current_user.id)
+        
+        start_date, end_date = parse_period(period, from_date, to_date)
+        start_ts = datetime.fromisoformat(start_date).replace(tzinfo=timezone.utc).isoformat()
+        end_ts = (datetime.fromisoformat(end_date).replace(tzinfo=timezone.utc) + timedelta(days=1)).isoformat()
+
+        # Busca etapas do funil
+        steps = supabase.table("funnel_steps").select("id, label, order_index").eq(
+            "funnel_id", funnel_id
+        ).order("order_index").execute().data or []
+        
+        if not steps:
+            return []
+
+        step_ids = [s["id"] for s in steps]
+        step_labels = {s["id"]: s["label"] for s in steps}
+
+        # Busca page entries (rastreador próprio) no período
+        entries = supabase.table("live_page_entries").select(
+            "step_id, session_id, utm"
+        ).eq("funnel_id", funnel_id).gte("entered_at", start_ts).lt("entered_at", end_ts).execute()
+
+        # Agrupa sessões por source
+        sessions_by_source: dict = {}
+        for e in entries.data or []:
+            utm = e.get("utm") or {}
+            source = utm.get("utm_source") or "(direto)"
+            sid = e.get("session_id")
+            step_id = e.get("step_id")
+            if not sid or not step_id:
+                continue
+            if source not in sessions_by_source:
+                sessions_by_source[source] = {}
+            if step_id not in sessions_by_source[source]:
+                sessions_by_source[source][step_id] = set()
+            sessions_by_source[source][step_id].add(sid)
+
+        # Constrói funil por source
+        result = []
+        for source, step_sessions in sessions_by_source.items():
+            step_data = []
+            prev_count = None
+            for step in steps:
+                count = len(step_sessions.get(step["id"], set()))
+                if prev_count is None:
+                    rate = 100.0 if count > 0 else 0.0
+                elif prev_count == 0:
+                    rate = 0.0
+                else:
+                    rate = round((count / prev_count) * 100, 1)
+                step_data.append({
+                    "step_id": step["id"],
+                    "step_label": step_labels.get(step["id"], step["id"]),
+                    "visitors": count,
+                    "conversions": count,  # neste contexto = avançaram pra cá
+                    "rate": rate
+                })
+                prev_count = count
+            result.append({
+                "source": source,
+                "steps": step_data
+            })
+
+        # Ordena por visitantes na primeira etapa (desc)
+        result.sort(key=lambda x: x["steps"][0]["visitors"] if x["steps"] else 0, reverse=True)
+        
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao buscar drop-off por source: {str(e)}"
         )

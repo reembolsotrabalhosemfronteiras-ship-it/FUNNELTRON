@@ -2,6 +2,7 @@
 import httpx
 from typing import Optional, Dict, Any
 from datetime import datetime
+from cachetools import TTLCache
 from ..core.rate_limiter import rate_limiter
 from ..core.supabase_client import get_supabase_client
 
@@ -12,19 +13,40 @@ class VTurbService:
     BASE_URL = "https://analytics.vturb.net"
 
     def __init__(self):
-        self._cache: Dict[str, tuple[Any, float]] = {}  # cache_key -> (data, timestamp)
-        self.cache_ttl = 20.0  # segundos
+        # TTLCache com maxsize evita memory leak; ttl=20s = cache_ttl
+        self._cache: TTLCache[str, tuple[Any, float]] = TTLCache(maxsize=256, ttl=20.0)
 
-    async def get_credentials(self, user_id: str) -> Optional[Dict]:
-        """Busca credenciais do VTurb do usuário no banco"""
+    async def get_credentials(self, user_id: str, ws_id: Optional[str] = None) -> Optional[Dict]:
+        """Busca credenciais do VTurb do usuário/workspace no banco"""
         supabase = get_supabase_client()
 
-        result = supabase.table("api_credentials").select("*").eq(
+        query = supabase.table("api_credentials").select("*").eq(
             "user_id", user_id
-        ).eq("provider", "vturb").execute()
+        ).eq("provider", "vturb")
+
+        if ws_id:
+            query = query.eq("workspace_id", ws_id)
+        else:
+            # Fallback legado: credenciais sem workspace_id do próprio usuário
+            # workspace_id.is.null já implica user_id = auth.uid() via RLS, mas reforçamos
+            query = query.or_(f"workspace_id.is.null,user_id.eq.{user_id}")
+
+        result = query.execute()
 
         if result.data and len(result.data) > 0:
             return result.data[0]
+        return None
+
+    def _validate_credentials(self, creds: Optional[Dict]) -> Optional[str]:
+        """
+        Validação pre-flight: checa se credenciais existem e token não está vazio.
+        Retorna mensagem de erro se inválido, None se ok.
+        """
+        if not creds:
+            return "Credenciais do VTurb não configuradas"
+        token = creds.get("api_token")
+        if not token or not token.strip():
+            return "Token do VTurb vazio ou inválido"
         return None
 
     async def _make_request(
@@ -87,6 +109,12 @@ class VTurbService:
                 return response.json()
 
         except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                return {
+                    "error": True,
+                    "status": 401,
+                    "message": "Token VTurb inválido/expirado. Reconfigure em Integrações."
+                }
             return {
                 "error": True,
                 "status": e.response.status_code,
@@ -102,7 +130,8 @@ class VTurbService:
         self,
         user_id: str,
         player_id: str,
-        minutes: int = 5
+        minutes: int = 5,
+        ws_id: Optional[str] = None
     ) -> Dict:
         """
         Busca usuários assistindo VSL nos últimos N minutos.
@@ -111,16 +140,17 @@ class VTurbService:
         cache_key = f"live_{player_id}_{minutes}"
         now = datetime.now().timestamp()
 
-        # Verifica cache
+        # Verifica cache (TTLCache já expira automaticamente)
         if cache_key in self._cache:
             data, timestamp = self._cache[cache_key]
-            if now - timestamp < self.cache_ttl:
+            if now - timestamp < self._cache.ttl:
                 return data
 
         # Busca credenciais
-        creds = await self.get_credentials(user_id)
-        if not creds:
-            return {"error": True, "message": "Credenciais do VTurb não configuradas"}
+        creds = await self.get_credentials(user_id, ws_id)
+        validation_error = self._validate_credentials(creds)
+        if validation_error:
+            return {"error": True, "message": validation_error}
 
         # Faz requisição
         result = await self._make_request(
@@ -136,11 +166,12 @@ class VTurbService:
 
         return result
 
-    async def get_quota_usage(self, user_id: str) -> Dict:
+    async def get_quota_usage(self, user_id: str, ws_id: Optional[str] = None) -> Dict:
         """Verifica uso da cota do VTurb"""
-        creds = await self.get_credentials(user_id)
-        if not creds:
-            return {"error": True, "message": "Credenciais do VTurb não configuradas"}
+        creds = await self.get_credentials(user_id, ws_id)
+        validation_error = self._validate_credentials(creds)
+        if validation_error:
+            return {"error": True, "message": validation_error}
 
         return await self._make_request(
             "/quota/usage",

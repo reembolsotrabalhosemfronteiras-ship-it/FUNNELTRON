@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quiz & Ads — Conservadora</title>
+<style>
+:root {
+  --bg: #f8fafc; --surface: #ffffff; --text: #1e293b;
+  --muted: #64748b; --border: #e2e8f0; --primary: #3b82f6;
+  --primary-hover: #2563eb; --success: #16a34a; --warning: #ca8a04; --danger: #dc2626;
+  --canvas: #f1f5f9; --radius: 6px; --shadow: 0 1px 3px rgba(0,0,0,0.08);
+  --font: "Inter", system-ui, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.5; }
+.page { max-width: 1400px; margin: 0 auto; padding: 24px; }
+.header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+.header h1 { font-size: 22px; font-weight: 600; }
+.header .subtitle { color: var(--muted); font-size: 14px; }
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.seg button { padding: 8px 14px; background: transparent; border: none; cursor: pointer; font: inherit; font-size: 13px; color: var(--muted); }
+.seg button.active { background: var(--primary); color: white; }
+.seg button:not(.active):hover { background: var(--canvas); }
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: var(--radius); font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid transparent; }
+.btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border); }
+.btn-secondary:hover { background: var(--canvas); }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+.kpi .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 4px; }
+.kpi .value { font-size: 28px; font-weight: 700; color: var(--text); }
+.kpi .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 24px; box-shadow: var(--shadow); overflow: hidden; }
+.section-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 12px; }
+.section-header h2 { font-size: 15px; font-weight: 600; }
+.section-header .actions { display: flex; gap: 8px; }
+.section-body { padding: 20px; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; background: var(--canvas); }
+tbody tr:hover { background: var(--canvas); }
+.heatmap-cell { display: inline-block; min-width: 36px; height: 28px; border-radius: 4px; text-align: center; line-height: 28px; font-size: 12px; font-weight: 600; color: white; }
+.heatmap-legend { display: flex; gap: 16px; margin-top: 12px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.heatmap-legend span { display: flex; align-items: center; gap: 6px; }
+.heatmap-legend i { width: 16px; height: 16px; border-radius: 3px; }
+.drop-off-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+.drop-off-label { min-width: 140px; font-size: 13px; font-weight: 500; }
+.drop-off-track { flex: 1; height: 24px; background: var(--border); border-radius: 12px; overflow: hidden; position: relative; }
+.drop-off-fill { height: 100%; border-radius: 12px; transition: width 0.3s ease; }
+.drop-off-fill.step-1 { background: var(--primary); }
+.drop-off-fill.step-2 { background: #8b5cf6; }
+.drop-off-fill.step-3 { background: #06b6d4; }
+.drop-off-fill.purchase { background: var(--success); }
+.drop-off-value { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 11px; font-weight: 600; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+.audience-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.audience-card { background: var(--canvas); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.audience-card h3 { font-size: 13px; font-weight: 600; margin-bottom: 12px; color: var(--text); }
+.audience-item { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.audience-item:last-child { border-bottom: none; }
+.audience-item .name { color: var(--muted); }
+.audience-item .value { font-weight: 600; color: var(--text); }
+.utmfy-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; background: var(--primary); color: white; border-radius: 20px; font-size: 11px; font-weight: 600; }
+.utmfy-badge::before { content: ""; width: 8px; height: 8px; background: white; border-radius: 50%; opacity: 0.9; }
+.empty-state { text-align: center; padding: 48px 20px; color: var(--muted); }
+.empty-state svg { width: 48px; height: 48px; margin-bottom: 12px; opacity: 0.5; }
+@media (max-width: 768px) {
+  .page { padding: 16px; }
+  .header { flex-direction: column; align-items: flex-start; }
+  .toolbar { width: 100%; justify-content: space-between; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="header">
+    <div>
+      <h1>Quiz & Ads</h1>
+      <p class="subtitle">Análise de performance de quizzes e campanhas de anúncio — fonte: UTMfy</p>
+    </div>
+    <div class="toolbar">
+      <div class="seg" role="tablist" aria-label="Fonte de dados">
+        <button class="active" role="tab" aria-selected="true">Tracker (nosso)</button>
+        <button role="tab" aria-selected="false">UTMfy (ads)</button>
+        <button role="tab" aria-selected="false">Comparar</button>
+      </div>
+      <button class="btn btn-secondary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Atualizar</button>
+      <span class="utmfy-badge">UTMfy conectado</span>
+    </div>
+  </header>
+
+  <div class="kpi-grid">
+    <div class="kpi"><div class="label">Quizzes Ativos</div><div class="value">12</div><div class="sub">+3 vs mês anterior</div></div>
+    <div class="kpi"><div class="label">Respostas Totais</div><div class="value">47.8K</div><div class="sub">Período: 30d</div></div>
+    <div class="kpi"><div class="label">Taxa de Conclusão</div><div class="value">68.4%</div><div class="sub">Média ponderada</div></div>
+    <div class="kpi"><div class="label">CPA Médio (Quiz)</div><div class="value">R$ 12,40</div><div class="sub">Blended all campaigns</div></div>
+    <div class="kpi"><div class="label">ROAS Quiz → Compra</div><div class="value">4.2x</div><div class="sub">Atribuição last-click</div></div>
+  </div>
+
+  <section class="section" aria-labelledby="heatmap-title">
+    <header class="section-header">
+      <h2 id="heatmap-title">Heatmap de Respostas por Pergunta</h2>
+      <div class="actions">
+        <label class="btn btn-secondary" style="cursor:pointer;"><input type="checkbox" checked style="margin-right:6px;"> Normalizar %</label>
+        <select class="btn btn-secondary" style="padding: 8px 10px; font-size: 13px;">
+          <option>Todas as campanhas</option>
+          <option>campaign_summer_sale</option>
+          <option>campaign_black_friday</option>
+          <option>campaign_evergreen</option>
+        </select>
+      </div>
+    </header>
+    <div class="section-body">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Pergunta</th>
+              <th>Tipo</th>
+              <th>Total Resp.</th>
+              <th>campaign_summer</th>
+              <th>campaign_bf</th>
+              <th>campaign_evergreen</th>
+              <th>campaign_tiktok</th>
+              <th>campaign_meta</th>
+              <th>Δ Maior/Menor</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Qual seu objetivo principal?</td>
+              <td>Múltipla escolha</td>
+              <td>47.8K</td>
+              <td><span class="heatmap-cell" style="background:#1e40af;">89%</span></td>
+              <td><span class="heatmap-cell" style="background:#3b82f6;">76%</span></td>
+              <td><span class="heatmap-cell" style="background:#60a5fa;">65%</span></td>
+              <td><span class="heatmap-cell" style="background:#93c5fd;">52%</span></td>
+              <td><span class="heatmap-cell" style="background:#bfdbfe;">41%</span></td>
+              <td><span style="color:var(--danger);font-weight:600;">-48pp</span></td>
+            </tr>
+            <tr>
+              <td>Qual sua faixa de renda?</td>
+              <td>Única escolha</td>
+              <td>42.1K</td>
+              <td><span class="heatmap-cell" style="background:#3b82f6;">72%</span></td>
+              <td><span class="heatmap-cell" style="background:#60a5fa;">68%</span></td>
+              <td><span class="heatmap-cell" style="background:#93c5fd;">59%</span></td>
+              <td><span class="heatmap-cell" style="background:#bfdbfe;">48%</span></td>
+              <td><span class="heatmap-cell" style="background:#dbeafe;">38%</span></td>
+              <td><span style="color:var(--danger);font-weight:600;">-34pp</span></td>
+            </tr>
+            <tr>
+              <td>Já comprou produtos similares?</td>
+              <td>Sim/Não</td>
+              <td>38.9K</td>
+              <td><span class="heatmap-cell" style="background:#60a5fa;">64%</span></td>
+              <td><span class="heatmap-cell" style="background:#93c5fd;">58%</span></td>
+              <td><span class="heatmap-cell" style="background:#bfdbfe;">51%</span></td>
+              <td><span class="heatmap-cell" style="background:#dbeafe;">44%</span></td>
+              <td><span class="heatmap-cell" style="background:#eff6ff;">35%</span></td>
+              <td><span style="color:var(--danger);font-weight:600;">-29pp</span></td>
+            </tr>
+            <tr>
+              <td>Como prefere receber ofertas?</td>
+              <td>Múltipla escolha</td>
+              <td>35.2K</td>
+              <td><span class="heatmap-cell" style="background:#93c5fd;">55%</span></td>
+              <td><span class="heatmap-cell" style="background:#bfdbfe;">49%</span></td>
+              <td><span class="heatmap-cell" style="background:#dbeafe;">42%</span></td>
+              <td><span class="heatmap-cell" style="background:#eff6ff;">38%</span></td>
+              <td><span class="heatmap-cell" style="background:#f8fafc;">31%</span></td>
+              <td><span style="color:var(--danger);font-weight:600;">-24pp</span></td>
+            </tr>
+            <tr>
+              <td>Qual seu maior desafio hoje?</td>
+              <td>Aberta (categorizada)</td>
+              <td>28.7K</td>
+              <td><span class="heatmap-cell" style="background:#bfdbfe;">48%</span></td>
+              <td><span class="heatmap-cell" style="background:#dbeafe;">42%</span></td>
+              <td><span class="heatmap-cell" style="background:#eff6ff;">37%</span></td>
+              <td><span class="heatmap-cell" style="background:#f8fafc;">32%</span></td>
+              <td><span class="heatmap-cell" style="background:#f1f5f9;">26%</span></td>
+              <td><span style="color:var(--danger);font-weight:600;">-22pp</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="heatmap-legend">
+        <span><i style="background:#1e40af;"></i> ≥ 80%</span>
+        <span><i style="background:#3b82f6;"></i> 60-79%</span>
+        <span><i style="background:#60a5fa;"></i> 40-59%</span>
+        <span><i style="background:#93c5fd;"></i> 20-39%</span>
+        <span><i style="background:#bfdbfe;"></i> < 20%</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="dropoff-title">
+    <header class="section-header">
+      <h2 id="dropoff-title">Drop-off por Source (UTM)</h2>
+      <div class="actions">
+        <select class="btn btn-secondary" style="padding: 8px 10px; font-size: 13px;">
+          <option>Últimos 30 dias</option>
+          <option>Últimos 7 dias</option>
+          <option>Últimos 90 dias</option>
+          <option>Personalizado</option>
+        </select>
+      </div>
+    </header>
+    <div class="section-body">
+      <div style="display:grid; gap:16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));">
+        <div>
+          <h3 style="font-size:13px; font-weight:600; margin-bottom:12px; color:var(--muted);">google / cpc (summer_sale)</h3>
+          <div class="drop-off-bar"><span class="drop-off-label">Entrada (P1)</span><div class="drop-off-track"><div class="drop-off-fill step-1" style="width:100%"><span class="drop-off-value">12.4K</span></div></div></div>
+          <div class="drop-off-bar"><span class="drop-off-label">Pergunta 1 → 2</span><div class="drop-off-track"><div class="drop-off-fill step-2" style="width:87%"><span class="drop-off-value">10.8K</span></div></div></div>
+          <div class="drop-off-bar"><span class="drop-off-label">Pergunta 2 → 3</span><div class="drop-off-track"><div class="drop-off-fill step-3" style="width:72%"><span class="drop-off-value">8.9K</span></div></div></div>
+          <div class="drop-off-bar"><span class="drop-off-label">Pergunta 3 → Oferta</span><div class="drop-off-track"><div class="drop-off-fill purchase" style="width:45%"><span class="drop-off-value">5.6K</span></div></div></div>
+          <div class="drop-off-bar"><span class="drop-off-label">Compra</span><div class="drop-off-track"><div class="drop-off-fill purchase" style="width:28%"><span class="drop-off-value">3.5K</span></div></div></div>
+        </div>
+        <div>
+          <h3 style="font-size:13px; font-weight:600; margin-bottom:12px; color:var(--muted);">meta / social (bf_promo)</h3>
+          <div class="drop-off-bar"><span class="drop-off-label">Entrada (P1)</span><div class="drop-off-track"><div class="drop-off-fill step-1" style="width:100%"><span class="drop-off-value">8.9K</span></div></div></div>
+          <div class="drop-off-bar"><span class="drop-off-label">Pergunta 1 → 2</span><div class="drop-off-track"><div class="drop-off-fill step-2" style="width:79%"><span class="drop-off-value">7.0K</span></div></div></div>
+          <div class="drop-off-bar"><span class="drop-off-label">Pergunta 2 → 3</span><div class="drop-off-track"><div class="drop-off-fill step-3" style="width:61%"><span class="drop-off-value">5.4K</span></div></div></div>
+          <div class="drop-off-bar"><span class="drop-off-label">Pergunta 3 → Oferta</span><div class="drop-off-track"><div class="drop-off-fill purchase" style="width:38%"><span class="drop-off-value">3.4K</span></div></div></div>
+          <div class="drop-off-bar"><span class="drop-off-label">Compra</span><div class="drop-off-track"><div class="drop-off-fill purchase" style="width:22%"><span class="drop-off-value">2.0K</span></div></div></div>
+        </div>
+        <div>
+          <h3 style="font-size:13px; font-weight:600; margin-bottom:12px; color:var(--muted);">tiktok / cpm (evergreen)</h3>
+          <div class="drop-off-bar"><span class="drop-off-label">Entrada (P1)</span><div class="drop-off-track"><div class="drop-off-fill step-1" style="width:100%"><span class="drop-off-value">6.2K</span></div></div></div>
+          <div class="drop-off-bar"><span class="drop-off-label">Pergunta 1 → 2</span><div class="drop-off-track"><div class="drop-off-fill step-2" style="width:71%"><span class="drop-off-value">4.4K</span></div></div></div>
+          <div class="drop-off-bar"><span class="drop-off-label">Pergunta 2 → 3</span><div class="drop-off-track"><div class="drop-off-fill step-3" style="width:54%"><span class="drop-off-value">3.3K</span></div></div></div>
+          <div class="drop-off-bar"><span class="drop-off-label">Pergunta 3 → Oferta</span><div class="drop-off-track"><div class="drop-off-fill purchase" style="width:31%"><span class="drop-off-value">1.9K</span></div></div></div>
+          <div class="drop-off-bar"><span class="drop-off-label">Compra</span><div class="drop-off-track"><div class="drop-off-fill purchase" style="width:18%"><span class="drop-off-value">1.1K</span></div></div></div>
+        </div>
+        <div>
+          <h3 style="font-size:13px; font-weight:600; margin-bottom:12px; color:var(--muted);">email / newsletter (loyalty)</h3>
+          <div class="drop-off-bar"><span class="drop-off-label">Entrada (P1)</span><div class="drop-off-track"><div class="drop-off-fill step-1" style="width:100%"><span class="drop-off-value">3.1K</span></div></div></div>
+          <div class="drop-off-bar"><span class="drop-off-label">Pergunta 1 → 2</span><div class="drop-off-track"><div class="drop-off-fill step-2" style="width:92%"><span class="drop-off-value">2.9K</span></div></div></div>
+          <div class="drop-off-bar"><span class="drop-off-label">Pergunta 2 → 3</span><div class="drop-off-track"><div class="drop-off-fill step-3" style="width:84%"><span class="drop-off-value">2.6K</span></div></div></div>
+          <div class="drop-off-bar"><span class="drop-off-label">Pergunta 3 → Oferta</span><div class="drop-off-track"><div class="drop-off-fill purchase" style="width:67%"><span class="drop-off-value">2.1K</span></div></div></div>
+          <div class="drop-off-bar"><span class="drop-off-label">Compra</span><div class="drop-off-track"><div class="drop-off-fill purchase" style="width:52%"><span class="drop-off-value">1.6K</span></div></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="audience-title">
+    <header class="section-header">
+      <h2 id="audience-title">Audience Breakdown por Ad ID (UTMfy)</h2>
+      <div class="actions">
+        <select class="btn btn-secondary" style="padding: 8px 10px; font-size: 13px;">
+          <option>Todos os Ad IDs</option>
+          <option>ad_7x9k2m1p (summer_sale)</option>
+          <option>ad_3q8z4n7v (bf_promo)</option>
+          <option>ad_5w1r6t9y (evergreen)</option>
+          <option>ad_2u4i8o0p (tiktok_test)</option>
+        </select>
+      </div>
+    </header>
+    <div class="section-body">
+      <div class="audience-grid">
+        <div class="audience-card">
+          <h3>Idade</h3>
+          <div class="audience-item"><span class="name">18-24</span><span class="value">24%</span></div>
+          <div class="audience-item"><span class="name">25-34</span><span class="value">41%</span></div>
+          <div class="audience-item"><span class="name">35-44</span><span class="value">22%</span></div>
+          <div class="audience-item"><span class="name">45-54</span><span class="value">9%</span></div>
+          <div class="audience-item"><span class="name">55+</span><span class="value">4%</span></div>
+        </div>
+        <div class="audience-card">
+          <h3>Gênero</h3>
+          <div class="audience-item"><span class="name">Feminino</span><span class="value">67%</span></div>
+          <div class="audience-item"><span class="name">Masculino</span><span class="value">31%</span></div>
+          <div class="audience-item"><span class="name">Outro/Pref. não dizer</span><span class="value">2%</span></div>
+        </div>
+        <div class="audience-card">
+          <h3>Localização (Top 5)</h3>
+          <div class="audience-item"><span class="name">São Paulo - SP</span><span class="value">28%</span></div>
+          <div class="audience-item"><span class="name">Rio de Janeiro - RJ</span><span class="value">14%</span></div>
+          <div class="audience-item"><span class="name">Belo Horizonte - MG</span><span class="value">8%</span></div>
+          <div class="audience-item"><span class="name">Brasília - DF</span><span class="value">6%</span></div>
+          <div class="audience-item"><span class="name">Curitiba - PR</span><span class="value">5%</span></div>
+        </div>
+        <div class="audience-card">
+          <h3>Dispositivo</h3>
+          <div class="audience-item"><span class="name">Mobile</span><span class="value">78%</span></div>
+          <div class="audience-item"><span class="name">Desktop</span><span class="value">20%</span></div>
+          <div class="audience-item"><span class="name">Tablet</span><span class="value">2%</span></div>
+        </div>
+        <div class="audience-card">
+          <h3>Horário de Pico</h3>
+          <div class="audience-item"><span class="name">19h-22h</span><span class="value">34%</span></div>
+          <div class="audience-item"><span class="name">12h-14h</span><span class="value">22%</span></div>
+          <div class="audience-item"><span class="name">09h-11h</span><span class="value">18%</span></div>
+          <div class="audience-item"><span class="name">22h-00h</span><span class="value">15%</span></div>
+        </div>
+        <div class="audience-card">
+          <h3>Interesse Principal</h3>
+          <div class="audience-item"><span class="name">Saúde e Bem-estar</span><span class="value">31%</span></div>
+          <div class="audience-item"><span class="name">Educação e Carreira</span><span class="value">24%</span></div>
+          <div class="audience-item"><span class="name">Finanças Pessoais</span><span class="value">19%</span></div>
+          <div class="audience-item"><span class="name">Beleza e Moda</span><span class="value">14%</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="ad-table-title">
+    <header class="section-header">
+      <h2 id="ad-table-title">Detalhamento por Ad ID</h2>
+    </header>
+    <div class="section-body">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Ad ID</th>
+              <th>Campanha</th>
+              <th>Canal</th>
+              <th>Impressões</th>
+              <th>Cliques</th>
+              <th>CTR</th>
+              <th>Iniciaram Quiz</th>
+              <th>Concluíram</th>
+              <th>Compras</th>
+              <th>CPA</th>
+              <th>ROAS</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>ad_7x9k2m1p</td><td>summer_sale</td><td>Google Search</td><td>2.1M</td><td>42.3K</td><td>2.01%</td><td>12.4K</td><td>8.5K</td><td>3.5K</td><td>R$ 9,80</td><td>5.2x</td></tr>
+            <tr><td>ad_3q8z4n7v</td><td>bf_promo</td><td>Meta Ads</td><td>3.4M</td><td>68.1K</td><td>2.00%</td><td>8.9K</td><td>5.4K</td><td>2.0K</td><td>R$ 15,60</td><td>3.8x</td></tr>
+            <tr><td>ad_5w1r6t9y</td><td>evergreen</td><td>TikTok</td><td>1.8M</td><td>27.4K</td><td>1.52%</td><td>6.2K</td><td>3.3K</td><td>1.1K</td><td>R$ 18,90</td><td>2.9x</td></tr>
+            <tr><td>ad_2u4i8o0p</td><td>loyalty</td><td>Email</td><td>156K</td><td>12.8K</td><td>8.21%</td><td>3.1K</td><td>2.6K</td><td>1.6K</td><td>R$ 4,20</td><td>8.4x</td></tr>
+            <tr><td>ad_9m1n3b5v</td><td>retargeting</td><td>Meta Ads</td><td>890K</td><td>18.2K</td><td>2.04%</td><td>4.7K</td><td>3.8K</td><td>2.2K</td><td>R$ 11,30</td><td>4.6x</td></tr>
+            <tr><td>ad_6c8x2z4q</td><td>lookalike</td><td>Google Display</td><td>4.2M</td><td>31.5K</td><td>0.75%</td><td>5.1K</td><td>2.9K</td><td>980</td><td>R$ 22,40</td><td>2.1x</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

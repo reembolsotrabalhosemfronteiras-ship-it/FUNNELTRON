@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Modal } from "@/components/common/Modal";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ReactFlow,
@@ -169,6 +170,9 @@ function Atelier({ funnelId }: { funnelId: string }) {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Modal de confirmação para sair com alterações não salvas
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+
   // Histórico de posições para o Ctrl+Z. Guarda só o que muda de lugar —
   // desfazer arrasto é o caso que dói, porque um empurrão sem querer não tem
   // como ser refeito na mão com precisão.
@@ -231,6 +235,17 @@ function Atelier({ funnelId }: { funnelId: string }) {
   // --- Salvar ---------------------------------------------------------------
 
   const save = useCallback(async () => {
+    // Bloqueia save se houver playerId inválido em alguma VSL
+    const invalidPlayerId = steps.find(
+      (s) => s.type === "vsl" && s._playerIdValid === false
+    );
+    if (invalidPlayerId) {
+      setSaveError(
+        `Player ID inválido na etapa "${invalidPlayerId.label}": deve ser hexadecimal minúsculo (ex: 64f1a2b3c4d5e6f7)`
+      );
+      return;
+    }
+
     setSaving(true);
     setSaveError(null);
     try {
@@ -293,14 +308,17 @@ function Atelier({ funnelId }: { funnelId: string }) {
   }, [dirty]);
 
   const leaveAtelier = useCallback(() => {
-    if (
-      dirty &&
-      !window.confirm("Você tem alterações não salvas. Sair mesmo assim?")
-    ) {
+    if (dirty) {
+      setLeaveConfirmOpen(true);
       return;
     }
-    navigate(`/funnel/${funnelId}`);
-  }, [dirty, funnelId, navigate]);
+    navigate("/funnels");
+  }, [dirty, navigate]);
+
+  const confirmLeave = useCallback(() => {
+    setLeaveConfirmOpen(false);
+    navigate("/funnels");
+  }, [navigate]);
 
   // --- Ações sobre páginas -------------------------------------------------
 
@@ -350,11 +368,11 @@ function Atelier({ funnelId }: { funnelId: string }) {
     async (stepId: string, url: string) => {
       if (!url.trim()) return;
       setCapturingIds((prev) => [...prev, stepId]);
+      setCaptureError(null);
       const result = await captureScreenshot(url.trim(), stepId);
       setCapturingIds((prev) => prev.filter((i) => i !== stepId));
       if (result.ok && result.screenshotUrl) {
         patchStep(stepId, { screenshotUrl: result.screenshotUrl });
-        setCaptureError(null);
       } else {
         setCaptureError(
           result.reason ??
@@ -620,7 +638,11 @@ function Atelier({ funnelId }: { funnelId: string }) {
     setSteps((prev) =>
       prev.map((s) =>
         positions[s.id]
-          ? { ...s, positionX: positions[s.id].x, positionY: positions[s.id].y }
+          ? {
+              ...s,
+              positionX: Math.max(0, positions[s.id].x),
+              positionY: Math.max(0, positions[s.id].y),
+            }
           : s
       )
     );
@@ -805,6 +827,30 @@ function Atelier({ funnelId }: { funnelId: string }) {
           onClose={() => setSelectedStepId(null)}
         />
       )}
+
+      <Modal
+        open={leaveConfirmOpen}
+        onClose={() => setLeaveConfirmOpen(false)}
+        title="Descartar alterações?"
+        description="Você tem alterações não salvas. Se sair agora, elas serão perdidas."
+      >
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            onClick={() => setLeaveConfirmOpen(false)}
+            className="btn btn-secondary"
+          >
+            <X size={14} className="mr-1.5" />
+            Cancelar
+          </button>
+          <button
+            onClick={confirmLeave}
+            className="btn btn-danger"
+          >
+            <Trash2 size={14} className="mr-1.5" />
+            Descartar alterações
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -1304,10 +1350,21 @@ function Inspector({
               <input
                 value={step.playerId ?? ""}
                 placeholder="ex: 64f1a2b3c4d5e6f7"
-                onChange={(e) =>
-                  onPatch({ playerId: e.target.value.trim() || null })
-                }
-                className="input"
+                onChange={(e) => {
+                  const val = e.target.value.trim();
+                  // Valida formato VTurb: hex minúsculo, mínimo 10 chars
+                  const isValid = /^[a-f0-9]{10,}$/.test(val);
+                  onPatch({ playerId: val || null, _playerIdValid: isValid });
+                }}
+                onBlur={(e) => {
+                  const val = e.target.value.trim();
+                  const isValid = !val || /^[a-f0-9]{10,}$/.test(val);
+                  onPatch({ playerId: val || null, _playerIdValid: isValid });
+                }}
+                className={cn(
+                  "input",
+                  step._playerIdValid === false && "border-red-500"
+                )}
               />
               <button
                 type="button"
@@ -1328,6 +1385,11 @@ function Inspector({
               Sem isso a página "Ao Vivo" não mostra quem está assistindo esta
               VSL agora.
             </p>
+            {step._playerIdValid === false && (
+              <p className="mt-1.5 rounded-lg border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-[10px] leading-snug text-red-300">
+                Player ID inválido: deve ser hexadecimal minúsculo (ex: 64f1a2b3c4d5e6f7)
+              </p>
+            )}
             {vturbLookup.error && (
               <p className="mt-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[10px] leading-snug text-amber-300">
                 {vturbLookup.error}

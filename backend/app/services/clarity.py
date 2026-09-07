@@ -17,6 +17,7 @@ Dois limites do fornecedor moldam o código daqui:
 import httpx
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+from cachetools import TTLCache
 from ..core.supabase_client import get_supabase_client
 
 
@@ -30,26 +31,43 @@ class ClarityService:
     MAX_DAYS = 3
 
     def __init__(self):
-        self._cache: Dict[str, tuple[Any, float]] = {}
-        # 30 min, e não 1 min: com 10 chamadas por dia, um cache curto queima a
-        # cota inteira numa tarde de uso normal.
-        self.cache_ttl = 1800.0
+        # TTLCache com maxsize evita memory leak; ttl=1800s = cache_ttl
+        self._cache: TTLCache[str, tuple[Any, float]] = TTLCache(maxsize=128, ttl=1800.0)
 
-    async def get_credentials(self, user_id: str) -> Optional[Dict]:
-        """Credenciais do Clarity do usuário no banco."""
+    async def get_credentials(self, user_id: str, ws_id: Optional[str] = None) -> Optional[Dict]:
+        """Credenciais do Clarity do usuário/workspace no banco."""
         supabase = get_supabase_client()
 
-        result = supabase.table("api_credentials").select("*").eq(
+        query = supabase.table("api_credentials").select("*").eq(
             "user_id", user_id
-        ).eq("provider", "clarity").execute()
+        ).eq("provider", "clarity")
+
+        if ws_id:
+            query = query.eq("workspace_id", ws_id)
+        else:
+            # Fallback legado: credenciais sem workspace_id do próprio usuário
+            query = query.or_(f"workspace_id.is.null,user_id.eq.{user_id}")
+
+        result = query.execute()
 
         if result.data and len(result.data) > 0:
             return result.data[0]
         return None
 
-    async def resolve_token(self, user_id: str) -> Optional[str]:
+    def _validate_token(self, token: Optional[str]) -> Optional[str]:
         """
-        O token a usar: o do ambiente, se houver, senão o que o usuário salvou.
+        Validação pre-flight: checa se token existe e não está vazio.
+        Retorna mensagem de erro se inválido, None se ok.
+        """
+        if not token:
+            return "Token do Clarity não configurado"
+        if not token.strip():
+            return "Token do Clarity vazio ou inválido"
+        return None
+
+    async def resolve_token(self, user_id: str, ws_id: Optional[str] = None) -> Optional[str]:
+        """
+        O token a usar: o do ambiente, se houver, senão o que o usuário/workspace salvou.
 
         Nos dois casos o valor fica no backend — o frontend nunca recebe token
         do Clarity de volta, só o aviso de que existe um configurado.
@@ -60,7 +78,7 @@ class ClarityService:
         if token:
             return token
 
-        creds = await self.get_credentials(user_id)
+        creds = await self.get_credentials(user_id, ws_id)
         return (creds or {}).get("api_token") or None
 
     async def _get(self, endpoint: str, token: str, params: Optional[Dict] = None) -> Dict:
@@ -103,7 +121,7 @@ class ClarityService:
             return {"error": True, "message": f"Erro ao conectar com Clarity: {str(e)}"}
 
     async def get_live_insights(
-        self, user_id: str, num_days: int = 3, force: bool = False
+        self, user_id: str, num_days: int = 3, force: bool = False, ws_id: Optional[str] = None
     ) -> Dict:
         """
         Métricas agregadas dos últimos `num_days` dias (teto de 3, do Clarity).
@@ -119,16 +137,17 @@ class ClarityService:
         """
         days = max(1, min(int(num_days or self.MAX_DAYS), self.MAX_DAYS))
 
-        token = await self.resolve_token(user_id)
-        if not token:
-            return {"error": True, "message": "Token do Clarity não configurado"}
+        token = await self.resolve_token(user_id, ws_id)
+        validation_error = self._validate_token(token)
+        if validation_error:
+            return {"error": True, "message": validation_error}
 
         cache_key = f"clarity_{hash(token)}_{days}"
         now = datetime.now().timestamp()
 
         if cache_key in self._cache:
             data, timestamp = self._cache[cache_key]
-            if now - timestamp < self.cache_ttl:
+            if now - timestamp < self._cache.ttl:
                 return data
 
         resposta = await self._get(
@@ -146,16 +165,17 @@ class ClarityService:
         self._cache[cache_key] = (resultado, now)
         return resultado
 
-    async def test_token(self, user_id: str) -> Dict:
+    async def test_token(self, user_id: str, ws_id: Optional[str] = None) -> Dict:
         """
         Confere o token gastando a menor consulta possível (1 dia).
 
         Vale 1 das 10 chamadas diárias — por isso "Testar" não é automático em
         lugar nenhum da interface, só no clique explícito.
         """
-        token = await self.resolve_token(user_id)
-        if not token:
-            return {"ok": False, "message": "Token do Clarity não configurado"}
+        token = await self.resolve_token(user_id, ws_id)
+        validation_error = self._validate_token(token)
+        if validation_error:
+            return {"ok": False, "message": validation_error}
 
         resposta = await self._get(self.LIVE_INSIGHTS, token, params={"numOfDays": 1})
 

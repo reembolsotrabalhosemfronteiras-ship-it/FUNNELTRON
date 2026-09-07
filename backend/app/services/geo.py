@@ -12,6 +12,7 @@ import ipaddress
 import logging
 import threading
 import time
+from collections import OrderedDict
 from typing import Optional, TypedDict
 
 import httpx
@@ -32,25 +33,48 @@ class Geo(TypedDict):
     lon: float
 
 
-_cache: dict[str, tuple[Optional[Geo], float]] = {}
+_cache: OrderedDict[str, tuple[Optional[Geo], float]] = OrderedDict()
 _lock = threading.Lock()
 
 
 def client_ip(headers: dict, fallback: Optional[str]) -> Optional[str]:
-    """IP do visitante atrás do proxy da plataforma (Railway/Render/Fly).
+    """IP real do visitante, resistente a spoofing de X-Forwarded-For.
 
-    `X-Forwarded-For` é uma lista `cliente, proxy1, proxy2` — o cliente é o
-    primeiro item. Se não vier, usa o socket direto (dev local).
+    Hierarquia:
+    1. ``request.client.host`` (``fallback``) — IP da conexão TCP direta.
+       Se for público, é o visitante; confiamos nele e ignoramos XFF, que o
+       próprio cliente pode forjar.
+    2. ``X-Forwarded-For[0]`` — só quando o direto é privado/loopback,
+       indicando que estamos atrás de um proxy confiável (Railway/Render/Fly).
+       Nesse caso o primeiro item é o IP real do cliente.
     """
-    xff = headers.get("x-forwarded-for") or headers.get("X-Forwarded-For")
-    candidate = (xff.split(",")[0].strip() if xff else None) or fallback
+    direct = None
+    if fallback:
+        try:
+            direct = ipaddress.ip_address(fallback)
+        except ValueError:
+            direct = None
+
+    if direct and (direct.is_private or direct.is_loopback):
+        xff = headers.get("x-forwarded-for") or headers.get("X-Forwarded-For")
+        if xff:
+            candidate = xff.split(",")[0].strip()
+        else:
+            candidate = None
+    elif direct:
+        candidate = fallback
+    else:
+        candidate = None
+
     if not candidate:
         return None
     try:
         ip = ipaddress.ip_address(candidate)
     except ValueError:
         return None
-    # IP privado/loopback (dev) não tem geo pública.
+    # IPv6 mapped IPv4 (ex.: ::ffff:1.2.3.4) → usar o IPv4 interno
+    if hasattr(ip, "ipv4_mapped") and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
     if ip.is_private or ip.is_loopback or ip.is_link_local:
         return None
     return str(ip)
@@ -65,6 +89,7 @@ def resolve(ip: Optional[str]) -> Optional[Geo]:
     with _lock:
         hit = _cache.get(ip)
         if hit is not None and hit[1] > now:
+            _cache.move_to_end(ip)
             return hit[0]
 
     geo: Optional[Geo] = None
@@ -87,8 +112,9 @@ def resolve(ip: Optional[str]) -> Optional[Geo]:
 
     with _lock:
         _cache[ip] = (geo, now + (_TTL if geo else _NEGATIVE_TTL))
-        # Teto: um funil em lançamento pode ver milhares de IPs distintos.
-        if len(_cache) > 20000:
-            _cache.clear()
+        _cache.move_to_end(ip)
+        # Teto (LRU): remove os mais antigos quando excede 20k.
+        while len(_cache) > 20000:
+            _cache.popitem(last=False)
 
     return geo

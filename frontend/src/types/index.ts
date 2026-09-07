@@ -165,6 +165,7 @@ export interface Workspace {
   name: string;
   role: "owner" | "member";
   memberCount: number;
+  attribution_model?: "first_touch" | "last_touch";
 }
 
 export interface WorkspaceMember {
@@ -172,4 +173,71 @@ export interface WorkspaceMember {
   email: string | null;
   role: "owner" | "member";
   pending: boolean;
+}
+
+// --- Quiz & Ads ---
+export type QuizDataSource = "tracker" | "utmfy" | "compare";
+
+export interface QuizAnswerMetric {
+  id: string;
+  funnelId: string;
+  questionId: string;
+  questionLabel: string;
+  questionType: "single" | "multiple" | "open";
+  optionId: string | null;
+  optionLabel: string;
+  count: number;
+  percentage: number;
+  campaignId: string;
+  campaignName: string;
+  source: QuizDataSource;
+}
+
+export interface QuizHeatmapRow {
+  questionId: string;
+  questionLabel: string;
+  questionType: "single" | "multiple" | "open";
+  totalResponses: number;
+  byCampaign: Record<string, { count: number; percentage: number }>;
+}
+
+export interface DropOffBySource {
+  source: string;
+  medium: string;
+  campaign: string;
+  campaignName: string;
+  entryCount: number;
+  step1To2: { count: number; rate: number };
+  step2To3: { count: number; rate: number };
+  step3ToOffer: { count: number; rate: number };
+  offerToPurchase: { count: number; rate: number };
+  overallRate: number;
+}
+
+export interface AudienceBreakdown {
+  adId: string;
+  adName: string;
+  campaignId: string;
+  age: { range: string; percentage: number }[];
+  gender: { label: string; percentage: number }[];
+  location: { city: string; state: string; percentage: number }[];
+  device: { label: string; percentage: number }[];
+  peakHours: { range: string; percentage: number }[];
+  interests: { label: string; percentage: number }[];
+}
+
+export interface AdPerformanceRow {
+  adId: string;
+  adName: string;
+  campaignId: string;
+  campaignName: string;
+  channel: "google_search" | "google_display" | "meta_ads" | "tiktok" | "email" | "other";
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  quizStarted: number;
+  quizCompleted: number;
+  purchases: number;
+  cpa: number | null;
+  roas: number | null;
 }
