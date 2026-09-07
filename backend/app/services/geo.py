@@ -40,28 +40,17 @@ _lock = threading.Lock()
 def client_ip(headers: dict, fallback: Optional[str]) -> Optional[str]:
     """IP real do visitante, resistente a spoofing de X-Forwarded-For.
 
-    Hierarquia:
-    1. ``request.client.host`` (``fallback``) — IP da conexão TCP direta.
-       Se for público, é o visitante; confiamos nele e ignoramos XFF, que o
-       próprio cliente pode forjar.
-    2. ``X-Forwarded-For[0]`` — só quando o direto é privado/loopback,
-       indicando que estamos atrás de um proxy confiável (Railway/Render/Fly).
-       Nesse caso o primeiro item é o IP real do cliente.
+    Hierarquia (atualizada para Railway/Heroku/Fly):
+    1. ``X-Forwarded-For[0]`` — SEMPRE preferido se presente. Em plataformas
+       como Railway, o IP direto (fallback) é o load balancer (público), não
+       o visitante. O XFF contém a cadeia real: cliente → proxy → LB.
+    2. ``request.client.host`` (``fallback``) — usado só se XFF ausente.
     """
-    direct = None
-    if fallback:
-        try:
-            direct = ipaddress.ip_address(fallback)
-        except ValueError:
-            direct = None
-
-    if direct and (direct.is_private or direct.is_loopback):
-        xff = headers.get("x-forwarded-for") or headers.get("X-Forwarded-For")
-        if xff:
-            candidate = xff.split(",")[0].strip()
-        else:
-            candidate = None
-    elif direct:
+    # Sempre tenta XFF primeiro (padrão Railway/Heroku/Fly)
+    xff = headers.get("x-forwarded-for") or headers.get("X-Forwarded-For")
+    if xff:
+        candidate = xff.split(",")[0].strip()
+    elif fallback:
         candidate = fallback
     else:
         candidate = None
@@ -98,6 +87,7 @@ def resolve(ip: Optional[str]) -> Optional[Geo]:
             _ENDPOINT.format(ip=ip),
             params={"fields": _FIELDS},
             timeout=_TIMEOUT,
+            headers={"User-Agent": "Funneltron-Geo/1.0"},
         )
         data = r.json()
         if data.get("status") == "success" and data.get("lat") is not None:
