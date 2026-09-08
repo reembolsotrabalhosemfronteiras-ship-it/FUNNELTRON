@@ -22,9 +22,11 @@ logger = logging.getLogger(__name__)
 _ENDPOINT = "http://ip-api.com/json/{ip}"
 _FIELDS = "status,message,country,countryCode,regionName,region,city,lat,lon"
 # Fallback: ip-api.com bloqueia/limita IPs de datacenter (Railway) com frequência,
-# mesmo funcionando de um IP residencial. ipapi.co é HTTPS e aceita baixo volume
-# sem chave — entra quando o primário falha, pra o mapa não ficar vazio em produção.
-_FALLBACK_ENDPOINT = "https://ipapi.co/{ip}/json/"
+# mesmo funcionando de um IP residencial. ipwho.is é HTTPS, sem chave, resolve de
+# datacenter e devolve JSON limpo (success/city/region_code/latitude/longitude) —
+# entra quando o primário falha, pra o mapa não ficar vazio em produção.
+# (ipapi.co foi testado e falhou na resolução DNS daqui; ipwho.is respondeu 200.)
+_FALLBACK_ENDPOINT = "https://ipwho.is/{ip}"
 _TTL = 12 * 60 * 60  # 12h
 _NEGATIVE_TTL = 30 * 60  # não achou / erro: tenta de novo em 30 min
 _TIMEOUT = 4.0
