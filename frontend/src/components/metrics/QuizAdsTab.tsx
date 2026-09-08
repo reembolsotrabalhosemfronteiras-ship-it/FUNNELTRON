@@ -545,7 +545,7 @@ export function QuizAdsTab({ funnelId }: { funnelId: string }) {
                   </thead>
                   <tbody>
                     {adPerformance.map((row) => {
-                      const channelCfg = CHANNEL_CONFIG[row.channel];
+                      const channelCfg = CHANNEL_CONFIG[row.channel] ?? CHANNEL_CONFIG.other;
                       return (
                         <tr key={row.adId}>
                           <td>
