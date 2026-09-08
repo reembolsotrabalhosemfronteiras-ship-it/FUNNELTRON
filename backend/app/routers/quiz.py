@@ -655,13 +655,24 @@ def list_parsed_campaigns(
         .execute()
     )
 
-    # Adiciona métrica de conversão: quiz_responses / sessions * 100
+    # Mapeia os campos do banco (snake_case) para o formato que o frontend
+    # espera (camelCase). Sem esse mapeamento a aba Campanhas mostrava
+    # Creative Code / Campaign Code vazios e Sessions = 0 mesmo com dados
+    # no banco, porque o frontend lê creativeCode/sessions e o backend
+    # devolvia creative_code/session_count.
     result = []
     for row in (rows.data or []):
         sessions = row.get("session_count") or 0
         quiz_responses = row.get("quiz_response_count") or 0
         conversion_rate = round(quiz_responses / sessions * 100, 1) if sessions > 0 else None
-        row["conversion_rate"] = conversion_rate
-        result.append(row)
+        result.append({
+            "creativeCode": row.get("creative_code"),
+            "campaignCode": row.get("campaign_code"),
+            "placement": row.get("placement"),
+            "sessions": sessions,
+            "quizResponses": quiz_responses,
+            "conversionRate": conversion_rate,
+            "lastSeen": row.get("last_seen_at"),
+        })
 
     return result

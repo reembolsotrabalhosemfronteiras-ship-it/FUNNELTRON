@@ -221,6 +221,24 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
                     ).eq("workspace_id", ws_id).execute()
                     if existing_correct.data:
                         parsed_campaign_id = existing_correct.data[0]["id"]
+                        # BUG FIX: incrementa session_count e atualiza last_seen_at
+                        # quando a campanha já existe. Sem isso, o contador fica
+                        # zerado para sempre após a primeira inserção — era exatamente
+                        # o sintoma de "35 campanhas detectadas, todas com 0 sessions".
+                        try:
+                            current = supabase.table("parsed_campaigns").select("session_count").eq(
+                                "id", parsed_campaign_id
+                            ).execute()
+                            new_count = ((current.data[0].get("session_count") or 0) + 1) if current.data else 1
+                            supabase.table("parsed_campaigns").update({
+                                "session_count": new_count,
+                                "last_seen_at": "now()",
+                            }).eq("id", parsed_campaign_id).execute()
+                        except Exception as inc_exc:
+                            logger.warning(
+                                "Falha ao incrementar session_count do parsed_campaign %s: %s",
+                                parsed_campaign_id, str(inc_exc),
+                            )
                     else:
                         # Verifica se existe em outro workspace (constraint global de slug_key)
                         existing_any = supabase.table("parsed_campaigns").select("id, workspace_id").eq(
