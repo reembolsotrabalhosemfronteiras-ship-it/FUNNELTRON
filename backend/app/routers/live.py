@@ -226,14 +226,26 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
                         # zerado para sempre após a primeira inserção — era exatamente
                         # o sintoma de "35 campanhas detectadas, todas com 0 sessions".
                         try:
-                            current = supabase.table("parsed_campaigns").select("session_count").eq(
+                            current = supabase.table("parsed_campaigns").select("session_count,campaign_name,raw_campaign").eq(
                                 "id", parsed_campaign_id
                             ).execute()
-                            new_count = ((current.data[0].get("session_count") or 0) + 1) if current.data else 1
-                            supabase.table("parsed_campaigns").update({
+                            cur_row = current.data[0] if current.data else {}
+                            new_count = ((cur_row.get("session_count") or 0) + 1)
+                            # BACKFILL retroativo: registros criados ANTES da
+                            # migration 016 nasceram com campaign_name/raw_campaign
+                            # = NULL, entao a aba Campanhas mostrava so o codigo
+                            # tecnico (#bm.16.ca.01). Preenche com o nome legivel
+                            # do heartbeat atual quando o campo ainda esta vazio —
+                            # espelha o COALESCE da RPC resolve_or_create_parsed_campaign.
+                            upd = {
                                 "session_count": new_count,
                                 "last_seen_at": "now()",
-                            }).eq("id", parsed_campaign_id).execute()
+                            }
+                            if not cur_row.get("campaign_name") and getattr(parsed, "campaign_name", None):
+                                upd["campaign_name"] = parsed.campaign_name
+                            if not cur_row.get("raw_campaign") and getattr(parsed, "raw_campaign", None):
+                                upd["raw_campaign"] = parsed.raw_campaign
+                            supabase.table("parsed_campaigns").update(upd).eq("id", parsed_campaign_id).execute()
                         except Exception as inc_exc:
                             logger.warning(
                                 "Falha ao incrementar session_count do parsed_campaign %s: %s",
