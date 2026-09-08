@@ -110,8 +110,8 @@ function CampaignHeatmap({
             Heatmap — {campaignCode}
           </h3>
           <p className="text-xs text-muted-foreground">
-            {periodLabel(period)} · {totalResponses.toLocaleString("pt-BR")} respostas ·{" "}
-            {completionRate}% conclusão
+            {periodLabel(period)} · {(totalResponses ?? 0).toLocaleString("pt-BR")} respostas ·{" "}
+            {completionRate ?? 0}% conclusão
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -235,9 +235,9 @@ export function ParsedCampaignsTab({ funnelId }: { funnelId: string }) {
     const q = search.toLowerCase();
     return campaigns.filter(
       (c) =>
-        c.creativeCode.toLowerCase().includes(q) ||
-        c.campaignCode.toLowerCase().includes(q) ||
-        c.placement.toLowerCase().includes(q)
+        (c.creativeCode ?? "").toLowerCase().includes(q) ||
+        (c.campaignCode ?? "").toLowerCase().includes(q) ||
+        (c.placement ?? "").toLowerCase().includes(q)
     );
   }, [campaigns, search]);
 
@@ -368,10 +368,10 @@ export function ParsedCampaignsTab({ funnelId }: { funnelId: string }) {
                           </Badge>
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums">
-                          {c.sessions.toLocaleString("pt-BR")}
+                          {(c.sessions ?? 0).toLocaleString("pt-BR")}
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums">
-                          {c.quizResponses.toLocaleString("pt-BR")}
+                          {(c.quizResponses ?? 0).toLocaleString("pt-BR")}
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums">
                           {rate === null ? (
@@ -392,7 +392,7 @@ export function ParsedCampaignsTab({ funnelId }: { funnelId: string }) {
                         <td className="px-4 py-3 text-right text-xs text-muted-foreground">
                           <div className="flex items-center justify-end gap-1">
                             <CalendarBlank size={12} />
-                            {new Date(c.lastSeen).toLocaleDateString("pt-BR")}
+                            {c.lastSeen ? new Date(c.lastSeen).toLocaleDateString("pt-BR") : "—"}
                           </div>
                         </td>
                       </tr>
