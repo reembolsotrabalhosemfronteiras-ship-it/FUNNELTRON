@@ -97,9 +97,15 @@ def _salvar_quiz_answer(supabase: Client, beat: LiveBeatRequest) -> None:
     except Exception:
         pass
 
+    # Resolve workspace_id do funil (mesma resolução usada em parsed_campaigns/
+    # lead_profiles). Sem isso a linha de quiz_answers cai com workspace_id=NULL
+    # e nunca aparece nas abas, que filtram por .eq("workspace_id", ws_id).
+    ws_id = _get_workspace_id(supabase, beat.funnel_id)
+
     # Salva quiz_answer
     quiz_row = {
         "funnel_id": beat.funnel_id,
+        "workspace_id": ws_id,
         "session_id": beat.session_id,
         "device_id": beat.device_id,
         "step_id": step_id,
@@ -408,6 +414,16 @@ def _get_workspace_id(supabase: Client, funnel_id: str) -> str | None:
         ).order("created_at").limit(1).execute()
         if member.data:
             return member.data[0].get("workspace_id")
+        # Último fallback: o workspace pessoal mais antigo do dono (migration 009
+        # garante que todo usuário tem pelo menos um). Sem isso, funis criados
+        # antes do backfill de workspace_members ficavam com workspace_id=NULL e
+        # as linhas de parsed_campaigns/lead_profiles nunca apareciam nas abas
+        # (Campanhas/Quiz filtram por .eq("workspace_id", ws_id) — NULL não casa).
+        own_ws = supabase.table("workspaces").select("id").eq(
+            "owner_id", user_id
+        ).order("created_at").limit(1).execute()
+        if own_ws.data:
+            return own_ws.data[0].get("id")
     except Exception:
         pass
     return None
