@@ -2359,6 +2359,12 @@ export async function unsubscribePush(endpoint: string): Promise<void> {
 export interface ParsedCampaign {
   creativeCode: string;
   campaignCode: string;
+  /** Nome legivel da campanha (humano). Pode ser null quando o utm_campaign
+   *  eh so um slug tecnico interno (ex: "#bm.16.ca.01"). */
+  campaignName?: string | null;
+  /** utm_campaign original cru, sempre presente quando houve UTM. Usado como
+   *  fallback de exibicao quando campaignName eh null. */
+  rawCampaign?: string | null;
   placement: string;
   sessions: number;
   quizResponses: number;

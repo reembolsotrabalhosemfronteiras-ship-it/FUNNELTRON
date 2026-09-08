@@ -25,12 +25,14 @@ class ParsedUtm:
 
     creative_code: Optional[str] = None       # ex: "0005"
     campaign_code: Optional[str] = None       # ex: "#bm.16.ca.01"
+    campaign_name: Optional[str] = None       # nome legivel da campanha (fallback humano)
     page_code: Optional[str] = None           # ex: "#pg.04"
     platform_ad_id: Optional[str] = None      # ex: "120258446811650001"
     placement: Optional[str] = None           # ex: "Instagram_Reels"
     sequence: Optional[str] = None            # ex: "1/2"
     version_date: Optional[str] = None        # ex: "06.09"
     raw_source: Optional[str] = None          # utm_source original
+    raw_campaign: Optional[str] = None        # utm_campaign original (para exibicao)
     raw_slug: str = ""                        # chave normalizada para dedup
 
     def to_campaign_key(self) -> str:
@@ -130,6 +132,20 @@ def parse_utm_slug(utm_dict: Optional[dict]) -> ParsedUtm:
     # Placement vem direto do utm_term
     placement = term.strip() if term and term.strip() else None
 
+    # Nome legivel da campanha: se utm_campaign existe e NAO eh so o padrao
+    # de slug complexo (cheio de # e |), usa ele como nome humano. Isso resolve
+    # o caso em que a aba Campanhas mostrava "#bm.16.ca.01" (codigo interno do
+    # ad-set Meta) sem nenhum nome legivel ao lado.
+    campaign_name: Optional[str] = None
+    if campaign and campaign.strip():
+        stripped_camp = campaign.strip()
+        # Heuristica: se o valor parece um slug tecnico (muitos # ou | ou so
+        # digitos/pontos), nao serve como nome humano — deixa None.
+        tech_markers = stripped_camp.count("#") + stripped_camp.count("|")
+        is_technical = tech_markers >= 2 or re.fullmatch(r"[#.\d/|_\-]+", stripped_camp)
+        if not is_technical:
+            campaign_name = stripped_camp[:120]
+
     # Raw slug normalizada para dedup
     raw_parts = [
         source or "",
@@ -143,11 +159,13 @@ def parse_utm_slug(utm_dict: Optional[dict]) -> ParsedUtm:
     return ParsedUtm(
         creative_code=creative_code,
         campaign_code=campaign_code,
+        campaign_name=campaign_name,
         page_code=page_code,
         platform_ad_id=platform_ad_id,
         placement=placement,
         sequence=sequence,
         version_date=version_date,
         raw_source=source,
+        raw_campaign=campaign.strip() if campaign else None,
         raw_slug=raw_slug,
     )

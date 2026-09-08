@@ -213,6 +213,8 @@ def parsed_campaigns_alias(
             result.append({
                 "creativeCode": row.get("creative_code"),
                 "campaignCode": row.get("campaign_code"),
+                "campaignName": row.get("campaign_name"),
+                "rawCampaign": row.get("raw_campaign"),
                 "placement": row.get("placement"),
                 "sessions": sessions,
                 "quizResponses": quiz_responses,
