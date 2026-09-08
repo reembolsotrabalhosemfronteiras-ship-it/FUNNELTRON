@@ -55,6 +55,7 @@ import {
 import { FunnelCanvas } from "@/components/funnel";
 import { QuizAdsTab } from "@/components/metrics/QuizAdsTab";
 import { ParsedCampaignsTab } from "@/components/metrics/ParsedCampaignsTab";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import {
   getFunnel,
   listFunnels,
@@ -1176,14 +1177,19 @@ function SingleFunnelView({
       </div>
 
       {activeTab === "quiz-ads" && (
-        <QuizAdsTab funnelId={funnel.id} />
+        <ErrorBoundary area="Quiz & Ads">
+          <QuizAdsTab funnelId={funnel.id} />
+        </ErrorBoundary>
       )}
 
       {activeTab === "campaigns" && (
-        <ParsedCampaignsTab funnelId={funnel.id} />
+        <ErrorBoundary area="Campanhas">
+          <ParsedCampaignsTab funnelId={funnel.id} />
+        </ErrorBoundary>
       )}
 
       {activeTab === "geral" && (
+        <ErrorBoundary area="Geral">
         <div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-6">
         <KpiCard
@@ -1470,6 +1476,7 @@ function SingleFunnelView({
 />
 </div>
         </div>
+        </ErrorBoundary>
       )}
     </main>
   );

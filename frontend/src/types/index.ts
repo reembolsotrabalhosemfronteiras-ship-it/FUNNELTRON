@@ -243,3 +243,22 @@ export interface AdPerformanceRow {
   cpa: number | null;
   roas: number | null;
 }
+
+/** Campanha detectada automaticamente via parsing de UTM. */
+export interface ParsedCampaign {
+  creativeCode: string;
+  campaignCode: string;
+  placement: string;
+  sessions: number;
+  quizResponses: number;
+  lastSeen: string;
+}
+
+/** Linha do heatmap de respostas do quiz filtrado por campanha. */
+export interface QuizByCampaignRow {
+  date: string;
+  hour: number;
+  responses: number;
+  completions: number;
+  dropoffs: number;
+}
