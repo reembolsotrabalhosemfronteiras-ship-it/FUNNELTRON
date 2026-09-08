@@ -489,6 +489,38 @@ def debug_last_insert_error():
     return _last_insert_error
 
 
+# DIAGNÓSTICO TEMPORÁRIO: endpoint público (sem auth) que devolve uma amostra
+# crua dos dados reais no banco — parsed_campaigns (pra ver se campaign_name/
+# raw_campaign/creative_code estão preenchidos ou NULL) e contagem de
+# quiz_answers (pra ver se o tracker está de fato gravando respostas).
+# Usado pra achar a causa raiz dos 3 sintomas: (1) Quiz & Ads não trackeia,
+# (2) Campanhas não separa por criativo, (3) mostra nome da conta na campanha.
+# REMOVER depois de corrigir a causa.
+@router.get("/debug/data-sample")
+def debug_data_sample(supabase: Client = Depends(get_supabase_admin)):
+    out: dict = {"parsed_campaigns": [], "quiz_answers_count": None, "error": None}
+    try:
+        pcs = (
+            supabase.table("parsed_campaigns")
+            .select(
+                "slug_key, creative_code, campaign_code, campaign_name, "
+                "raw_campaign, placement, session_count, raw_source"
+            )
+            .order("session_count", desc=True)
+            .limit(15)
+            .execute()
+        )
+        out["parsed_campaigns"] = pcs.data or []
+    except Exception as exc:
+        out["error"] = f"parsed_campaigns: {type(exc).__name__}: {exc}"
+    try:
+        cnt = supabase.table("quiz_answers").select("id", count="exact").execute()
+        out["quiz_answers_count"] = cnt.count
+    except Exception as exc:
+        out["error"] = (out.get("error") or "") + f" | quiz_answers: {type(exc).__name__}: {exc}"
+    return out
+
+
 @router.post("/track", status_code=status.HTTP_204_NO_CONTENT)
 async def track_heartbeat(
     request: Request,
