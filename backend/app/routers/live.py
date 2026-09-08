@@ -29,6 +29,12 @@ WEBHOOK_HEADER = APIKeyHeader(name="X-Webhook-Secret", auto_error=False)
 _geo_columns_ok = True
 _GEO_KEYS = ("geo_city", "geo_uf", "geo_lat", "geo_lon")
 
+# DIAGNÓSTICO TEMPORÁRIO: captura a última exceção dos inserts de
+# parsed_campaigns / lead_profiles / quiz_answers para eu ler via
+# GET /api/live/debug/last-error (sem auth). Remover depois de achar a causa
+# raiz de "track retorna 204 mas nenhuma linha aparece nas abas Campanhas/Quiz".
+_last_insert_error: dict = {"error": None, "at": None}
+
 
 def _upsert_beat(supabase: Client, payload: dict) -> None:
     global _geo_columns_ok
@@ -119,7 +125,15 @@ def _salvar_quiz_answer(supabase: Client, beat: LiveBeatRequest) -> None:
         "utm_term": utm_term,
         "timestamp": beat.timestamp if hasattr(beat, 'timestamp') and beat.timestamp else "now()",
     }
-    supabase.table("quiz_answers").insert(quiz_row).execute()
+    try:
+        supabase.table("quiz_answers").insert(quiz_row).execute()
+    except Exception as exc:
+        # DIAGNÓSTICO TEMPORÁRIO: expõe a exceção real via /api/live/debug/last-error
+        from datetime import datetime, timezone
+        _last_insert_error["error"] = f"{type(exc).__name__}: {exc}"
+        _last_insert_error["at"] = datetime.now(timezone.utc).isoformat()
+        _last_insert_error["where"] = "quiz_answers"
+        logger.exception("Erro ao salvar quiz_answer (session_id=%s)", beat.session_id)
 
     # Atualiza/cria lead_profile
     _atualizar_lead_profile(supabase, beat, utm, step_id)
@@ -382,9 +396,14 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
                         raise
                 else:
                     raise
-    except Exception:
+    except Exception as exc:
         # Falha silenciosa: não derruba o heartbeat
         logger.exception("Erro ao atualizar lead_profile (session_id=%s)", beat.session_id)
+        # DIAGNÓSTICO TEMPORÁRIO: expõe a exceção real via /api/live/debug/last-error
+        from datetime import datetime, timezone
+        _last_insert_error["error"] = f"{type(exc).__name__}: {exc}"
+        _last_insert_error["at"] = datetime.now(timezone.utc).isoformat()
+        _last_insert_error["where"] = "lead_profile"
 
 
 def _get_workspace_id(supabase: Client, funnel_id: str) -> str | None:
@@ -427,6 +446,15 @@ def _get_workspace_id(supabase: Client, funnel_id: str) -> str | None:
     except Exception:
         pass
     return None
+
+
+# DIAGNÓSTICO TEMPORÁRIO: endpoint público (sem auth) que devolve a última
+# exceção capturada nos inserts de parsed_campaigns / lead_profiles / quiz_answers.
+# Usado pra achar a causa raiz de "track retorna 204 mas nenhuma linha aparece
+# nas abas Campanhas/Quiz". REMOVER depois de corrigir a causa.
+@router.get("/debug/last-error")
+def debug_last_insert_error():
+    return _last_insert_error
 
 
 @router.post("/track", status_code=status.HTTP_204_NO_CONTENT)
