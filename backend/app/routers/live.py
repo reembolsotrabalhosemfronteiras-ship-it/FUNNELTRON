@@ -52,18 +52,37 @@ def _resolve_funnel_uuid(supabase: Client, funnel_id: str) -> str:
     if cached:
         return cached
     try:
-        # Tenta primeiro como UUID direto (caso o tracker ja mande o id real).
+        # 1) UUID completo direto (caso o tracker ja mande o id real).
         by_id = supabase.table("funnels").select("id").eq("id", funnel_id).execute()
         if by_id.data:
             resolved = by_id.data[0]["id"]
             _funnel_uuid_cache[funnel_id] = resolved
             return resolved
-        # Senao trata como slug curto.
+        # 2) Slug curto (ex: "padrao-buck-mtrqoxs3").
         by_slug = supabase.table("funnels").select("id").eq("slug", funnel_id).execute()
         if by_slug.data:
             resolved = by_slug.data[0]["id"]
             _funnel_uuid_cache[funnel_id] = resolved
             return resolved
+        # 3) PREFIXO de UUID (ex: "2b23f46d" -> "2b23f46d-bc94-4f32-...").
+        # Evidencia real do banco: o tracker embute os 8 primeiros hex do
+        # UUID do funil, nao o slug nem o UUID completo. Sem este ramo o
+        # insert de lead_profile estoura "invalid input syntax for type uuid
+        # (22P02)" e a aba Quiz & Ads fica zerada. So aceita prefixo
+        # puramente hexadecimal de 8+ chars para evitar matches acidentais.
+        import re as _re
+        if _re.fullmatch(r"[0-9a-fA-F]{8,}", funnel_id):
+            by_prefix = (
+                supabase.table("funnels")
+                .select("id")
+                .ilike("id", funnel_id + "%")
+                .limit(1)
+                .execute()
+            )
+            if by_prefix.data:
+                resolved = by_prefix.data[0]["id"]
+                _funnel_uuid_cache[funnel_id] = resolved
+                return resolved
     except Exception:
         # Falha de resolucao nao deve quebrar o track; cai no valor original.
         pass
