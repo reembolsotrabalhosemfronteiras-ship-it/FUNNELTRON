@@ -1604,7 +1604,8 @@ export interface QuizPageResult {
   pageNumber: number;
   orderIndex: number;
   totalSessions: number;
-  questions: QuizQuestionResult[];
+  totalResponses: number;
+  answers: QuizAnswerOption[];
 }
 
 export interface QuizResponsesData {
@@ -1628,18 +1629,12 @@ export async function getQuizResponses(
         pageNumber: 1,
         orderIndex: 6,
         totalSessions: 1240,
-        questions: [
-          {
-            questionId: "objetivo",
-            questionLabel: "objetivo",
-            totalResponses: 1240,
-            uniqueSessions: 1240,
-            answers: [
-              { value: "Emagrecer", count: 780, percentage: 62.9 },
-              { value: "Ganhar massa", count: 310, percentage: 25.0 },
-              { value: "Saude geral", count: 150, percentage: 12.1 },
-            ],
-          },
+        totalResponses: 1240,
+        answers: [
+          { value: "50 a 59 anos", count: 520, percentage: 41.9 },
+          { value: "40 a 49 anos", count: 410, percentage: 33.1 },
+          { value: "30 a 39 anos", count: 210, percentage: 16.9 },
+          { value: "60+ anos", count: 100, percentage: 8.1 },
         ],
       },
       {
@@ -1648,18 +1643,11 @@ export async function getQuizResponses(
         pageNumber: 2,
         orderIndex: 7,
         totalSessions: 1180,
-        questions: [
-          {
-            questionId: "orcamento",
-            questionLabel: "orcamento",
-            totalResponses: 1180,
-            uniqueSessions: 1180,
-            answers: [
-              { value: "R$ 50-100", count: 520, percentage: 44.1 },
-              { value: "R$ 100-200", count: 380, percentage: 32.2 },
-              { value: "R$ 200+", count: 280, percentage: 23.7 },
-            ],
-          },
+        totalResponses: 1180,
+        answers: [
+          { value: "Aposentado(a) com tempo livre", count: 480, percentage: 40.7 },
+          { value: "Trabalho CLT e busco uma Renda Extra", count: 420, percentage: 35.6 },
+          { value: "Empreendedor", count: 280, percentage: 23.7 },
         ],
       },
       {
@@ -1668,18 +1656,10 @@ export async function getQuizResponses(
         pageNumber: 3,
         orderIndex: 1,
         totalSessions: 980,
-        questions: [
-          {
-            questionId: "s-q1",
-            questionLabel: "Pergunta 1",
-            totalResponses: 980,
-            uniqueSessions: 980,
-            answers: [
-              { value: "Sim, eu me comprometo", count: 720, percentage: 73.5 },
-              { value: "Talvez", count: 180, percentage: 18.4 },
-              { value: "Nao tenho certeza", count: 80, percentage: 8.2 },
-            ],
-          },
+        totalResponses: 980,
+        answers: [
+          { value: "Retirar a camiseta do ar agora", count: 620, percentage: 63.3 },
+          { value: "Pedir para a equipe analisar", count: 360, percentage: 36.7 },
         ],
       },
     ],

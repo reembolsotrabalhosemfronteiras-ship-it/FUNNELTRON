@@ -27,7 +27,6 @@ import {
   getQuizResponses,
   type QuizResponsesData,
   type QuizPageResult,
-  type QuizQuestionResult,
 } from "@/api/client";
 
 // ---------------------------------------------------------------------------
@@ -49,99 +48,11 @@ function barColor(index: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Barra de resposta individual
-// ---------------------------------------------------------------------------
-function AnswerBar({
-  value,
-  count,
-  percentage,
-  maxCount,
-  colorIndex,
-}: {
-  value: string;
-  count: number;
-  percentage: number;
-  maxCount: number;
-  colorIndex: number;
-}) {
-  const color = barColor(colorIndex);
-  const widthPct = maxCount > 0 ? (count / maxCount) * 100 : 0;
-
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-[12px]">
-        <span className="font-medium truncate pr-3 max-w-[70%]" title={value}>
-          {value}
-        </span>
-        <span className="flex items-center gap-2 shrink-0">
-          <span className="tabular-nums text-muted-foreground">
-            {count.toLocaleString("pt-BR")}
-          </span>
-          <span
-            className="tabular-nums font-bold min-w-[48px] text-right"
-            style={{ color }}
-          >
-            {percentage}%
-          </span>
-        </span>
-      </div>
-      <div className="h-2.5 bg-muted/40 rounded-full overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all duration-500 ease-out"
-          style={{
-            width: `${widthPct}%`,
-            background: `linear-gradient(90deg, ${color}, ${color}cc)`,
-            boxShadow: `0 0 8px ${color}44`,
-          }}
-        />
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Card de uma pergunta dentro de uma pagina
-// ---------------------------------------------------------------------------
-function QuestionCard({ question }: { question: QuizQuestionResult }) {
-  const maxCount = Math.max(1, ...question.answers.map((a) => a.count));
-
-  return (
-    <div className="rounded-lg border border-border/60 bg-card/50 p-4 space-y-3">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-[13px] font-semibold leading-snug">
-            {question.questionLabel}
-          </p>
-          <p className="text-[11px] text-muted-foreground mt-0.5">
-            {question.uniqueSessions.toLocaleString("pt-BR")} sessoes ·{" "}
-            {question.totalResponses.toLocaleString("pt-BR")} respostas
-          </p>
-        </div>
-        <Badge variant="info" className="text-[10px] shrink-0">
-          {question.answers.length} opcoes
-        </Badge>
-      </div>
-      <div className="space-y-2.5">
-        {question.answers.map((answer, aIdx) => (
-          <AnswerBar
-            key={aIdx}
-            value={answer.value}
-            count={answer.count}
-            percentage={answer.percentage}
-            maxCount={maxCount}
-            colorIndex={aIdx}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Card de uma pagina do funil (agrupa perguntas)
+// Card de uma pagina do funil (respostas consolidadas direto dentro)
 // ---------------------------------------------------------------------------
 function PageCard({ page }: { page: QuizPageResult }) {
   const [expanded, setExpanded] = useState(true);
+  const maxCount = Math.max(1, ...page.answers.map((a) => a.count));
 
   return (
     <Card className="elev-sm overflow-hidden">
@@ -161,8 +72,9 @@ function PageCard({ page }: { page: QuizPageResult }) {
                   {page.pageLabel}
                 </CardTitle>
                 <CardDescription className="text-[11px] mt-0.5">
-                  {page.questions.length} pergunta{page.questions.length !== 1 ? "s" : ""} ·{" "}
-                  {page.totalSessions.toLocaleString("pt-BR")} sessoes unicas
+                  {page.totalSessions.toLocaleString("pt-BR")} sessoes ·{" "}
+                  {page.totalResponses.toLocaleString("pt-BR")} respostas ·{" "}
+                  {page.answers.length} opcoes
                 </CardDescription>
               </div>
             </div>
@@ -182,10 +94,45 @@ function PageCard({ page }: { page: QuizPageResult }) {
       </button>
 
       {expanded && (
-        <CardContent className="pt-0 pb-4 px-4 space-y-3">
-          {page.questions.map((question) => (
-            <QuestionCard key={question.questionId} question={question} />
-          ))}
+        <CardContent className="pt-0 pb-4 px-4 space-y-2.5">
+          {page.answers.map((answer, aIdx) => {
+            const color = barColor(aIdx);
+            const widthPct = maxCount > 0 ? (answer.count / maxCount) * 100 : 0;
+
+            return (
+              <div key={aIdx} className="space-y-1">
+                <div className="flex items-center justify-between text-[12px]">
+                  <span
+                    className="font-medium truncate pr-3 max-w-[70%]"
+                    title={answer.value}
+                  >
+                    {answer.value}
+                  </span>
+                  <span className="flex items-center gap-2 shrink-0">
+                    <span className="tabular-nums text-muted-foreground">
+                      {answer.count.toLocaleString("pt-BR")}
+                    </span>
+                    <span
+                      className="tabular-nums font-bold min-w-[48px] text-right"
+                      style={{ color }}
+                    >
+                      {answer.percentage}%
+                    </span>
+                  </span>
+                </div>
+                <div className="h-2.5 bg-muted/40 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500 ease-out"
+                    style={{
+                      width: `${widthPct}%`,
+                      background: `linear-gradient(90deg, ${color}, ${color}cc)`,
+                      boxShadow: `0 0 8px ${color}44`,
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })}
         </CardContent>
       )}
     </Card>
@@ -224,16 +171,11 @@ export function QuizAdsTab({ funnelId }: { funnelId: string }) {
   const kpis = useMemo(() => {
     if (!data) return [];
     const totalPages = data.pages.length;
-    const totalQuestions = data.pages.reduce(
-      (s, p) => s + p.questions.length,
-      0
-    );
     const totalSessions = data.totalSessions;
     const totalResponses = data.totalResponses;
     const avgAnswersPerSession =
       totalSessions > 0 ? totalResponses / totalSessions : 0;
 
-    // Taxa de conclusao: sessoes na ultima pagina vs primeira pagina
     const firstPage = data.pages[0];
     const lastPage = data.pages[data.pages.length - 1];
     const completionRate =
@@ -245,7 +187,7 @@ export function QuizAdsTab({ funnelId }: { funnelId: string }) {
       {
         label: "Paginas com Quiz",
         value: totalPages.toString(),
-        sub: `${totalQuestions} perguntas no total`,
+        sub: `${totalResponses} respostas no total`,
         icon: FileText,
         tone: "text-blue-500",
       },
@@ -291,7 +233,7 @@ export function QuizAdsTab({ funnelId }: { funnelId: string }) {
         <div>
           <h2 className="text-lg font-bold">Respostas do Quiz por Pagina</h2>
           <p className="text-sm text-muted-foreground">
-            Cada pagina do funil com suas perguntas e porcentagens de cada resposta
+            Cada pagina do funil com as respostas consolidadas e porcentagens
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -323,12 +265,16 @@ export function QuizAdsTab({ funnelId }: { funnelId: string }) {
       {!data || data.pages.length === 0 ? (
         <Card>
           <CardContent className="py-16 text-center">
-            <ListChecks size={40} className="mx-auto mb-3 text-muted-foreground/40" />
+            <ListChecks
+              size={40}
+              className="mx-auto mb-3 text-muted-foreground/40"
+            />
             <p className="text-muted-foreground">
               Nenhuma resposta de quiz encontrada neste periodo.
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              Verifique se o tracker.js esta instalado na pagina do quiz e se ha visitantes respondendo.
+              Verifique se o tracker.js esta instalado na pagina do quiz e se ha
+              visitantes respondendo.
             </p>
           </CardContent>
         </Card>

@@ -709,8 +709,9 @@ def get_quiz_responses(
         pages[step_id][qid]["answers"][aval] += 1
 
     # 4) Monta resposta: lista de paginas ordenadas por order_index
+    #    Cada pagina tem UM conjunto de respostas consolidadas (todas as
+    #    perguntas daquela pagina fundidas num unico bloco de opcoes).
     result_pages = []
-    # Ordena step_ids: primeiro os que tem step_map (por order_index), depois os sem step
     sorted_step_ids = sorted(
         pages.keys(),
         key=lambda sid: step_map.get(sid, {}).get("order_index", 9999),
@@ -727,41 +728,28 @@ def get_quiz_responses(
         page_label = step_info.get("label") or f"Pagina {page_number}"
         order_index = step_info.get("order_index", page_number)
 
-        # Monta perguntas desta pagina
-        page_questions = []
+        # Consolida TODAS as respostas de TODAS as perguntas desta pagina
+        # num unico mapa answer_value -> count. Isso resolve o problema de
+        # cards separados por question_id quando a mesma pergunta logica
+        # tem IDs diferentes por sessao.
+        consolidated_answers: dict = {}
         page_sessions: set = set()
+        total_responses = 0
 
-        for qid in sorted(questions_data.keys()):
-            data = questions_data[qid]
-            total = data["total"]
-            unique_sessions = len(data["sessions"])
+        for qid, data in questions_data.items():
+            total_responses += data["total"]
             page_sessions.update(data["sessions"])
+            for aval, count in data["answers"].items():
+                consolidated_answers[aval] = consolidated_answers.get(aval, 0) + count
 
-            # Ordena respostas por contagem decrescente
-            answers_list = []
-            for aval, count in sorted(data["answers"].items(), key=lambda x: x[1], reverse=True):
-                pct = round(count / total * 100, 1) if total > 0 else 0
-                answers_list.append({
-                    "value": aval,
-                    "count": count,
-                    "percentage": pct,
-                })
-
-            # Label legivel da pergunta: usa o question_id como fallback
-            q_label = qid.replace("_", " ").replace("-", " ").strip()
-            if qid.startswith("s-q") and qid[3:].isdigit():
-                q_label = f"Pergunta {qid[3:]}"
-            elif qid.startswith("q_"):
-                q_label = qid[2:].replace("_", " ").title()
-            elif qid.startswith("quiz_"):
-                q_label = qid[5:].replace("_", " ").title()
-
-            page_questions.append({
-                "questionId": qid,
-                "questionLabel": q_label,
-                "totalResponses": total,
-                "uniqueSessions": unique_sessions,
-                "answers": answers_list,
+        # Ordena por contagem decrescente
+        answers_list = []
+        for aval, count in sorted(consolidated_answers.items(), key=lambda x: x[1], reverse=True):
+            pct = round(count / total_responses * 100, 1) if total_responses > 0 else 0
+            answers_list.append({
+                "value": aval,
+                "count": count,
+                "percentage": pct,
             })
 
         result_pages.append({
@@ -770,7 +758,8 @@ def get_quiz_responses(
             "pageNumber": page_number,
             "orderIndex": order_index,
             "totalSessions": len(page_sessions),
-            "questions": page_questions,
+            "totalResponses": total_responses,
+            "answers": answers_list,
         })
 
     return {
