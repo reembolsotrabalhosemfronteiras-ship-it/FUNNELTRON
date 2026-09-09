@@ -258,6 +258,33 @@ def _salvar_quiz_answer(supabase: Client, beat: LiveBeatRequest) -> None:
         _last_insert_error["where"] = "quiz_answers"
         logger.exception("Erro ao salvar quiz_answer (session_id=%s)", beat.session_id)
 
+    # INCREMENTA quiz_response_count DA CAMPANHA VINCULADA. BUG CONFIRMADO via
+    # query real no banco: parsed_campaigns.quiz_response_count = 0 em TODAS as
+    # campanhas mesmo com 8.9k respostas em quiz_answers. Causa: este handler
+    # gravava a resposta mas nunca somava +1 no contador por campanha, entao a
+    # aba Campanhas mostrava QUIZ 0 / CONVERSAO 0.0%. Resolve a campanha da
+    # sessao via lead_profiles.parsed_campaign_id (atribuicao ja funciona:
+    # 565/568 preenchidos) e incrementa. Falha aqui nao derruba o track.
+    if quiz_saved:
+        try:
+            lp = supabase.table("lead_profiles").select("parsed_campaign_id").eq(
+                "session_id", beat.session_id
+            ).limit(1).execute()
+            pc_id = lp.data[0].get("parsed_campaign_id") if lp.data else None
+            if pc_id:
+                cur = supabase.table("parsed_campaigns").select("quiz_response_count").eq(
+                    "id", pc_id
+                ).limit(1).execute()
+                cur_count = (cur.data[0].get("quiz_response_count") or 0) if cur.data else 0
+                supabase.table("parsed_campaigns").update(
+                    {"quiz_response_count": cur_count + 1}
+                ).eq("id", pc_id).execute()
+        except Exception as inc_exc:
+            logger.warning(
+                "Falha ao incrementar quiz_response_count (session=%s): %s",
+                beat.session_id, str(inc_exc),
+            )
+
     # Atualiza/cria lead_profile
     _atualizar_lead_profile(supabase, beat, utm, step_id)
 
