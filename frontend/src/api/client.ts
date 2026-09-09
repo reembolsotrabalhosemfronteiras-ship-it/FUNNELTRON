@@ -1583,6 +1583,76 @@ export async function getAudienceBreakdown(
   ], 400);
 }
 
+/** Respostas do quiz por pergunta (sem campanha). */
+export interface QuizAnswerOption {
+  value: string;
+  count: number;
+  percentage: number;
+}
+
+export interface QuizQuestionResult {
+  questionId: string;
+  questionLabel: string;
+  totalResponses: number;
+  uniqueSessions: number;
+  answers: QuizAnswerOption[];
+}
+
+export interface QuizResponsesData {
+  questions: QuizQuestionResult[];
+  totalSessions: number;
+  totalResponses: number;
+}
+
+export async function getQuizResponses(
+  funnelId: string,
+  period: PeriodInput = "30d"
+): Promise<QuizResponsesData> {
+  if (!USE_MOCK) {
+    return apiGet(`/api/quiz/responses?funnel_id=${funnelId}&${periodQuery(period)}`).then(okJson);
+  }
+  return delay({
+    questions: [
+      {
+        questionId: "q1",
+        questionLabel: "Pergunta 1",
+        totalResponses: 1240,
+        uniqueSessions: 1240,
+        answers: [
+          { value: "Sim, tenho interesse", count: 780, percentage: 62.9 },
+          { value: "Talvez", count: 310, percentage: 25.0 },
+          { value: "Não", count: 150, percentage: 12.1 },
+        ],
+      },
+      {
+        questionId: "q2",
+        questionLabel: "Pergunta 2",
+        totalResponses: 1180,
+        uniqueSessions: 1180,
+        answers: [
+          { value: "R$ 50-100", count: 520, percentage: 44.1 },
+          { value: "R$ 100-200", count: 380, percentage: 32.2 },
+          { value: "R$ 200+", count: 280, percentage: 23.7 },
+        ],
+      },
+      {
+        questionId: "q3",
+        questionLabel: "Pergunta 3",
+        totalResponses: 1100,
+        uniqueSessions: 1100,
+        answers: [
+          { value: "Instagram", count: 450, percentage: 40.9 },
+          { value: "Facebook", count: 320, percentage: 29.1 },
+          { value: "TikTok", count: 210, percentage: 19.1 },
+          { value: "YouTube", count: 120, percentage: 10.9 },
+        ],
+      },
+    ],
+    totalSessions: 1240,
+    totalResponses: 3520,
+  }, 400);
+}
+
 /** Performance detalhada por Ad ID. */
 export async function getAdPerformance(
   funnelId: string,

@@ -638,6 +638,97 @@ def get_quiz_by_campaign(
 
 
 # ---------------------------------------------------------------------------
+# GET /api/quiz/responses — respostas do quiz por pergunta (sem campanha)
+# ---------------------------------------------------------------------------
+@router.get("/responses")
+def get_quiz_responses(
+    funnel_id: str = Query(...),
+    period: str = Query("30d"),
+    current_user=Depends(get_current_user),
+):
+    """Respostas do quiz agrupadas por pergunta e opção, com porcentagens.
+
+    Foco puro nas respostas: cada pergunta listada com suas opções de resposta,
+    contagem e porcentagem. Sem dados de campanha/ad performance.
+    """
+    supabase = get_supabase_admin()
+    interval_days = int(_period_to_interval(period).split()[0])
+    from_ts = (datetime.now(timezone.utc) - timedelta(days=interval_days)).isoformat()
+
+    resolved_funnel_id = _resolve_funnel_uuid(supabase, funnel_id)
+
+    # Busca todas as respostas do quiz no período
+    rows = (
+        supabase.table("quiz_answers")
+        .select("question_id, answer_value, session_id, timestamp")
+        .eq("funnel_id", resolved_funnel_id)
+        .gte("timestamp", from_ts)
+        .order("timestamp")
+        .execute()
+    )
+
+    if not rows.data:
+        return {"questions": [], "totalSessions": 0, "totalResponses": 0}
+
+    # Agrupa por question_id → answer_value
+    questions: dict = {}
+    all_sessions: set = set()
+
+    for row in rows.data:
+        qid = row["question_id"]
+        aval = row.get("answer_value") or "unknown"
+        sid = row["session_id"]
+        all_sessions.add(sid)
+
+        if qid not in questions:
+            questions[qid] = {"answers": {}, "sessions": set(), "total": 0}
+
+        questions[qid]["total"] += 1
+        questions[qid]["sessions"].add(sid)
+
+        if aval not in questions[qid]["answers"]:
+            questions[qid]["answers"][aval] = 0
+        questions[qid]["answers"][aval] += 1
+
+    # Monta resposta ordenada por question_id (ordem natural das perguntas)
+    result_questions = []
+    for qid in sorted(questions.keys()):
+        data = questions[qid]
+        total = data["total"]
+        unique_sessions = len(data["sessions"])
+
+        # Ordena respostas por contagem decrescente
+        answers_list = []
+        for aval, count in sorted(data["answers"].items(), key=lambda x: x[1], reverse=True):
+            pct = round(count / total * 100, 1) if total > 0 else 0
+            answers_list.append({
+                "value": aval,
+                "count": count,
+                "percentage": pct,
+            })
+
+        # Label legível da pergunta
+        label = qid.replace("_", " ").replace("-", " ").title()
+        # Se o question_id é numérico (q1, q2, etc.), mantém como está
+        if qid.startswith("q") and qid[1:].isdigit():
+            label = f"Pergunta {qid[1:]}"
+
+        result_questions.append({
+            "questionId": qid,
+            "questionLabel": label,
+            "totalResponses": total,
+            "uniqueSessions": unique_sessions,
+            "answers": answers_list,
+        })
+
+    return {
+        "questions": result_questions,
+        "totalSessions": len(all_sessions),
+        "totalResponses": len(rows.data),
+    }
+
+
+# ---------------------------------------------------------------------------
 # POST /api/quiz/sync-utmfy
 # ---------------------------------------------------------------------------
 @router.post("/sync-utmfy")
