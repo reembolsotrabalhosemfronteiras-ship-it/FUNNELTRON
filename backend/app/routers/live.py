@@ -127,13 +127,6 @@ def _resolve_funnel_uuid(supabase: Client, funnel_id: str) -> str:
             pass
     return funnel_id
 
-# DIAGNÃ“STICO TEMPORÃRIO: captura a Ãºltima exceÃ§Ã£o dos inserts de
-# parsed_campaigns / lead_profiles / quiz_answers para eu ler via
-# GET /api/live/debug/last-error (sem auth). Remover depois de achar a causa
-# raiz de "track retorna 204 mas nenhuma linha aparece nas abas Campanhas/Quiz".
-_last_insert_error: dict = {"error": None, "at": None}
-
-
 def _upsert_beat(supabase: Client, payload: dict) -> None:
     global _geo_columns_ok
     try:
@@ -224,7 +217,7 @@ def _salvar_quiz_answer(supabase: Client, beat: LiveBeatRequest) -> None:
         "timestamp": beat.timestamp if hasattr(beat, 'timestamp') and beat.timestamp else "now()",
     }
     # RETRY TRANSIENTE: o Supabase esporadicamente retorna 504 Gateway Timeout
-    # nos writes (confirmado via /api/live/debug/last-error). Sem retry, UM
+    # nos writes (timeout 504 do Supabase em picos de tráfego). Sem retry, UM
     # timeout descarta a resposta de quiz inteira e a aba Quiz & Ads parece
     # "nao trackear". Retenta com backoff curto antes de registrar o erro.
     import time as _time_q
@@ -251,11 +244,6 @@ def _salvar_quiz_answer(supabase: Client, beat: LiveBeatRequest) -> None:
             break
 
     if not quiz_saved and last_quiz_exc is not None:
-        # DIAGNÃ“STICO TEMPORÃRIO: expÃµe a exceÃ§Ã£o real via /api/live/debug/last-error
-        from datetime import datetime, timezone
-        _last_insert_error["error"] = f"{type(last_quiz_exc).__name__}: {last_quiz_exc}"
-        _last_insert_error["at"] = datetime.now(timezone.utc).isoformat()
-        _last_insert_error["where"] = "quiz_answers"
         logger.exception("Erro ao salvar quiz_answer (session_id=%s)", beat.session_id)
 
     # INCREMENTA quiz_response_count DA CAMPANHA VINCULADA. BUG CONFIRMADO via
@@ -561,7 +549,7 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
             # Tenta insert com todos os campos; se falhar por coluna ausente
             # (migration 012 nÃ£o aplicada), remove campos problemÃ¡ticos e tenta novamente.
             # RETRY TRANSIENTE: o Supabase esporadicamente retorna 504 Gateway
-            # Timeout nos writes (confirmado via /api/live/debug/last-error:
+            # Timeout nos writes (504 do Supabase em picos de tráfego:
             # "APIError code 504 ... where: lead_profile"). Sem retry, UM
             # timeout mata o write inteiro e quebra toda a cadeia de atribuicao
             # (lead_profile -> parsed_campaign_id -> quiz_answers), fazendo a
@@ -617,11 +605,6 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
     except Exception as exc:
         # Falha silenciosa: nÃ£o derruba o heartbeat
         logger.exception("Erro ao atualizar lead_profile (session_id=%s)", beat.session_id)
-        # DIAGNÃ“STICO TEMPORÃRIO: expÃµe a exceÃ§Ã£o real via /api/live/debug/last-error
-        from datetime import datetime, timezone
-        _last_insert_error["error"] = f"{type(exc).__name__}: {exc}"
-        _last_insert_error["at"] = datetime.now(timezone.utc).isoformat()
-        _last_insert_error["where"] = "lead_profile"
 
 
 def _get_workspace_id(supabase: Client, funnel_id: str) -> str | None:
@@ -664,76 +647,6 @@ def _get_workspace_id(supabase: Client, funnel_id: str) -> str | None:
     except Exception:
         pass
     return None
-
-
-# DIAGNÃ“STICO TEMPORÃRIO: endpoint pÃºblico (sem auth) que devolve a Ãºltima
-# exceÃ§Ã£o capturada nos inserts de parsed_campaigns / lead_profiles / quiz_answers.
-# Usado pra achar a causa raiz de "track retorna 204 mas nenhuma linha aparece
-# nas abas Campanhas/Quiz". REMOVER depois de corrigir a causa.
-@router.get("/debug/last-error")
-def debug_last_insert_error():
-    return _last_insert_error
-
-
-# DIAGNÃ“STICO TEMPORÃRIO: endpoint pÃºblico (sem auth) que devolve uma amostra
-# crua dos dados reais no banco â€” parsed_campaigns (pra ver se campaign_name/
-# raw_campaign/creative_code estÃ£o preenchidos ou NULL) e contagem de
-# quiz_answers (pra ver se o tracker estÃ¡ de fato gravando respostas).
-# Usado pra achar a causa raiz dos 3 sintomas: (1) Quiz & Ads nÃ£o trackeia,
-# (2) Campanhas nÃ£o separa por criativo, (3) mostra nome da conta na campanha.
-# REMOVER depois de corrigir a causa.
-@router.get("/debug/data-sample")
-def debug_data_sample(supabase: Client = Depends(get_supabase_admin)):
-    # SENTINEL de versao: prova qual commit do backend esta realmente rodando
-    # no Railway. Usado pra confirmar se o fix de resolucao de prefixo uuid
-    # (7a09dc2) subiu â€” os re-testes continuavam mostrando 22P02 com o slug
-    # cru, levantando suspeita de deploy stale. Bumpar este valor a cada fix
-    # permite verificar via GET sem auth.
-    out: dict = {
-        "backend_version": "7a09dc2-format-gated-v3",
-        "parsed_campaigns": [],
-        "quiz_answers_count": None,
-        "error": None,
-    }
-    # DIAGNOSTICO do resolver: roda a mesma logica que o track usa contra o
-    # prefixo "2b23f46d" e expoe cada passo, pra provar por que o fix de
-    # prefixo uuid nao reescreve beat.funnel_id em producao (re-teste com o
-    # sentinel vivo ainda mostrou 22P02 com o slug cru).
-    try:
-        probe = "2b23f46d"
-        ids = _get_funnel_ids(supabase)
-        matched = [fid for fid in ids if fid.lower().startswith(probe)]
-        resolved = _resolve_funnel_uuid(supabase, probe)
-        out["resolver_diag"] = {
-            "probe": probe,
-            "funnel_ids_count": len(ids),
-            "funnel_ids_sample": ids[:5],
-            "prefix_matches": matched,
-            "resolved": resolved,
-            "changed": resolved != probe,
-        }
-    except Exception as diag_exc:
-        out["resolver_diag"] = {"error": f"{type(diag_exc).__name__}: {diag_exc}"}
-    try:
-        pcs = (
-            supabase.table("parsed_campaigns")
-            .select(
-                "slug_key, creative_code, campaign_code, campaign_name, "
-                "raw_campaign, placement, session_count, raw_source"
-            )
-            .order("session_count", desc=True)
-            .limit(15)
-            .execute()
-        )
-        out["parsed_campaigns"] = pcs.data or []
-    except Exception as exc:
-        out["error"] = f"parsed_campaigns: {type(exc).__name__}: {exc}"
-    try:
-        cnt = supabase.table("quiz_answers").select("id", count="exact").execute()
-        out["quiz_answers_count"] = cnt.count
-    except Exception as exc:
-        out["error"] = (out.get("error") or "") + f" | quiz_answers: {type(exc).__name__}: {exc}"
-    return out
 
 
 @router.post("/track", status_code=status.HTTP_204_NO_CONTENT)
