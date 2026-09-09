@@ -1,4 +1,4 @@
-"""Router de rastreamento ao vivo"""
+﻿"""Router de rastreamento ao vivo"""
 import asyncio
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Request
@@ -22,10 +22,10 @@ router = APIRouter(prefix="/live", tags=["live"])
 # Header opcional para validar webhooks de venda (PerfectPay, etc.)
 WEBHOOK_HEADER = APIKeyHeader(name="X-Webhook-Secret", auto_error=False)
 
-# Enquanto a migration 008 (colunas geo_* em live_beats) não rodar no banco, o
+# Enquanto a migration 008 (colunas geo_* em live_beats) nÃ£o rodar no banco, o
 # primeiro heartbeat com geo estoura "column ... does not exist". Este flag
-# desliga o envio de geo até o próximo restart — o heartbeat NUNCA falha por
-# causa disso, só deixa de alimentar o mapa.
+# desliga o envio de geo atÃ© o prÃ³ximo restart â€” o heartbeat NUNCA falha por
+# causa disso, sÃ³ deixa de alimentar o mapa.
 _geo_columns_ok = True
 _GEO_KEYS = ("geo_city", "geo_uf", "geo_lat", "geo_lon")
 
@@ -37,8 +37,8 @@ _GEO_KEYS = ("geo_city", "geo_uf", "geo_lat", "geo_lon")
 # evita uma query por heartbeat.
 _funnel_uuid_cache: dict[str, str] = {}
 # Cache da lista completa de ids de funil. Usado para resolver PREFIXO de uuid
-# em memoria, porque o PostgREST NÃO aceita ilike em coluna uuid
-# ("operator does not exist: uuid ~~* unknown", code 42883) — confirmado por
+# em memoria, porque o PostgREST NÃƒO aceita ilike em coluna uuid
+# ("operator does not exist: uuid ~~* unknown", code 42883) â€” confirmado por
 # teste direto contra a API. A tabela funnels eh pequena, entao buscar todos
 # os ids uma vez e casar o prefixo em Python eh barato e robusto.
 _funnel_ids_cache: list[str] | None = None
@@ -75,40 +75,59 @@ def _resolve_funnel_uuid(supabase: Client, funnel_id: str) -> str:
     cached = _funnel_uuid_cache.get(funnel_id)
     if cached:
         return cached
-    try:
-        # 1) UUID completo direto (caso o tracker ja mande o id real).
-        by_id = supabase.table("funnels").select("id").eq("id", funnel_id).execute()
-        if by_id.data:
-            resolved = by_id.data[0]["id"]
-            _funnel_uuid_cache[funnel_id] = resolved
-            return resolved
-        # 2) Slug curto (ex: "padrao-buck-mtrqoxs3").
-        by_slug = supabase.table("funnels").select("id").eq("slug", funnel_id).execute()
-        if by_slug.data:
-            resolved = by_slug.data[0]["id"]
-            _funnel_uuid_cache[funnel_id] = resolved
-            return resolved
-        # 3) PREFIXO de UUID (ex: "2b23f46d" -> "2b23f46d-bc94-4f32-...").
-        # Evidencia real do banco: o tracker embute os 8 primeiros hex do
-        # UUID do funil, nao o slug nem o UUID completo. O PostgREST NAO
-        # aceita ilike em coluna uuid ("operator does not exist: uuid ~~*
-        # unknown", 42883 — confirmado por teste direto), entao casamos o
-        # prefixo em memoria contra a lista cacheada de ids. So aceita
-        # prefixo puramente hexadecimal de 8+ chars pra evitar match
-        # acidental com slugs.
-        import re as _re
-        if _re.fullmatch(r"[0-9a-fA-F]{8,}", funnel_id):
-            prefix = funnel_id.lower()
+    import re as _re
+    is_full_uuid = bool(_re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", funnel_id))
+    is_hex_prefix = bool(_re.fullmatch(r"[0-9a-fA-F]{8,}", funnel_id))
+    # BUG ANTERIOR (confirmado via resolver_diag em prod): todo o corpo estava
+    # num unico try/except. O ramo 1 rodava eq("id", "2b23f46d") PRIMEIRO, e o
+    # PostgREST REJEITA eq em coluna uuid com valor nao-uuid (lanca excecao,
+    # nao retorna vazio). A excecao pulava direto pro except da linha final,
+    # PULANDO o ramo 3 (prefixo em memoria) que funcionava â€” por isso o diag
+    # achava o match mas a funcao devolvia o slug cru e o insert estourava
+    # 22P02. Agora valida o formato ANTES e so roda os ramos que nao lancam:
+    # uuid-completo so quando eh uuid valido, slug so quando nao eh hex puro,
+    # e prefixo em memoria para hex de 8+ chars. Sem try amplo engolindo o
+    # caminho real.
+    # 1) UUID completo valido -> busca direta por id (seguro, valor eh uuid).
+    if is_full_uuid:
+        try:
+            by_id = supabase.table("funnels").select("id").eq("id", funnel_id).execute()
+            if by_id.data:
+                resolved = by_id.data[0]["id"]
+                _funnel_uuid_cache[funnel_id] = resolved
+                return resolved
+        except Exception:
+            pass
+    # 2) PREFIXO hex de uuid (ex: "2b23f46d" -> "2b23f46d-bc94-..."). Evidencia
+    # real do banco: o tracker embute os 8 primeiros hex do UUID, nao o slug
+    # nem o uuid completo. Casa em memoria contra a lista cacheada de ids
+    # (PostgREST nao aceita ilike/eq-prefix em coluna uuid). Este eh o caminho
+    # que o tracker real usa â€” tem que vir ANTES de qualquer consulta que
+    # lance com valor nao-uuid.
+    if is_hex_prefix and not is_full_uuid:
+        prefix = funnel_id.lower()
+        try:
             for fid in _get_funnel_ids(supabase):
                 if fid.lower().startswith(prefix):
                     _funnel_uuid_cache[funnel_id] = fid
                     return fid
-    except Exception:
-        # Falha de resolucao nao deve quebrar o track; cai no valor original.
-        pass
+        except Exception:
+            pass
+    # 3) Slug curto (ex: "padrao-buck-mtrqoxs3") â€” so quando nao eh hex puro
+    # (slugs reais tem letras fora de a-f ou hifens, entao nunca casam como
+    # hex_prefix). eq em coluna text slug eh seguro.
+    if not is_hex_prefix:
+        try:
+            by_slug = supabase.table("funnels").select("id").eq("slug", funnel_id).execute()
+            if by_slug.data:
+                resolved = by_slug.data[0]["id"]
+                _funnel_uuid_cache[funnel_id] = resolved
+                return resolved
+        except Exception:
+            pass
     return funnel_id
 
-# DIAGNÓSTICO TEMPORÁRIO: captura a última exceção dos inserts de
+# DIAGNÃ“STICO TEMPORÃRIO: captura a Ãºltima exceÃ§Ã£o dos inserts de
 # parsed_campaigns / lead_profiles / quiz_answers para eu ler via
 # GET /api/live/debug/last-error (sem auth). Remover depois de achar a causa
 # raiz de "track retorna 204 mas nenhuma linha aparece nas abas Campanhas/Quiz".
@@ -134,22 +153,22 @@ class LiveBeatRequest(BaseModel):
     funnel_id: str
     session_id: str
     device_id: Optional[str] = None
-    # Identidade da visualização de página: igual em todos os heartbeats da
-    # mesma página, diferente quando a pessoa navega. É a chave de dedupe.
-    # Opcional para não quebrar snippets antigos já colados em produção.
+    # Identidade da visualizaÃ§Ã£o de pÃ¡gina: igual em todos os heartbeats da
+    # mesma pÃ¡gina, diferente quando a pessoa navega. Ã‰ a chave de dedupe.
+    # Opcional para nÃ£o quebrar snippets antigos jÃ¡ colados em produÃ§Ã£o.
     event_id: Optional[str] = None
     url: str
     referrer: Optional[str] = None
     utm: Optional[dict] = None
-    # UTM da primeira página visitada na sessão (first-touch).
+    # UTM da primeira pÃ¡gina visitada na sessÃ£o (first-touch).
     # O tracker persiste isso no sessionStorage e envia em todo heartbeat/quiz.
     first_utm: Optional[dict] = None
-    # Quiz answer (opcional) — se presente, event_type = 'quiz_answer'
+    # Quiz answer (opcional) â€” se presente, event_type = 'quiz_answer'
     event_type: Optional[str] = None  # 'pageview' | 'quiz_answer' | 'contact_form'
     question_id: Optional[str] = None
     answer_id: Optional[str] = None
     answer_value: Optional[str] = None
-    # Campos de contato capturados por auto-detect de formulário no tracker.js.
+    # Campos de contato capturados por auto-detect de formulÃ¡rio no tracker.js.
     # Nullable: nem todo lead preenche, e o quiz continua funcionando sem elas.
     contact_name: Optional[str] = None
     contact_email: Optional[str] = None
@@ -168,7 +187,7 @@ def _salvar_quiz_answer(supabase: Client, beat: LiveBeatRequest) -> None:
     utm_content = utm.get("utm_content")
     utm_term = utm.get("utm_term")
 
-    # Resolve step_id pela URL (mesma lógica do trigger do banco)
+    # Resolve step_id pela URL (mesma lÃ³gica do trigger do banco)
     step_id = None
     try:
         steps = supabase.table("funnel_steps").select("id, url").eq(
@@ -182,7 +201,7 @@ def _salvar_quiz_answer(supabase: Client, beat: LiveBeatRequest) -> None:
     except Exception:
         pass
 
-    # Resolve workspace_id do funil (mesma resolução usada em parsed_campaigns/
+    # Resolve workspace_id do funil (mesma resoluÃ§Ã£o usada em parsed_campaigns/
     # lead_profiles). Sem isso a linha de quiz_answers cai com workspace_id=NULL
     # e nunca aparece nas abas, que filtram por .eq("workspace_id", ws_id).
     ws_id = _get_workspace_id(supabase, beat.funnel_id)
@@ -232,7 +251,7 @@ def _salvar_quiz_answer(supabase: Client, beat: LiveBeatRequest) -> None:
             break
 
     if not quiz_saved and last_quiz_exc is not None:
-        # DIAGNÓSTICO TEMPORÁRIO: expõe a exceção real via /api/live/debug/last-error
+        # DIAGNÃ“STICO TEMPORÃRIO: expÃµe a exceÃ§Ã£o real via /api/live/debug/last-error
         from datetime import datetime, timezone
         _last_insert_error["error"] = f"{type(last_quiz_exc).__name__}: {last_quiz_exc}"
         _last_insert_error["at"] = datetime.now(timezone.utc).isoformat()
@@ -244,13 +263,13 @@ def _salvar_quiz_answer(supabase: Client, beat: LiveBeatRequest) -> None:
 
 
 def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, step_id: str | None) -> None:
-    """Upsert do lead_profile consolidando quiz + UTM com atribuição por parsing de slug."""
+    """Upsert do lead_profile consolidando quiz + UTM com atribuiÃ§Ã£o por parsing de slug."""
     from app.services.utm_parser import parse_utm_slug
 
     try:
         ws_id = _get_workspace_id(supabase, beat.funnel_id)
 
-        # Busca modelo de atribuição do workspace (first_touch ou last_touch)
+        # Busca modelo de atribuiÃ§Ã£o do workspace (first_touch ou last_touch)
         attribution_model = "first_touch"
         try:
             ws_result = supabase.table("workspaces").select("attribution_model").eq(
@@ -261,11 +280,11 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
         except Exception:
             pass
 
-        # Escolhe UTM de atribuição baseado no modelo
+        # Escolhe UTM de atribuiÃ§Ã£o baseado no modelo
         first_utm = beat.first_utm or {}
         attribution_utm = first_utm if attribution_model == "first_touch" else utm
 
-        # --- AUTO-CRIAÇÃO DE CAMPANHA POR PARSING DE SLUG UTM ---
+        # --- AUTO-CRIAÃ‡ÃƒO DE CAMPANHA POR PARSING DE SLUG UTM ---
         parsed_campaign_id = None
         parsed = parse_utm_slug(attribution_utm)
         if not parsed.is_empty():
@@ -285,8 +304,8 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
                 }).execute()
                 if rpc_result.data:
                     # BUG FIX: RPC pode retornar parsed_campaign de outro workspace
-                    # (quando mesma slug_key existe em múltiplos workspaces).
-                    # Verifica se o workspace_id bate; se não, força fallback manual.
+                    # (quando mesma slug_key existe em mÃºltiplos workspaces).
+                    # Verifica se o workspace_id bate; se nÃ£o, forÃ§a fallback manual.
                     rpc_pc_id = rpc_result.data
                     pc_check = supabase.table("parsed_campaigns").select("workspace_id").eq(
                         "id", rpc_pc_id
@@ -296,18 +315,18 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
                     else:
                         logger.warning(
                             "RPC retornou parsed_campaign de outro workspace (session=%s, "
-                            "rpc_ws=%s, expected_ws=%s). Forçando fallback manual.",
+                            "rpc_ws=%s, expected_ws=%s). ForÃ§ando fallback manual.",
                             beat.session_id,
                             pc_check.data[0].get("workspace_id") if pc_check.data else "unknown",
                             ws_id,
                         )
                         raise Exception("Workspace mismatch - forcing fallback")
             except Exception as exc:  # noqa: BLE001
-                # BUG-11 fix: log explícito + fallback gracioso. O heartbeat NUNCA
-                # deve falhar por causa do RPC de parsed_campaign — a venda e o
-                # lead_profile continuam sendo salvos, só sem vínculo com campanha
+                # BUG-11 fix: log explÃ­cito + fallback gracioso. O heartbeat NUNCA
+                # deve falhar por causa do RPC de parsed_campaign â€” a venda e o
+                # lead_profile continuam sendo salvos, sÃ³ sem vÃ­nculo com campanha
                 # parseada. Sem esse try/except amplo, um erro no RPC (ex: coluna
-                # nova não migrada ainda) derrubava o heartbeat inteiro.
+                # nova nÃ£o migrada ainda) derrubava o heartbeat inteiro.
                 logger.warning(
                     "RPC resolve_or_create_parsed_campaign falhou (session=%s): %s. "
                     "Tentando fallback manual.",
@@ -315,8 +334,8 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
                 )
                 # Fallback manual: faz upsert direto na tabela parsed_campaigns
                 # (funciona tanto em modo local quanto Supabase quando o RPC falha).
-                # A lógica espelha o RPC do Supabase: busca por slug_key, se não
-                # existe insere, senão retorna o ID existente.
+                # A lÃ³gica espelha o RPC do Supabase: busca por slug_key, se nÃ£o
+                # existe insere, senÃ£o retorna o ID existente.
                 try:
                     slug_key = parsed.to_campaign_key()
                     # Busca primeiro com workspace_id correto
@@ -326,8 +345,8 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
                     if existing_correct.data:
                         parsed_campaign_id = existing_correct.data[0]["id"]
                         # BUG FIX: incrementa session_count e atualiza last_seen_at
-                        # quando a campanha já existe. Sem isso, o contador fica
-                        # zerado para sempre após a primeira inserção — era exatamente
+                        # quando a campanha jÃ¡ existe. Sem isso, o contador fica
+                        # zerado para sempre apÃ³s a primeira inserÃ§Ã£o â€” era exatamente
                         # o sintoma de "35 campanhas detectadas, todas com 0 sessions".
                         try:
                             current = supabase.table("parsed_campaigns").select("session_count,campaign_name,raw_campaign").eq(
@@ -339,7 +358,7 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
                             # migration 016 nasceram com campaign_name/raw_campaign
                             # = NULL, entao a aba Campanhas mostrava so o codigo
                             # tecnico (#bm.16.ca.01). Preenche com o nome legivel
-                            # do heartbeat atual quando o campo ainda esta vazio —
+                            # do heartbeat atual quando o campo ainda esta vazio â€”
                             # espelha o COALESCE da RPC resolve_or_create_parsed_campaign.
                             upd = {
                                 "session_count": new_count,
@@ -374,7 +393,7 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
                             ).eq("id", old_pc_id).execute()
                             parsed_campaign_id = old_pc_id
                         else:
-                            # Não existe em nenhum workspace - cria novo
+                            # NÃ£o existe em nenhum workspace - cria novo
                             import uuid as _uuid
                             new_pc = {
                                 "id": str(_uuid.uuid4()),
@@ -402,7 +421,7 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
                             )
                 except Exception as fallback_exc:  # noqa: BLE001
                     logger.warning(
-                        "Fallback manual de parsed_campaign também falhou (session=%s): %s",
+                        "Fallback manual de parsed_campaign tambÃ©m falhou (session=%s): %s",
                         beat.session_id, str(fallback_exc),
                     )
                     parsed_campaign_id = None
@@ -412,7 +431,7 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
             "session_id", beat.session_id
         ).execute()
 
-        # Busca ad_campaign pelo UTM de atribuição para preencher FKs explícitas
+        # Busca ad_campaign pelo UTM de atribuiÃ§Ã£o para preencher FKs explÃ­citas
         attributed_ad_id = None
         attributed_campaign_id = None
         ad_id_text = None
@@ -432,7 +451,7 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
                 result = query.limit(1).execute()
                 if result.data:
                     attributed_ad_id = result.data[0].get("id")
-                    attributed_campaign_id = result.data[0].get("id")  # mesma tabela, campanha é outro campo
+                    attributed_campaign_id = result.data[0].get("id")  # mesma tabela, campanha Ã© outro campo
                     ad_id_text = result.data[0].get("ad_id")
                     campaign_id_text = result.data[0].get("campaign_id")
                     audience_json = result.data[0].get("audience_json")
@@ -460,20 +479,20 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
                 "device_id": beat.device_id or profile.get("device_id"),
             }
             # Garante que workspace_id seja preenchido mesmo em updates
-            # (perfis criados antes da correção tinham workspace_id=NULL)
+            # (perfis criados antes da correÃ§Ã£o tinham workspace_id=NULL)
             if ws_id and not profile.get("workspace_id"):
                 update_data["workspace_id"] = ws_id
-            # Só sobrescreve first_utm se ainda não existe (preserva primeira visita)
+            # SÃ³ sobrescreve first_utm se ainda nÃ£o existe (preserva primeira visita)
             if not profile.get("first_utm_json") and first_utm:
                 update_data["first_utm_json"] = first_utm
-            # Campos de contato capturados por auto-detect de formulário.
-            # Só sobrescreve se o tracker enviou valor novo (evita apagar
-            # nome/email já preenchidos com dados vazios de heartbeat).
+            # Campos de contato capturados por auto-detect de formulÃ¡rio.
+            # SÃ³ sobrescreve se o tracker enviou valor novo (evita apagar
+            # nome/email jÃ¡ preenchidos com dados vazios de heartbeat).
             if beat.contact_name:
                 update_data["contact_name"] = beat.contact_name
             if beat.contact_email:
                 update_data["contact_email"] = beat.contact_email
-            # Atribuição só muda se encontrou ad_campaign correspondente
+            # AtribuiÃ§Ã£o sÃ³ muda se encontrou ad_campaign correspondente
             if attributed_ad_id:
                 update_data["attributed_ad_id"] = attributed_ad_id
                 update_data["attributed_campaign_id"] = attributed_campaign_id
@@ -484,7 +503,7 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
                 update_data["ad_id"] = ad_id_text or profile.get("ad_id")
                 update_data["campaign_id"] = campaign_id_text or profile.get("campaign_id")
                 update_data["audience_json"] = audience_json or profile.get("audience_json")
-            # Vincula à campanha detectada por parsing de slug UTM
+            # Vincula Ã  campanha detectada por parsing de slug UTM
             if parsed_campaign_id and not profile.get("parsed_campaign_id"):
                 update_data["parsed_campaign_id"] = parsed_campaign_id
             supabase.table("lead_profiles").update(update_data).eq(
@@ -508,12 +527,12 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
                 "contact_name": beat.contact_name or None,
                 "contact_email": beat.contact_email or None,
             }
-            # Vincula à campanha detectada por parsing de slug UTM
+            # Vincula Ã  campanha detectada por parsing de slug UTM
             if parsed_campaign_id:
                 insert_data["parsed_campaign_id"] = parsed_campaign_id
 
             # Tenta insert com todos os campos; se falhar por coluna ausente
-            # (migration 012 não aplicada), remove campos problemáticos e tenta novamente.
+            # (migration 012 nÃ£o aplicada), remove campos problemÃ¡ticos e tenta novamente.
             # RETRY TRANSIENTE: o Supabase esporadicamente retorna 504 Gateway
             # Timeout nos writes (confirmado via /api/live/debug/last-error:
             # "APIError code 504 ... where: lead_profile"). Sem retry, UM
@@ -555,7 +574,7 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
             except Exception as insert_exc:
                 error_msg = str(insert_exc)
                 if "contact_email" in error_msg or "contact_name" in error_msg:
-                    # Remove campos que não existem no schema
+                    # Remove campos que nÃ£o existem no schema
                     insert_data.pop("contact_name", None)
                     insert_data.pop("contact_email", None)
                     logger.warning(
@@ -569,9 +588,9 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
                 else:
                     raise
     except Exception as exc:
-        # Falha silenciosa: não derruba o heartbeat
+        # Falha silenciosa: nÃ£o derruba o heartbeat
         logger.exception("Erro ao atualizar lead_profile (session_id=%s)", beat.session_id)
-        # DIAGNÓSTICO TEMPORÁRIO: expõe a exceção real via /api/live/debug/last-error
+        # DIAGNÃ“STICO TEMPORÃRIO: expÃµe a exceÃ§Ã£o real via /api/live/debug/last-error
         from datetime import datetime, timezone
         _last_insert_error["error"] = f"{type(exc).__name__}: {exc}"
         _last_insert_error["at"] = datetime.now(timezone.utc).isoformat()
@@ -581,10 +600,10 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
 def _get_workspace_id(supabase: Client, funnel_id: str) -> str | None:
     """Resolve workspace_id do funil, com fallback para o primeiro workspace do dono.
 
-    Funis criados antes da migration 009 não têm workspace_id. Sem fallback,
+    Funis criados antes da migration 009 nÃ£o tÃªm workspace_id. Sem fallback,
     o lead_profile ficava com workspace_id=NULL e attributed_ad_id nunca era
     resolvido (a query de ad_campaigns filtra por workspace_id). O fallback
-    pega o primeiro workspace do dono do funil — todo usuário pós-009 tem
+    pega o primeiro workspace do dono do funil â€” todo usuÃ¡rio pÃ³s-009 tem
     pelo menos um workspace criado automaticamente no cadastro.
     """
     try:
@@ -605,11 +624,11 @@ def _get_workspace_id(supabase: Client, funnel_id: str) -> str | None:
         ).order("created_at").limit(1).execute()
         if member.data:
             return member.data[0].get("workspace_id")
-        # Último fallback: o workspace pessoal mais antigo do dono (migration 009
-        # garante que todo usuário tem pelo menos um). Sem isso, funis criados
+        # Ãšltimo fallback: o workspace pessoal mais antigo do dono (migration 009
+        # garante que todo usuÃ¡rio tem pelo menos um). Sem isso, funis criados
         # antes do backfill de workspace_members ficavam com workspace_id=NULL e
         # as linhas de parsed_campaigns/lead_profiles nunca apareciam nas abas
-        # (Campanhas/Quiz filtram por .eq("workspace_id", ws_id) — NULL não casa).
+        # (Campanhas/Quiz filtram por .eq("workspace_id", ws_id) â€” NULL nÃ£o casa).
         own_ws = supabase.table("workspaces").select("id").eq(
             "owner_id", user_id
         ).order("created_at").limit(1).execute()
@@ -620,8 +639,8 @@ def _get_workspace_id(supabase: Client, funnel_id: str) -> str | None:
     return None
 
 
-# DIAGNÓSTICO TEMPORÁRIO: endpoint público (sem auth) que devolve a última
-# exceção capturada nos inserts de parsed_campaigns / lead_profiles / quiz_answers.
+# DIAGNÃ“STICO TEMPORÃRIO: endpoint pÃºblico (sem auth) que devolve a Ãºltima
+# exceÃ§Ã£o capturada nos inserts de parsed_campaigns / lead_profiles / quiz_answers.
 # Usado pra achar a causa raiz de "track retorna 204 mas nenhuma linha aparece
 # nas abas Campanhas/Quiz". REMOVER depois de corrigir a causa.
 @router.get("/debug/last-error")
@@ -629,22 +648,22 @@ def debug_last_insert_error():
     return _last_insert_error
 
 
-# DIAGNÓSTICO TEMPORÁRIO: endpoint público (sem auth) que devolve uma amostra
-# crua dos dados reais no banco — parsed_campaigns (pra ver se campaign_name/
-# raw_campaign/creative_code estão preenchidos ou NULL) e contagem de
-# quiz_answers (pra ver se o tracker está de fato gravando respostas).
-# Usado pra achar a causa raiz dos 3 sintomas: (1) Quiz & Ads não trackeia,
-# (2) Campanhas não separa por criativo, (3) mostra nome da conta na campanha.
+# DIAGNÃ“STICO TEMPORÃRIO: endpoint pÃºblico (sem auth) que devolve uma amostra
+# crua dos dados reais no banco â€” parsed_campaigns (pra ver se campaign_name/
+# raw_campaign/creative_code estÃ£o preenchidos ou NULL) e contagem de
+# quiz_answers (pra ver se o tracker estÃ¡ de fato gravando respostas).
+# Usado pra achar a causa raiz dos 3 sintomas: (1) Quiz & Ads nÃ£o trackeia,
+# (2) Campanhas nÃ£o separa por criativo, (3) mostra nome da conta na campanha.
 # REMOVER depois de corrigir a causa.
 @router.get("/debug/data-sample")
 def debug_data_sample(supabase: Client = Depends(get_supabase_admin)):
     # SENTINEL de versao: prova qual commit do backend esta realmente rodando
     # no Railway. Usado pra confirmar se o fix de resolucao de prefixo uuid
-    # (7a09dc2) subiu — os re-testes continuavam mostrando 22P02 com o slug
+    # (7a09dc2) subiu â€” os re-testes continuavam mostrando 22P02 com o slug
     # cru, levantando suspeita de deploy stale. Bumpar este valor a cada fix
     # permite verificar via GET sem auth.
     out: dict = {
-        "backend_version": "7a09dc2-inmem-prefix-v2-diag",
+        "backend_version": "7a09dc2-format-gated-v3",
         "parsed_campaigns": [],
         "quiz_answers_count": None,
         "error": None,
@@ -696,25 +715,25 @@ async def track_heartbeat(
     supabase: Client = Depends(get_supabase_admin)
 ):
     """
-    Endpoint público para heartbeat do rastreador (snippet nas páginas).
-    Aceita requisições anônimas (CORS aberto).
+    Endpoint pÃºblico para heartbeat do rastreador (snippet nas pÃ¡ginas).
+    Aceita requisiÃ§Ãµes anÃ´nimas (CORS aberto).
 
-    O corpo é lido cru em vez de declarado como modelo no parâmetro porque o
-    rastreador manda `Content-Type: text/plain` de propósito: é o que faz o
-    navegador tratar o POST como requisição simples e PULAR o preflight
-    (`OPTIONS`) — que vinha sendo barrado pelo CORS no domínio do cliente. Com
-    o modelo no parâmetro, o FastAPI só faz o parse quando o tipo é
+    O corpo Ã© lido cru em vez de declarado como modelo no parÃ¢metro porque o
+    rastreador manda `Content-Type: text/plain` de propÃ³sito: Ã© o que faz o
+    navegador tratar o POST como requisiÃ§Ã£o simples e PULAR o preflight
+    (`OPTIONS`) â€” que vinha sendo barrado pelo CORS no domÃ­nio do cliente. Com
+    o modelo no parÃ¢metro, o FastAPI sÃ³ faz o parse quando o tipo Ã©
     `application/json` e devolveria 422 nesse corpo.
     """
     try:
         corpo = await request.body()
         beat = LiveBeatRequest.model_validate_json(corpo)
     except Exception:
-        # Corpo malformado — o snippet manda o que consegue, não vale a pena
+        # Corpo malformado â€” o snippet manda o que consegue, nÃ£o vale a pena
         # devolver erro pra ele (sendBeacon ignora a resposta mesmo). Mas o
-        # erro precisa ficar visível no log do servidor, não só engolido: foi
-        # exatamente esse silêncio que escondeu a migration 002 não rodada.
-        logger.warning("Erro no track: corpo inválido")
+        # erro precisa ficar visÃ­vel no log do servidor, nÃ£o sÃ³ engolido: foi
+        # exatamente esse silÃªncio que escondeu a migration 002 nÃ£o rodada.
+        logger.warning("Erro no track: corpo invÃ¡lido")
         return None
 
     # RESOLVE SLUG -> UUID: o tracker embute FUNNEL_ID como o slug curto
@@ -730,7 +749,7 @@ async def track_heartbeat(
     except Exception:
         pass
 
-    # Quiz answer: processa e retorna (não faz heartbeat de página)
+    # Quiz answer: processa e retorna (nÃ£o faz heartbeat de pÃ¡gina)
     if beat.event_type == "quiz_answer":
         try:
             _salvar_quiz_answer(supabase, beat)
@@ -743,9 +762,9 @@ async def track_heartbeat(
         return None
 
     try:
-        # Página mudou (ou é a primeira)? Registra no log de entradas ANTES do
-        # upsert — depois do upsert a URL anterior já foi sobrescrita e não dá
-        # mais para saber se houve troca de página.
+        # PÃ¡gina mudou (ou Ã© a primeira)? Registra no log de entradas ANTES do
+        # upsert â€” depois do upsert a URL anterior jÃ¡ foi sobrescrita e nÃ£o dÃ¡
+        # mais para saber se houve troca de pÃ¡gina.
         previous = supabase.table("live_beats").select("url").eq(
             "session_id", beat.session_id
         ).execute()
@@ -763,15 +782,15 @@ async def track_heartbeat(
             }
 
             if beat.event_id:
-                # Upsert em vez de insert: dois heartbeats da mesma página podem
+                # Upsert em vez de insert: dois heartbeats da mesma pÃ¡gina podem
                 # chegar juntos (retry de rede, sendBeacon do fechamento da aba
                 # correndo com o beat do intervalo). Os dois passam pelo teste de
                 # URL acima antes de qualquer um gravar, e o insert simples criava
-                # duas entradas para uma visita só.
+                # duas entradas para uma visita sÃ³.
                 #
-                # O índice de event_id é TOTAL, não parcial — índice parcial não
-                # serve de alvo para ON CONFLICT (42P10, o mesmo tropeço do
-                # webhook de vendas). Não precisa ser parcial porque NULLs nunca
+                # O Ã­ndice de event_id Ã© TOTAL, nÃ£o parcial â€” Ã­ndice parcial nÃ£o
+                # serve de alvo para ON CONFLICT (42P10, o mesmo tropeÃ§o do
+                # webhook de vendas). NÃ£o precisa ser parcial porque NULLs nunca
                 # colidem entre si: os beats de snippets antigos, sem event_id,
                 # continuam entrando normalmente.
                 supabase.table("live_page_entries").upsert(
@@ -780,10 +799,10 @@ async def track_heartbeat(
             else:
                 supabase.table("live_page_entries").insert(entry).execute()
 
-        # Geolocalização: resolve o IP → cidade/UF/lat/lon UMA vez por sessão (no
-        # primeiro heartbeat). O IP nunca é gravado — só a praça. Falha é
-        # silenciosa: sem geo, o visitante só não entra no mapa.
-        # Usa asyncio.to_thread para não bloquear o event loop com o httpx síncrono
+        # GeolocalizaÃ§Ã£o: resolve o IP â†’ cidade/UF/lat/lon UMA vez por sessÃ£o (no
+        # primeiro heartbeat). O IP nunca Ã© gravado â€” sÃ³ a praÃ§a. Falha Ã©
+        # silenciosa: sem geo, o visitante sÃ³ nÃ£o entra no mapa.
+        # Usa asyncio.to_thread para nÃ£o bloquear o event loop com o httpx sÃ­ncrono
         # do geo_service.resolve (timeout 4s).
         payload = {
             "session_id": beat.session_id,
@@ -812,10 +831,10 @@ async def track_heartbeat(
         return None
 
     except Exception:
-        # Não expõe erros internos para o snippet (sempre 204 pra ele), mas
-        # loga com traceback: um `print` sozinho pode não aparecer em nenhum
-        # lugar monitorado em produção, e uma falha de gravação aqui significa
-        # visitante que "sumiu" sem ninguém saber por quê.
+        # NÃ£o expÃµe erros internos para o snippet (sempre 204 pra ele), mas
+        # loga com traceback: um `print` sozinho pode nÃ£o aparecer em nenhum
+        # lugar monitorado em produÃ§Ã£o, e uma falha de gravaÃ§Ã£o aqui significa
+        # visitante que "sumiu" sem ninguÃ©m saber por quÃª.
         logger.exception(
             "Erro no track: falha ao gravar heartbeat (session_id=%s, funnel_id=%s)",
             beat.session_id,
@@ -832,21 +851,21 @@ def get_live_data(
     supabase: Client = Depends(get_db)
 ):
     """
-    Busca pessoas online no funil agora (últimos 90s).
+    Busca pessoas online no funil agora (Ãºltimos 90s).
 
     Returns:
         [
             {
                 "stepId": str,
                 "online": int,
-                "unmapped": int  # URLs não mapeadas
+                "unmapped": int  # URLs nÃ£o mapeadas
             }
         ]
     """
     try:
         funnel_guard(supabase, funnel_id, ws_id, current_user.id)
 
-        # Busca beats ativos (últimos 90s)
+        # Busca beats ativos (Ãºltimos 90s)
         cutoff = (datetime.now(timezone.utc) - timedelta(seconds=90)).isoformat()
 
         beats = supabase.table("live_beats").select(
@@ -893,20 +912,20 @@ def get_live_geo(
     ws_id: Optional[str] = Depends(get_active_workspace),
     supabase: Client = Depends(get_db),
 ):
-    """Praças (cidades) com gente no funil agora — alimenta o mapa do Brasil.
+    """PraÃ§as (cidades) com gente no funil agora â€” alimenta o mapa do Brasil.
 
-    Sem `funnel_id`: agrega os funis do workspace ativo. Cada ponto é uma cidade
-    com a contagem de sessões ativas (últimos 90s) que tinham geolocalização.
+    Sem `funnel_id`: agrega os funis do workspace ativo. Cada ponto Ã© uma cidade
+    com a contagem de sessÃµes ativas (Ãºltimos 90s) que tinham geolocalizaÃ§Ã£o.
     """
     try:
-        # Funis do workspace ativo — e valida a posse quando um id é pedido.
+        # Funis do workspace ativo â€” e valida a posse quando um id Ã© pedido.
         owned = scope(
             supabase.table("funnels").select("id"), ws_id, current_user.id
         ).execute()
         owned_ids = {f["id"] for f in (owned.data or [])}
         if funnel_id:
             if funnel_id not in owned_ids:
-                raise HTTPException(status_code=404, detail="Funil não encontrado")
+                raise HTTPException(status_code=404, detail="Funil nÃ£o encontrado")
             target_ids = [funnel_id]
         else:
             target_ids = list(owned_ids)
@@ -925,15 +944,15 @@ def get_live_geo(
                 .execute()
             )
         except Exception as exc:  # noqa: BLE001
-            # migration 008 ainda não rodou → sem colunas geo, mapa vazio.
+            # migration 008 ainda nÃ£o rodou â†’ sem colunas geo, mapa vazio.
             if "geo_" in str(exc).lower():
                 return {"total": 0, "places": 0, "points": []}
             raise
 
-        # Agrupa por (cidade, uf) somando sessões; guarda o primeiro lat/lon.
+        # Agrupa por (cidade, uf) somando sessÃµes; guarda o primeiro lat/lon.
         buckets: dict[tuple, dict] = {}
         for b in beats.data or []:
-            key = (b.get("geo_city") or "—", b.get("geo_uf") or "")
+            key = (b.get("geo_city") or "â€”", b.get("geo_uf") or "")
             slot = buckets.setdefault(
                 key,
                 {"city": key[0], "uf": key[1], "lat": b["geo_lat"], "lon": b["geo_lon"], "online": 0},
@@ -952,7 +971,7 @@ def get_live_geo(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro ao buscar geolocalização ao vivo: {str(e)}",
+            detail=f"Erro ao buscar geolocalizaÃ§Ã£o ao vivo: {str(e)}",
         )
 
 
@@ -966,7 +985,7 @@ def get_page_entries(
     supabase: Client = Depends(get_db)
 ):
     """
-    Log de entradas em página: quem entrou, em qual etapa, quando.
+    Log de entradas em pÃ¡gina: quem entrou, em qual etapa, quando.
     Mais recente primeiro.
 
     Returns:
@@ -976,9 +995,9 @@ def get_page_entries(
                 "funnelId": str,
                 "stepId": str | None,
                 "timestamp": str,   # ISO
-                "visitor": str,     # hash curto da sessão (anônimo)
+                "visitor": str,     # hash curto da sessÃ£o (anÃ´nimo)
                 "device": "mobile" | "desktop" | None,
-                "source": str,      # utm_source, domínio do referrer ou "direto"
+                "source": str,      # utm_source, domÃ­nio do referrer ou "direto"
                 "url": str
             }
         ]
@@ -986,15 +1005,15 @@ def get_page_entries(
     try:
         funnel_guard(supabase, funnel_id, ws_id, current_user.id)
 
-        # UTC explícito. `datetime.now()` devolve hora local ingênua e o
-        # Postgres a interpreta no fuso da sessão (UTC): numa máquina em
+        # UTC explÃ­cito. `datetime.now()` devolve hora local ingÃªnua e o
+        # Postgres a interpreta no fuso da sessÃ£o (UTC): numa mÃ¡quina em
         # UTC-3 a janela de 30 min virava uma de 3h30.
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=window)).isoformat()
 
-        # Leitura com a service_role, e não com a chave anon: a tabela tem RLS
-        # e o cliente anônimo não carrega o JWT do usuário — a consulta voltava
-        # vazia em silêncio, como se ninguém tivesse entrado em página nenhuma.
-        # A permissão já foi checada acima (o funil é deste usuário).
+        # Leitura com a service_role, e nÃ£o com a chave anon: a tabela tem RLS
+        # e o cliente anÃ´nimo nÃ£o carrega o JWT do usuÃ¡rio â€” a consulta voltava
+        # vazia em silÃªncio, como se ninguÃ©m tivesse entrado em pÃ¡gina nenhuma.
+        # A permissÃ£o jÃ¡ foi checada acima (o funil Ã© deste usuÃ¡rio).
         rows = get_supabase_admin().table("live_page_entries").select(
             "id, step_id, url, referrer, utm, device, entered_at, session_id"
         ).eq("funnel_id", funnel_id).gte(
@@ -1007,7 +1026,7 @@ def get_page_entries(
             utm = row.get("utm") or {}
             referrer = row.get("referrer") or ""
 
-            # Origem: utm_source manda; senão o domínio do referrer; senão direto.
+            # Origem: utm_source manda; senÃ£o o domÃ­nio do referrer; senÃ£o direto.
             if utm.get("source"):
                 source = utm["source"]
             elif referrer:
@@ -1020,8 +1039,8 @@ def get_page_entries(
                 "funnelId": funnel_id,
                 "stepId": row.get("step_id"),
                 "timestamp": row["entered_at"],
-                # Nunca expõe o session_id inteiro: o log é para reconhecer
-                # "é a mesma pessoa de novo", não para identificar alguém.
+                # Nunca expÃµe o session_id inteiro: o log Ã© para reconhecer
+                # "Ã© a mesma pessoa de novo", nÃ£o para identificar alguÃ©m.
                 "visitor": row["session_id"][-5:],
                 "source": source,
                 "url": row["url"],
@@ -1034,7 +1053,7 @@ def get_page_entries(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro ao buscar entradas de página: {str(e)}"
+            detail=f"Erro ao buscar entradas de pÃ¡gina: {str(e)}"
         )
 
 
@@ -1047,7 +1066,7 @@ async def get_live_vsl_data(
     supabase: Client = Depends(get_db)
 ):
     """
-    Busca usuários que entraram nas VSLs nos últimos N minutos (via VTurb).
+    Busca usuÃ¡rios que entraram nas VSLs nos Ãºltimos N minutos (via VTurb).
 
     Returns:
         [
@@ -1075,18 +1094,18 @@ async def get_live_vsl_data(
         # Para cada VSL com player_id configurado, busca live_users do VTurb.
         # Etapas sem player_id ficam de fora do retorno: mostrar "0 pessoas"
         # pra uma VSL que nunca foi ligada ao VTurb seria inventar um dado,
-        # não reportar ausência dele.
+        # nÃ£o reportar ausÃªncia dele.
         configured = [s for s in steps.data if s.get("player_id")]
 
         # Verifica se tem credenciais VTurb ANTES de chamar a API.
-        # Sem token não há o que consultar — evita queimar rate limit do VTurb
-        # com chamadas que vão falhar em _make_request (401/403).
+        # Sem token nÃ£o hÃ¡ o que consultar â€” evita queimar rate limit do VTurb
+        # com chamadas que vÃ£o falhar em _make_request (401/403).
         creds = await vturb_service.get_credentials(current_user.id, ws_id)
         if not creds:
             return []
 
-        # Em paralelo, não uma de cada vez: as chamadas ao VTurb não dependem
-        # entre si, e um funil com várias VSLs esperava a soma das latências
+        # Em paralelo, nÃ£o uma de cada vez: as chamadas ao VTurb nÃ£o dependem
+        # entre si, e um funil com vÃ¡rias VSLs esperava a soma das latÃªncias
         # de cada uma antes de responder.
         vturb_results = await asyncio.gather(
             *(
@@ -1099,8 +1118,8 @@ async def get_live_vsl_data(
 
         result = []
         for step, vturb_result in zip(configured, vturb_results):
-            # Erro (sem credenciais, rate limit, etc.) também não vira zero —
-            # a etapa simplesmente não aparece nesta chamada.
+            # Erro (sem credenciais, rate limit, etc.) tambÃ©m nÃ£o vira zero â€”
+            # a etapa simplesmente nÃ£o aparece nesta chamada.
             if not isinstance(vturb_result, list):
                 continue
 
@@ -1135,8 +1154,8 @@ def get_active_funnels(
     supabase: Client = Depends(get_db)
 ):
     """
-    IDs dos funis que tiveram tráfego (heartbeat) nos últimos N minutos.
-    Usado para montar as abas "Geral + por funil" da página Ao Vivo.
+    IDs dos funis que tiveram trÃ¡fego (heartbeat) nos Ãºltimos N minutos.
+    Usado para montar as abas "Geral + por funil" da pÃ¡gina Ao Vivo.
     """
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
@@ -1145,7 +1164,7 @@ def get_active_funnels(
             "funnel_id"
         ).gte("last_seen", cutoff).execute()
 
-        # Mantém só os funis do workspace ativo.
+        # MantÃ©m sÃ³ os funis do workspace ativo.
         funnel_ids = {b["funnel_id"] for b in beats.data if b.get("funnel_id")}
 
         if not funnel_ids:
@@ -1230,11 +1249,11 @@ def get_live_conversion(
     supabase: Client = Depends(get_db)
 ):
     """
-    Conversão de compra do funil (entrada -> página-meta), derivada dos
-    heartbeats + vendas. Retorna total e conversão de funil por etapa.
+    ConversÃ£o de compra do funil (entrada -> pÃ¡gina-meta), derivada dos
+    heartbeats + vendas. Retorna total e conversÃ£o de funil por etapa.
 
     `scope=today` ignora `window` e mede desde a meia-noite: a janela curta diz
-    como está agora, o dia diz se isso é normal.
+    como estÃ¡ agora, o dia diz se isso Ã© normal.
     """
     try:
         funnel_guard(supabase, funnel_id, ws_id, current_user.id)
@@ -1242,10 +1261,10 @@ def get_live_conversion(
         now = datetime.now(timezone.utc)
 
         if scope == "today":
-            # "Hoje" é meia-noite UTC. Não é o "hoje" do relógio do usuário —
+            # "Hoje" Ã© meia-noite UTC. NÃ£o Ã© o "hoje" do relÃ³gio do usuÃ¡rio â€”
             # para isso o frontend precisaria mandar o fuso dele, e a conta
             # passaria a mudar conforme quem olha. Fica registrado como
-            # limitação conhecida, não como detalhe esquecido.
+            # limitaÃ§Ã£o conhecida, nÃ£o como detalhe esquecido.
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             effective_window = max(1, int((now - start).total_seconds() // 60))
         else:
@@ -1259,21 +1278,21 @@ def get_live_conversion(
             "*"
         ).eq("funnel_id", funnel_id).order("order_index").execute()
 
-        # Visitantes únicos por etapa = quem ENTROU em cada página na janela,
-        # lido do log de entradas (`live_page_entries`), não de `live_beats`.
-        # `live_beats` guarda uma linha só por sessão com o step_id ATUAL — uma
-        # sessão que passou por 3 páginas e está na 4ª some das 3 primeiras
-        # assim que anda, e o gráfico de funil desmoronava para 0% em etapas
-        # que tiveram tráfego real, só porque ninguém está mais parado nelas.
-        # Admin, não o cliente do usuário: mesma pegadinha já corrigida em
-        # `/entries` — a consulta a `live_page_entries` com o client comum
-        # voltava vazia em silêncio. A permissão já foi checada acima (o funil
-        # é deste usuário).
+        # Visitantes Ãºnicos por etapa = quem ENTROU em cada pÃ¡gina na janela,
+        # lido do log de entradas (`live_page_entries`), nÃ£o de `live_beats`.
+        # `live_beats` guarda uma linha sÃ³ por sessÃ£o com o step_id ATUAL â€” uma
+        # sessÃ£o que passou por 3 pÃ¡ginas e estÃ¡ na 4Âª some das 3 primeiras
+        # assim que anda, e o grÃ¡fico de funil desmoronava para 0% em etapas
+        # que tiveram trÃ¡fego real, sÃ³ porque ninguÃ©m estÃ¡ mais parado nelas.
+        # Admin, nÃ£o o cliente do usuÃ¡rio: mesma pegadinha jÃ¡ corrigida em
+        # `/entries` â€” a consulta a `live_page_entries` com o client comum
+        # voltava vazia em silÃªncio. A permissÃ£o jÃ¡ foi checada acima (o funil
+        # Ã© deste usuÃ¡rio).
         entries = get_supabase_admin().table("live_page_entries").select(
             "step_id, session_id"
         ).eq("funnel_id", funnel_id).gte("entered_at", since).execute()
 
-        # Conta sessões distintas por etapa.
+        # Conta sessÃµes distintas por etapa.
         by_step: dict = {}
         for e in entries.data:
             sid = e.get("session_id")
@@ -1284,34 +1303,34 @@ def get_live_conversion(
 
         step_visitors = {st: len(s) for st, s in by_step.items()}
 
-        # Vendas pagas na janela = conversões de compra.
+        # Vendas pagas na janela = conversÃµes de compra.
         sales = supabase.table("live_sales").select("*").eq(
             "funnel_id", funnel_id
         ).eq("status", "paid").gte("created_at", since).execute()
 
         conversions = len(sales.data)
 
-        # "Entraram" = quem chegou na PRIMEIRA etapa, não a soma de todas.
-        # Somar as etapas conta a mesma pessoa uma vez por página visitada e
-        # infla o denominador — a conversão de compra sairia sempre menor do
-        # que é, e pioraria justamente nos funis com mais páginas.
+        # "Entraram" = quem chegou na PRIMEIRA etapa, nÃ£o a soma de todas.
+        # Somar as etapas conta a mesma pessoa uma vez por pÃ¡gina visitada e
+        # infla o denominador â€” a conversÃ£o de compra sairia sempre menor do
+        # que Ã©, e pioraria justamente nos funis com mais pÃ¡ginas.
         entry_step = steps.data[0] if steps.data else None
         total_visitors = step_visitors.get(entry_step["id"], 0) if entry_step else 0
 
-        # Taxa por etapa (entrada relativa à etapa anterior, sempre — nunca à
-        # última etapa que teve gente). Só a primeira etapa é 100% por
-        # definição (é a própria base). Uma etapa sem visitante nenhum tem
-        # 0%, não 100%: o `prev in (None, 0)` antigo tratava "não sei" e
-        # "ninguém passou por aqui" como a mesma coisa, e o funil aparecia com
-        # várias etapas seguidas em 100% mesmo sem tráfego real nelas.
+        # Taxa por etapa (entrada relativa Ã  etapa anterior, sempre â€” nunca Ã 
+        # Ãºltima etapa que teve gente). SÃ³ a primeira etapa Ã© 100% por
+        # definiÃ§Ã£o (Ã© a prÃ³pria base). Uma etapa sem visitante nenhum tem
+        # 0%, nÃ£o 100%: o `prev in (None, 0)` antigo tratava "nÃ£o sei" e
+        # "ninguÃ©m passou por aqui" como a mesma coisa, e o funil aparecia com
+        # vÃ¡rias etapas seguidas em 100% mesmo sem trÃ¡fego real nelas.
         step_rates = []
         prev = None
         for i, s in enumerate(steps.data):
             v = step_visitors.get(s["id"], 0)
             if i == 0:
-                # 100% só faz sentido como "base de si mesma" quando há
-                # alguém pra ser base — sem isso a etapa de entrada mostrava
-                # "0 visitantes, 100%" numa janela sem tráfego nenhum.
+                # 100% sÃ³ faz sentido como "base de si mesma" quando hÃ¡
+                # alguÃ©m pra ser base â€” sem isso a etapa de entrada mostrava
+                # "0 visitantes, 100%" numa janela sem trÃ¡fego nenhum.
                 rate = 100.0 if v > 0 else 0.0
             elif not prev:
                 rate = 0.0
@@ -1342,7 +1361,7 @@ def get_live_conversion(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro ao buscar conversão: {str(e)}"
+            detail=f"Erro ao buscar conversÃ£o: {str(e)}"
         )
 
 
@@ -1358,15 +1377,15 @@ def receive_sale_webhook(
     amount, customer?, external_id?. Se WEBHOOK_SECRET estiver configurado,
     valida o header X-Webhook-Secret.
 
-    Salva na tabela live_sales (não requer autenticação — é chamado pelo
-    gateway de pagamento, não pelo frontend).
+    Salva na tabela live_sales (nÃ£o requer autenticaÃ§Ã£o â€” Ã© chamado pelo
+    gateway de pagamento, nÃ£o pelo frontend).
     """
     try:
         settings = get_settings()
 
         # Segredo esperado: global (env) OU o configurado pelo dono do funil
-        # em Configurações -> Webhook. Se NENHUM estiver definido, REJEITA
-        # o webhook — nunca aceitar webhook sem segredo configurado.
+        # em ConfiguraÃ§Ãµes -> Webhook. Se NENHUM estiver definido, REJEITA
+        # o webhook â€” nunca aceitar webhook sem segredo configurado.
         expected = settings.webhook_secret or ""
         if not expected and payload.get("funnel_id"):
             owner = (
@@ -1391,19 +1410,19 @@ def receive_sale_webhook(
         if not expected:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Segredo de webhook não configurado. Defina WEBHOOK_SECRET no ambiente ou configure o token nas integrações do funil."
+                detail="Segredo de webhook nÃ£o configurado. Defina WEBHOOK_SECRET no ambiente ou configure o token nas integraÃ§Ãµes do funil."
             )
         if secret != expected:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Segredo de webhook inválido"
+                detail="Segredo de webhook invÃ¡lido"
             )
 
         funnel_id = payload.get("funnel_id")
         if not funnel_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="funnel_id é obrigatório"
+                detail="funnel_id Ã© obrigatÃ³rio"
             )
 
         status_value = str(payload.get("status", "pending")).lower()
@@ -1424,13 +1443,13 @@ def receive_sale_webhook(
 
         supabase = get_supabase_admin()
 
-        # Deduplicação feita à mão, e não com `upsert(on_conflict=...)`: o
-        # índice único de `external_id` é PARCIAL (`where external_id is not
-        # null`), e o Postgres não aceita índice parcial como alvo de ON
-        # CONFLICT — dava 42P10 e o webhook inteiro respondia 500.
+        # DeduplicaÃ§Ã£o feita Ã  mÃ£o, e nÃ£o com `upsert(on_conflict=...)`: o
+        # Ã­ndice Ãºnico de `external_id` Ã© PARCIAL (`where external_id is not
+        # null`), e o Postgres nÃ£o aceita Ã­ndice parcial como alvo de ON
+        # CONFLICT â€” dava 42P10 e o webhook inteiro respondia 500.
         #
-        # Gateway reenvia webhook (retentativa, mudança de status pendente →
-        # pago), então dedupe não é luxo: sem ele a mesma venda entraria duas
+        # Gateway reenvia webhook (retentativa, mudanÃ§a de status pendente â†’
+        # pago), entÃ£o dedupe nÃ£o Ã© luxo: sem ele a mesma venda entraria duas
         # vezes e o faturamento do dia sairia inflado.
         existing = None
         if external_id:
@@ -1446,9 +1465,9 @@ def receive_sale_webhook(
         else:
             result = supabase.table("live_sales").insert(row).execute()
 
-        # Só notifica em venda nova ou mudança de status (pending → paid) —
+        # SÃ³ notifica em venda nova ou mudanÃ§a de status (pending â†’ paid) â€”
         # o gateway reenvia o mesmo webhook por retentativa, e sem essa
-        # checagem a mesma venda tocaria "PIX gerado" várias vezes.
+        # checagem a mesma venda tocaria "PIX gerado" vÃ¡rias vezes.
         if not existing or existing.get("status") != status_value:
             notify_sale(funnel_id, status_value, amount, payload.get("customer"))
 
@@ -1463,11 +1482,11 @@ def receive_sale_webhook(
         )
 
 
-# `sale_status_enum` oficial da PerfectPay (documentação de postback). A
-# tabela `live_sales` só distingue pending/paid hoje — é tudo que "PIX gerado"
+# `sale_status_enum` oficial da PerfectPay (documentaÃ§Ã£o de postback). A
+# tabela `live_sales` sÃ³ distingue pending/paid hoje â€” Ã© tudo que "PIX gerado"
 # x "PIX pago" precisa. Os demais status (rejeitado, cancelado, reembolsado,
-# chargeback, em análise...) não têm onde cair sem inventar um terceiro estado
-# que ninguém pediu ainda, então ficam de fora por enquanto: melhor não gravar
+# chargeback, em anÃ¡lise...) nÃ£o tÃªm onde cair sem inventar um terceiro estado
+# que ninguÃ©m pediu ainda, entÃ£o ficam de fora por enquanto: melhor nÃ£o gravar
 # do que gravar como se fosse uma venda paga ou pendente.
 PERFECTPAY_PAID_STATUSES = {2, 8, 10}  # approved, authorized, completed
 PERFECTPAY_PENDING_STATUSES = {1}      # pending (aguardando pagamento: boleto OU pix)
@@ -1480,23 +1499,23 @@ def receive_perfectpay_webhook(
     click_id: Optional[str] = None,
 ):
     """
-    Webhook NATIVO da PerfectPay — uma URL por funil, porque o payload dela
-    não tem noção de "funil": o `funnel_id` vem da própria URL, não do corpo.
+    Webhook NATIVO da PerfectPay â€” uma URL por funil, porque o payload dela
+    nÃ£o tem noÃ§Ã£o de "funil": o `funnel_id` vem da prÃ³pria URL, nÃ£o do corpo.
 
     Formato oficial (support.perfectpay.com.br/doc/perfectpay/postback):
     `token`, `code`, `sale_amount`, `sale_status_enum`, `customer.full_name`,
-    entre outros. O `token` é o segredo do postback — a PerfectPay não
-    oferece header customizado nessa integração, então a autenticação é por
-    esse campo do corpo, e não por `X-Webhook-Secret` (isso é do webhook
-    genérico em `/webhook`, usado por integrações manuais/Zapier).
+    entre outros. O `token` Ã© o segredo do postback â€” a PerfectPay nÃ£o
+    oferece header customizado nessa integraÃ§Ã£o, entÃ£o a autenticaÃ§Ã£o Ã© por
+    esse campo do corpo, e nÃ£o por `X-Webhook-Secret` (isso Ã© do webhook
+    genÃ©rico em `/webhook`, usado por integraÃ§Ãµes manuais/Zapier).
 
-    `click_id`: não vem no corpo, vem na QUERY STRING. É o placeholder
+    `click_id`: nÃ£o vem no corpo, vem na QUERY STRING. Ã‰ o placeholder
     `{click_id}` que o dono do funil configura na URL de postback dentro da
-    PerfectPay (".../webhook/perfectpay/<funnel_id>?click_id={click_id}") —
-    a PerfectPay substitui esse placeholder pelo valor do parâmetro
+    PerfectPay (".../webhook/perfectpay/<funnel_id>?click_id={click_id}") â€”
+    a PerfectPay substitui esse placeholder pelo valor do parÃ¢metro
     `click_id` que estava na URL do checkout no momento da compra. Esse valor
-    é o `session_id` que o tracker.js gera por visitante e propaga entre as
-    páginas do funil, então dá para saber exatamente qual sessão comprou e
+    Ã© o `session_id` que o tracker.js gera por visitante e propaga entre as
+    pÃ¡ginas do funil, entÃ£o dÃ¡ para saber exatamente qual sessÃ£o comprou e
     em qual step ela estava (resolvido abaixo via `live_beats`).
     """
     try:
@@ -1508,7 +1527,7 @@ def receive_perfectpay_webhook(
         if not funnel.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Funil não encontrado"
+                detail="Funil nÃ£o encontrado"
             )
 
         cred = supabase.table("api_credentials").select("api_token").eq(
@@ -1522,12 +1541,12 @@ def receive_perfectpay_webhook(
         if not expected:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token do webhook não configurado. Configure o token nas integrações para receber webhooks."
+                detail="Token do webhook nÃ£o configurado. Configure o token nas integraÃ§Ãµes para receber webhooks."
             )
         if payload.get("token") != expected:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token do webhook inválido"
+                detail="Token do webhook invÃ¡lido"
             )
 
         status_enum = payload.get("sale_status_enum")
@@ -1548,10 +1567,10 @@ def receive_perfectpay_webhook(
         customer = (payload.get("customer") or {}).get("full_name")
         amount = float(payload.get("sale_amount") or 0)
 
-        # Resolve o step pela sessão que fez a compra, e não pelo payload —
-        # a PerfectPay nunca manda step_id. `click_id` só existe se o dono do
+        # Resolve o step pela sessÃ£o que fez a compra, e nÃ£o pelo payload â€”
+        # a PerfectPay nunca manda step_id. `click_id` sÃ³ existe se o dono do
         # funil configurou o placeholder na URL de postback; sem ele a venda
-        # continua sendo salva, só sem etapa (comportamento de antes).
+        # continua sendo salva, sÃ³ sem etapa (comportamento de antes).
         step_id = None
         if click_id:
             beat = supabase.table("live_beats").select("step_id").eq(
@@ -1570,9 +1589,9 @@ def receive_perfectpay_webhook(
             "session_id": click_id,
         }
 
-        # Mesma dedupe manual do webhook genérico: o índice de external_id é
-        # PARCIAL e não serve de alvo pra ON CONFLICT (42P10). A PerfectPay
-        # reenvia o mesmo `code` quando o status muda (pendente → aprovado),
+        # Mesma dedupe manual do webhook genÃ©rico: o Ã­ndice de external_id Ã©
+        # PARCIAL e nÃ£o serve de alvo pra ON CONFLICT (42P10). A PerfectPay
+        # reenvia o mesmo `code` quando o status muda (pendente â†’ aprovado),
         # e sem isso a mesma venda entraria duas vezes.
         existing = None
         if code:
