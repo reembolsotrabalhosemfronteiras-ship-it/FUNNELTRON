@@ -644,11 +644,30 @@ def debug_data_sample(supabase: Client = Depends(get_supabase_admin)):
     # cru, levantando suspeita de deploy stale. Bumpar este valor a cada fix
     # permite verificar via GET sem auth.
     out: dict = {
-        "backend_version": "7a09dc2-inmem-prefix-v1",
+        "backend_version": "7a09dc2-inmem-prefix-v2-diag",
         "parsed_campaigns": [],
         "quiz_answers_count": None,
         "error": None,
     }
+    # DIAGNOSTICO do resolver: roda a mesma logica que o track usa contra o
+    # prefixo "2b23f46d" e expoe cada passo, pra provar por que o fix de
+    # prefixo uuid nao reescreve beat.funnel_id em producao (re-teste com o
+    # sentinel vivo ainda mostrou 22P02 com o slug cru).
+    try:
+        probe = "2b23f46d"
+        ids = _get_funnel_ids(supabase)
+        matched = [fid for fid in ids if fid.lower().startswith(probe)]
+        resolved = _resolve_funnel_uuid(supabase, probe)
+        out["resolver_diag"] = {
+            "probe": probe,
+            "funnel_ids_count": len(ids),
+            "funnel_ids_sample": ids[:5],
+            "prefix_matches": matched,
+            "resolved": resolved,
+            "changed": resolved != probe,
+        }
+    except Exception as diag_exc:
+        out["resolver_diag"] = {"error": f"{type(diag_exc).__name__}: {diag_exc}"}
     try:
         pcs = (
             supabase.table("parsed_campaigns")
