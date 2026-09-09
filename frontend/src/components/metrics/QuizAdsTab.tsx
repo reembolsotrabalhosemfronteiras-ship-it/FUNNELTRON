@@ -27,6 +27,7 @@ import {
   getQuizResponses,
   type QuizResponsesData,
   type QuizPageResult,
+  type QuizQuestionBlock,
 } from "@/api/client";
 
 // ---------------------------------------------------------------------------
@@ -48,11 +49,65 @@ function barColor(index: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Card de uma pagina do funil (respostas consolidadas direto dentro)
+// Bloco de pergunta dentro de uma pagina (label + respostas)
+// ---------------------------------------------------------------------------
+function QuestionBlock({ block }: { block: QuizQuestionBlock }) {
+  const maxCount = Math.max(1, ...block.answers.map((a) => a.count));
+
+  return (
+    <div className="space-y-3">
+      <p className="text-[13px] font-semibold text-foreground/90 leading-snug">
+        {block.questionLabel}
+      </p>
+      <div className="space-y-2.5">
+        {block.answers.map((answer, aIdx) => {
+          const color = barColor(aIdx);
+          const widthPct = maxCount > 0 ? (answer.count / maxCount) * 100 : 0;
+
+          return (
+            <div key={aIdx} className="space-y-1">
+              <div className="flex items-center justify-between text-[12px]">
+                <span
+                  className="font-medium truncate pr-3 max-w-[70%]"
+                  title={answer.value}
+                >
+                  {answer.value}
+                </span>
+                <span className="flex items-center gap-2 shrink-0">
+                  <span className="tabular-nums text-muted-foreground">
+                    {answer.count.toLocaleString("pt-BR")}
+                  </span>
+                  <span
+                    className="tabular-nums font-bold min-w-[48px] text-right"
+                    style={{ color }}
+                  >
+                    {answer.percentage}%
+                  </span>
+                </span>
+              </div>
+              <div className="h-2.5 bg-muted/40 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-500 ease-out"
+                  style={{
+                    width: `${widthPct}%`,
+                    background: `linear-gradient(90deg, ${color}, ${color}cc)`,
+                    boxShadow: `0 0 8px ${color}44`,
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Card de uma pagina do funil
 // ---------------------------------------------------------------------------
 function PageCard({ page }: { page: QuizPageResult }) {
   const [expanded, setExpanded] = useState(true);
-  const maxCount = Math.max(1, ...page.answers.map((a) => a.count));
 
   return (
     <Card className="elev-sm overflow-hidden">
@@ -74,7 +129,7 @@ function PageCard({ page }: { page: QuizPageResult }) {
                 <CardDescription className="text-[11px] mt-0.5">
                   {page.totalSessions.toLocaleString("pt-BR")} sessoes ·{" "}
                   {page.totalResponses.toLocaleString("pt-BR")} respostas ·{" "}
-                  {page.answers.length} opcoes
+                  {page.questions.length} pergunta{page.questions.length !== 1 ? "s" : ""}
                 </CardDescription>
               </div>
             </div>
@@ -94,45 +149,13 @@ function PageCard({ page }: { page: QuizPageResult }) {
       </button>
 
       {expanded && (
-        <CardContent className="pt-0 pb-4 px-4 space-y-2.5">
-          {page.answers.map((answer, aIdx) => {
-            const color = barColor(aIdx);
-            const widthPct = maxCount > 0 ? (answer.count / maxCount) * 100 : 0;
-
-            return (
-              <div key={aIdx} className="space-y-1">
-                <div className="flex items-center justify-between text-[12px]">
-                  <span
-                    className="font-medium truncate pr-3 max-w-[70%]"
-                    title={answer.value}
-                  >
-                    {answer.value}
-                  </span>
-                  <span className="flex items-center gap-2 shrink-0">
-                    <span className="tabular-nums text-muted-foreground">
-                      {answer.count.toLocaleString("pt-BR")}
-                    </span>
-                    <span
-                      className="tabular-nums font-bold min-w-[48px] text-right"
-                      style={{ color }}
-                    >
-                      {answer.percentage}%
-                    </span>
-                  </span>
-                </div>
-                <div className="h-2.5 bg-muted/40 rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-500 ease-out"
-                    style={{
-                      width: `${widthPct}%`,
-                      background: `linear-gradient(90deg, ${color}, ${color}cc)`,
-                      boxShadow: `0 0 8px ${color}44`,
-                    }}
-                  />
-                </div>
-              </div>
-            );
-          })}
+        <CardContent className="pt-0 pb-4 px-4 space-y-4">
+          {page.questions.map((block, qIdx) => (
+            <div key={qIdx}>
+              {qIdx > 0 && <hr className="my-3 border-border/40" />}
+              <QuestionBlock block={block} />
+            </div>
+          ))}
         </CardContent>
       )}
     </Card>
@@ -171,6 +194,10 @@ export function QuizAdsTab({ funnelId }: { funnelId: string }) {
   const kpis = useMemo(() => {
     if (!data) return [];
     const totalPages = data.pages.length;
+    const totalQuestions = data.pages.reduce(
+      (s, p) => s + p.questions.length,
+      0
+    );
     const totalSessions = data.totalSessions;
     const totalResponses = data.totalResponses;
     const avgAnswersPerSession =
@@ -187,7 +214,7 @@ export function QuizAdsTab({ funnelId }: { funnelId: string }) {
       {
         label: "Paginas com Quiz",
         value: totalPages.toString(),
-        sub: `${totalResponses} respostas no total`,
+        sub: `${totalQuestions} perguntas no total`,
         icon: FileText,
         tone: "text-blue-500",
       },
@@ -233,7 +260,7 @@ export function QuizAdsTab({ funnelId }: { funnelId: string }) {
         <div>
           <h2 className="text-lg font-bold">Respostas do Quiz por Pagina</h2>
           <p className="text-sm text-muted-foreground">
-            Cada pagina do funil com as respostas consolidadas e porcentagens
+            Cada pagina do funil com suas perguntas e porcentagens de cada resposta
           </p>
         </div>
         <div className="flex items-center gap-2">

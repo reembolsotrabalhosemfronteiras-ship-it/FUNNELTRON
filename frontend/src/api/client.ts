@@ -1598,6 +1598,11 @@ export interface QuizQuestionResult {
   answers: QuizAnswerOption[];
 }
 
+export interface QuizQuestionBlock {
+  questionLabel: string;
+  answers: QuizAnswerOption[];
+}
+
 export interface QuizPageResult {
   stepId: string;
   pageLabel: string;
@@ -1605,7 +1610,7 @@ export interface QuizPageResult {
   orderIndex: number;
   totalSessions: number;
   totalResponses: number;
-  answers: QuizAnswerOption[];
+  questions: QuizQuestionBlock[];
 }
 
 export interface QuizResponsesData {
@@ -1630,12 +1635,15 @@ export async function getQuizResponses(
         orderIndex: 6,
         totalSessions: 1240,
         totalResponses: 1240,
-        answers: [
-          { value: "50 a 59 anos", count: 520, percentage: 41.9 },
-          { value: "40 a 49 anos", count: 410, percentage: 33.1 },
-          { value: "30 a 39 anos", count: 210, percentage: 16.9 },
-          { value: "60+ anos", count: 100, percentage: 8.1 },
-        ],
+        questions: [{
+          questionLabel: "Pergunta 1",
+          answers: [
+            { value: "50 a 59 anos", count: 520, percentage: 41.9 },
+            { value: "40 a 49 anos", count: 410, percentage: 33.1 },
+            { value: "30 a 39 anos", count: 210, percentage: 16.9 },
+            { value: "60+ anos", count: 100, percentage: 8.1 },
+          ],
+        }],
       },
       {
         stepId: "step-2",
@@ -1644,11 +1652,14 @@ export async function getQuizResponses(
         orderIndex: 7,
         totalSessions: 1180,
         totalResponses: 1180,
-        answers: [
-          { value: "Aposentado(a) com tempo livre", count: 480, percentage: 40.7 },
-          { value: "Trabalho CLT e busco uma Renda Extra", count: 420, percentage: 35.6 },
-          { value: "Empreendedor", count: 280, percentage: 23.7 },
-        ],
+        questions: [{
+          questionLabel: "Pergunta 2",
+          answers: [
+            { value: "Aposentado(a) com tempo livre", count: 480, percentage: 40.7 },
+            { value: "Trabalho CLT e busco uma Renda Extra", count: 420, percentage: 35.6 },
+            { value: "Empreendedor", count: 280, percentage: 23.7 },
+          ],
+        }],
       },
       {
         stepId: "step-3",
@@ -1657,10 +1668,13 @@ export async function getQuizResponses(
         orderIndex: 1,
         totalSessions: 980,
         totalResponses: 980,
-        answers: [
-          { value: "Retirar a camiseta do ar agora", count: 620, percentage: 63.3 },
-          { value: "Pedir para a equipe analisar", count: 360, percentage: 36.7 },
-        ],
+        questions: [{
+          questionLabel: "Tarefa 1",
+          answers: [
+            { value: "Retirar a camiseta do ar agora", count: 620, percentage: 63.3 },
+            { value: "Pedir para a equipe analisar", count: 360, percentage: 36.7 },
+          ],
+        }],
       },
     ],
     totalSessions: 1240,
