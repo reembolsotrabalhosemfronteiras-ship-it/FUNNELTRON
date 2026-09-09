@@ -638,7 +638,17 @@ def debug_last_insert_error():
 # REMOVER depois de corrigir a causa.
 @router.get("/debug/data-sample")
 def debug_data_sample(supabase: Client = Depends(get_supabase_admin)):
-    out: dict = {"parsed_campaigns": [], "quiz_answers_count": None, "error": None}
+    # SENTINEL de versao: prova qual commit do backend esta realmente rodando
+    # no Railway. Usado pra confirmar se o fix de resolucao de prefixo uuid
+    # (7a09dc2) subiu — os re-testes continuavam mostrando 22P02 com o slug
+    # cru, levantando suspeita de deploy stale. Bumpar este valor a cada fix
+    # permite verificar via GET sem auth.
+    out: dict = {
+        "backend_version": "7a09dc2-inmem-prefix-v1",
+        "parsed_campaigns": [],
+        "quiz_answers_count": None,
+        "error": None,
+    }
     try:
         pcs = (
             supabase.table("parsed_campaigns")
