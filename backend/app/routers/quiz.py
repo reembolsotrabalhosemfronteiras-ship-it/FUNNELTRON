@@ -34,9 +34,9 @@ def _period_to_interval(period: str) -> str:
 # Analise automatica do HTML do funil: extrai botoes por screen
 # ---------------------------------------------------------------------------
 def _extract_screens_from_html(html: str) -> dict:
-    """Extrai os botoes de cada <div class="screen" id="s-xxx"> do HTML.
+    """Extrai os botoes e o texto da pergunta de cada <div class="screen" id="s-xxx">.
 
-    Retorna: {screen_id: [button_text_1, button_text_2, ...]}
+    Retorna: {screen_id: {"buttons": [text...], "questionText": "..."}}
     """
     screens: dict = {}
     # Match each screen div and its content until the next screen or end
@@ -52,8 +52,21 @@ def _extract_screens_from_html(html: str) -> dict:
             text = re.sub(r'\s+', ' ', text).strip()
             if text and len(text) < 200:
                 buttons.append(text)
-        if buttons:
-            screens[screen_id] = buttons
+        # Extract question text: visible text excluding buttons/scripts
+        text_content = re.sub(r'<(?:button|a|script|style)[^>]*>.*?</(?:button|a|script|style)>', '', content, flags=re.DOTALL)
+        text_content = re.sub(r'<[^>]+>', ' ', text_content)
+        text_content = re.sub(r'\s+', ' ', text_content).strip()
+        # Try to find question pattern (e.g., "Pergunta 1 de 5 Qual a sua idade?")
+        question_text = ""
+        q_match = re.search(r'(Pergunta\s+\d+\s+de\s+\d+[^\n]*?(?:\?|!|$))', text_content, re.IGNORECASE)
+        if q_match:
+            question_text = q_match.group(1).strip()
+        elif text_content:
+            # Fallback: use first 100 chars of visible text as context
+            question_text = text_content[:100].strip()
+
+        if buttons or question_text:
+            screens[screen_id] = {"buttons": buttons, "questionText": question_text}
     return screens
 
 
@@ -67,9 +80,9 @@ def _build_answer_to_screen_map(screens: dict) -> dict:
     answer_map: dict = {}
     # Ordena screens por numero de botoes (ascendente) — screens com
     # poucos botoes sao mais especificos (Home = 1 botao, Pergunta = 4)
-    sorted_screens = sorted(screens.items(), key=lambda x: len(x[1]))
-    for screen_id, buttons in sorted_screens:
-        for btn_text in buttons:
+    sorted_screens = sorted(screens.items(), key=lambda x: len(x[1].get("buttons", [])))
+    for screen_id, data in sorted_screens:
+        for btn_text in data.get("buttons", []):
             if btn_text not in answer_map:
                 answer_map[btn_text] = screen_id
     return answer_map
@@ -864,6 +877,11 @@ def get_quiz_responses(
                 "percentage": pct,
             })
 
+        # Extrai o texto da pergunta do HTML do screen
+        question_text = ""
+        if page_key in screens:
+            question_text = screens[page_key].get("questionText", "")
+
         result_pages.append({
             "stepId": page_key,
             "pageLabel": page_label,
@@ -872,7 +890,7 @@ def get_quiz_responses(
             "totalSessions": len(data["sessions"]),
             "totalResponses": data["total"],
             "questions": [{
-                "questionLabel": page_label,
+                "questionLabel": question_text if question_text else page_label,
                 "answers": answers_list,
             }],
         })
@@ -1043,23 +1061,91 @@ def list_parsed_campaigns(
             # Fallback: usa quiz_response_count cru (imperfeito mas melhor que nada)
             pass
 
+    # Conversao correta: sessoes que chegaram na ultima pagina / sessoes na Home.
+    # NAO eh quiz_responses / sessions (isso infla para 98%+ porque conta
+    # multiplas respostas por sessao). A metrica certa eh funil ponta a ponta:
+    # quantas sessoes entraram na Home vs quantas chegaram na ultima etapa.
+    # Busca os steps do funil para pegar o primeiro (Home) e o ultimo.
+    funnel_conversion_by_pc: dict = {}
+    if pc_ids:
+        try:
+            # Pega o funnel_id do primeiro parsed_campaign para buscar os steps
+            first_pc_id = pc_ids[0] if pc_ids else None
+            if first_pc_id:
+                # Busca o funnel_id associado a este parsed_campaign
+                pc_row = (
+                    supabase.table("parsed_campaigns")
+                    .select("funnel_id")
+                    .eq("id", first_pc_id)
+                    .execute()
+                )
+                if pc_row.data:
+                    funnel_id_for_steps = pc_row.data[0].get("funnel_id")
+                    if funnel_id_for_steps:
+                        steps_data = (
+                            supabase.table("funnel_steps")
+                            .select("id, order_index")
+                            .eq("funnel_id", funnel_id_for_steps)
+                            .order("order_index")
+                            .execute()
+                        )
+                        if steps_data.data and len(steps_data.data) >= 2:
+                            first_step_id = steps_data.data[0]["id"]
+                            last_step_id = steps_data.data[-1]["id"]
+                            # Busca tracker_snapshots para contar entry/exit por sessao
+                            snaps = (
+                                supabase.table("tracker_snapshots")
+                                .select("payload")
+                                .eq("funnel_id", funnel_id_for_steps)
+                                .eq("bucket", "day")
+                                .execute()
+                            )
+                            # Conta sessoes que passaram pelo primeiro step vs ultimo
+                            # Usando lead_profiles para mapear sessao -> parsed_campaign
+                            all_session_ids = list(sid_to_pc.keys()) if sid_to_pc else []
+                            if all_session_ids:
+                                # Busca live_beats para ver quais sessoes passaram por cada step
+                                beats = (
+                                    supabase.table("live_beats")
+                                    .select("session_id, step_id")
+                                    .in_("session_id", all_session_ids)
+                                    .execute()
+                                )
+                                sessions_at_first: dict = {}
+                                sessions_at_last: dict = {}
+                                for beat in (beats.data or []):
+                                    sid = beat.get("session_id")
+                                    step = beat.get("step_id")
+                                    pcid = sid_to_pc.get(sid)
+                                    if not pcid:
+                                        continue
+                                    if step == first_step_id:
+                                        sessions_at_first.setdefault(pcid, set()).add(sid)
+                                    if step == last_step_id:
+                                        sessions_at_last.setdefault(pcid, set()).add(sid)
+                                for pcid in pc_ids:
+                                    entry = len(sessions_at_first.get(pcid, set()))
+                                    exit_count = len(sessions_at_last.get(pcid, set()))
+                                    if entry > 0:
+                                        funnel_conversion_by_pc[pcid] = round((exit_count / entry) * 100, 1)
+        except Exception:
+            pass
+
     # Mapeia os campos do banco (snake_case) para o formato que o frontend
-    # espera (camelCase). Sem esse mapeamento a aba Campanhas mostrava
-    # Creative Code / Campaign Code vazios e Sessions = 0 mesmo com dados
-    # no banco, porque o frontend lê creativeCode/sessions e o backend
-    # devolvia creative_code/session_count.
+    # espera (camelCase).
     result = []
     for row in (rows.data or []):
         sessions = row.get("session_count") or 0
         users = users_by_pc.get(row.get("id"), sessions)
-        # quizSessions = sessoes unicas que responderam (metrica correta)
-        # quiz_response_count = respostas individuais (inflado, so pra compat)
         quiz_sessions = quiz_sessions_by_pc.get(row.get("id"), 0)
         quiz_responses_raw = row.get("quiz_response_count") or 0
-        # Usa quiz_sessions como metrica principal; se nao conseguiu contar
-        # (fallback), estima dividindo por 5 (media de perguntas por quiz)
         quiz_responses = quiz_sessions if quiz_sessions > 0 else min(quiz_responses_raw, sessions)
-        conversion_rate = round(quiz_responses / sessions * 100, 1) if sessions > 0 else None
+        # Conversao correta: funil ponta a ponta (ultima pagina / Home)
+        conversion_rate = funnel_conversion_by_pc.get(row.get("id"))
+        # Fallback: se nao conseguiu calcular funil, usa quiz_sessions/sessions
+        # mas capado em 100% para nao mostrar numeros absurdos
+        if conversion_rate is None and sessions > 0:
+            conversion_rate = min(round(quiz_responses / sessions * 100, 1), 100.0)
         result.append({
             "creativeCode": row.get("creative_code"),
             "campaignCode": row.get("campaign_code"),
