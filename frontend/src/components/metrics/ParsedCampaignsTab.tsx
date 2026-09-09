@@ -250,6 +250,9 @@ interface GroupBucket {
   rows: ParsedCampaign[];
   /** Visitantes unicos reais (device_id distinto). Soma dos c.users do grupo. */
   users: number;
+  /** Sessoes (visitantes que chegaram). Usado como denominador da conversao —
+   *  unidades compativeis com quizResponses. */
+  sessions: number;
   quizResponses: number;
 }
 
@@ -259,8 +262,15 @@ function userCount(c: ParsedCampaign): number {
   return c.users ?? c.sessions ?? 0;
 }
 
-function conversion(users: number, quizResponses: number): number | null {
-  return users > 0 ? (quizResponses / users) * 100 : null;
+/** Taxa de conclusao do quiz. BUG anterior: dividia quizResponses (respostas
+ *  TOTAIS, uma por pergunta — ex: 9092) por users (visitantes UNICOS — ex: 537),
+ *  unidades incompativeis, dando 1693%. Como cada pessoa responde varias
+ *  perguntas, o numerador inflava ~17x. O denominador correto eh sessions
+ *  (visitantes que chegaram ao quiz), mesma unidade do numerador agregado por
+ *  sessao — assim a taxa fica <=100% e reflete "quantos dos que entraram
+ *  responderam". */
+function conversion(sessions: number, quizResponses: number): number | null {
+  return sessions > 0 ? Math.min(100, (quizResponses / sessions) * 100) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -336,12 +346,14 @@ export function ParsedCampaignsTab({ funnelId }: { funnelId: string }) {
           subLabel,
           rows: [],
           users: 0,
+          sessions: 0,
           quizResponses: 0,
         };
         map.set(key, bucket);
       }
       bucket.rows.push(c);
       bucket.users += userCount(c);
+      bucket.sessions += c.sessions ?? 0;
       bucket.quizResponses += c.quizResponses ?? 0;
     }
     // Ordena grupos por usuarios unicos decrescente
@@ -361,6 +373,10 @@ export function ParsedCampaignsTab({ funnelId }: { funnelId: string }) {
   // Totais gerais
   const totalUsers = useMemo(
     () => filtered.reduce((s, c) => s + userCount(c), 0),
+    [filtered]
+  );
+  const totalSessions = useMemo(
+    () => filtered.reduce((s, c) => s + (c.sessions ?? 0), 0),
     [filtered]
   );
   const totalQuiz = useMemo(
@@ -456,7 +472,7 @@ export function ParsedCampaignsTab({ funnelId }: { funnelId: string }) {
         <KpiTile label="Respostas Quiz" value={fmt(totalQuiz)} accent="text-emerald-600 dark:text-emerald-400" />
         <KpiTile
           label="Conversao"
-          value={conversion(totalUsers, totalQuiz) === null ? "—" : `${conversion(totalUsers, totalQuiz)!.toFixed(1)}%`}
+          value={conversion(totalSessions, totalQuiz) === null ? "—" : `${conversion(totalSessions, totalQuiz)!.toFixed(1)}%`}
           accent="text-violet-600 dark:text-violet-400"
         />
         <KpiTile label={groupMode === "campaign" ? "Campanhas" : "Criativos"} value={fmt(groups.length)} accent="text-amber-600 dark:text-amber-400" />
@@ -477,7 +493,7 @@ export function ParsedCampaignsTab({ funnelId }: { funnelId: string }) {
         <div className="space-y-2">
           {groups.map((g) => {
             const isOpen = expanded.has(g.key);
-            const rate = conversion(g.users, g.quizResponses);
+            const rate = conversion(g.sessions, g.quizResponses);
             // ordena linhas internas por sessions desc
             const innerRows = [...g.rows].sort((a, b) => (b.sessions ?? 0) - (a.sessions ?? 0));
             return (
@@ -545,7 +561,7 @@ export function ParsedCampaignsTab({ funnelId }: { funnelId: string }) {
                         </thead>
                         <tbody>
                           {innerRows.map((c, i) => {
-                            const r = conversion(userCount(c), c.quizResponses);
+                            const r = conversion(c.sessions ?? 0, c.quizResponses);
                             return (
                               <tr
                                 key={`${c.campaignCode}-${c.creativeCode}-${i}`}

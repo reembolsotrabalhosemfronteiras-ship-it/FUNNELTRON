@@ -10,6 +10,12 @@ from ..core.auth import get_current_user
 from ..core.supabase_client import get_supabase_admin
 from ..core.workspace import get_active_workspace
 from ..services.ad_sync import sync_ads
+# Resolver slug/prefixo-hex -> uuid do funil. O tracker grava quiz_answers com
+# o UUID completo (depois do fix de resolucao no track), mas o frontend manda
+# o prefixo/slug curto (ex: "2b23f46d") nos filtros da aba Quiz & Ads. Sem
+# resolver aqui, .eq("funnel_id", funnel_id) nao casa nada e a aba inteira
+# volta zerada mesmo com milhares de respostas no banco.
+from .live import _resolve_funnel_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -65,11 +71,18 @@ def get_quiz_heatmap(
     interval_days = int(_period_to_interval(period).split()[0])
     from_ts = (datetime.now(timezone.utc) - timedelta(days=interval_days)).isoformat()
 
+    # RESOLVE slug/prefixo-hex -> uuid. O tracker grava quiz_answers.funnel_id
+    # com o UUID completo (fix de resolucao no track), mas o frontend manda o
+    # prefixo/slug curto (ex: "2b23f46d"). Sem resolver, .eq("funnel_id", ...)
+    # nao casa nada e a aba Quiz & Ads volta inteira zerada mesmo com milhares
+    # de respostas no banco (BUG confirmado: 9k respostas, aba mostrava 0).
+    resolved_funnel_id = _resolve_funnel_uuid(supabase, funnel_id)
+
     # Busca quiz_answers + parsed_campaign data via lead_profiles
     rows = (
         supabase.table("quiz_answers")
         .select("question_id, answer_value, session_id")
-        .eq("funnel_id", funnel_id)
+        .eq("funnel_id", resolved_funnel_id)
         .gte("timestamp", from_ts)
         .execute()
     )
@@ -189,10 +202,14 @@ def get_dropoff_by_source(
     interval_days = int(_period_to_interval(period).split()[0])
     from_ts = (datetime.now(timezone.utc) - timedelta(days=interval_days)).isoformat()
 
+    # Resolve slug/prefixo-hex -> uuid (mesma razao do heatmap: o tracker grava
+    # o UUID completo, o frontend manda o prefixo curto).
+    resolved_funnel_id = _resolve_funnel_uuid(supabase, funnel_id)
+
     profiles = (
         supabase.table("lead_profiles")
         .select("session_id, first_utm_json, last_utm_json, converted, funnel_id")
-        .eq("funnel_id", funnel_id)
+        .eq("funnel_id", resolved_funnel_id)
         .gte("last_seen", from_ts)
         .execute()
     )
@@ -348,7 +365,11 @@ def get_creative_performance(
     CPA e ROAS calculados a partir de lead_profiles vinculados.
     """
     supabase = get_supabase_admin()
-    ws_id = _get_ws_id(supabase, funnel_id)
+    # Resolve slug/prefixo-hex -> uuid ANTES de tudo: _get_ws_id e os filtros
+    # .eq("funnel_id", ...) precisam do UUID completo (o tracker grava assim,
+    # o frontend manda o prefixo curto). Sem isso, ws_id falha e a aba zera.
+    resolved_funnel_id = _resolve_funnel_uuid(supabase, funnel_id)
+    ws_id = _get_ws_id(supabase, resolved_funnel_id)
     interval_days = int(_period_to_interval(period).split()[0])
     from_ts = (datetime.now(timezone.utc) - timedelta(days=interval_days)).isoformat()
 
@@ -370,7 +391,7 @@ def get_creative_performance(
     leads = (
         supabase.table("lead_profiles")
         .select("parsed_campaign_id, converted, conversion_value")
-        .eq("funnel_id", funnel_id)
+        .eq("funnel_id", resolved_funnel_id)
         .in_("parsed_campaign_id", pc_ids)
         .gte("last_seen", from_ts)
         .execute()
@@ -469,7 +490,10 @@ def get_quiz_by_campaign(
     BUG-09 fix: busca todas as sessões de uma vez com JOIN ao invés de loop N+1.
     """
     supabase = get_supabase_admin()
-    ws_id = _get_ws_id(supabase, funnel_id)
+    # Resolve slug/prefixo-hex -> uuid ANTES de tudo (mesma razao dos outros
+    # endpoints: tracker grava UUID completo, frontend manda prefixo curto).
+    resolved_funnel_id = _resolve_funnel_uuid(supabase, funnel_id)
+    ws_id = _get_ws_id(supabase, resolved_funnel_id)
     _assert_ws_member(supabase, ws_id, current_user.id)  # BUG-10: previne vazamento cross-workspace
 
     interval_days = int(_period_to_interval(period).split()[0])
@@ -495,7 +519,7 @@ def get_quiz_by_campaign(
         supabase.table("lead_profiles")
         .select("session_id, parsed_campaign_id")
         .in_("parsed_campaign_id", pc_ids)
-        .eq("funnel_id", funnel_id)
+        .eq("funnel_id", resolved_funnel_id)
         .execute()
     )
 
@@ -516,7 +540,7 @@ def get_quiz_by_campaign(
     quiz_rows = (
         supabase.table("quiz_answers")
         .select("question_id, answer_value, session_id")
-        .eq("funnel_id", funnel_id)
+        .eq("funnel_id", resolved_funnel_id)
         .in_("session_id", session_ids)
         .gte("timestamp", from_ts)
         .execute()
