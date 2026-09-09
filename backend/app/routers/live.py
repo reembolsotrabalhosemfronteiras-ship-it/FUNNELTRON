@@ -29,6 +29,46 @@ WEBHOOK_HEADER = APIKeyHeader(name="X-Webhook-Secret", auto_error=False)
 _geo_columns_ok = True
 _GEO_KEYS = ("geo_city", "geo_uf", "geo_lat", "geo_lon")
 
+# Cache slug -> uuid do funil. O tracker embute FUNNEL_ID como o SLUG curto
+# (ex: "2b23f46d"), mas lead_profiles.funnel_id / quiz_answers.funnel_id sao
+# colunas UUID. Sem resolver, o insert de lead_profile estoura
+# "invalid input syntax for type uuid (22P02)" e a aba Quiz & Ads fica
+# zerada mesmo com milhares de respostas em quiz_answers. Cache em memoria
+# evita uma query por heartbeat.
+_funnel_uuid_cache: dict[str, str] = {}
+
+
+def _resolve_funnel_uuid(supabase: Client, funnel_id: str) -> str:
+    """Resolve um identificador de funil (UUID ou slug curto) para o UUID real.
+
+    Retorna o proprio funnel_id se ja for um UUID valido encontrado na tabela,
+    ou o UUID correspondente ao slug. Se nao resolver de forma alguma, devolve
+    o valor original (o insert falhara como antes, mas sem regressao para os
+    casos que ja funcionavam).
+    """
+    if not funnel_id:
+        return funnel_id
+    cached = _funnel_uuid_cache.get(funnel_id)
+    if cached:
+        return cached
+    try:
+        # Tenta primeiro como UUID direto (caso o tracker ja mande o id real).
+        by_id = supabase.table("funnels").select("id").eq("id", funnel_id).execute()
+        if by_id.data:
+            resolved = by_id.data[0]["id"]
+            _funnel_uuid_cache[funnel_id] = resolved
+            return resolved
+        # Senao trata como slug curto.
+        by_slug = supabase.table("funnels").select("id").eq("slug", funnel_id).execute()
+        if by_slug.data:
+            resolved = by_slug.data[0]["id"]
+            _funnel_uuid_cache[funnel_id] = resolved
+            return resolved
+    except Exception:
+        # Falha de resolucao nao deve quebrar o track; cai no valor original.
+        pass
+    return funnel_id
+
 # DIAGNÓSTICO TEMPORÁRIO: captura a última exceção dos inserts de
 # parsed_campaigns / lead_profiles / quiz_answers para eu ler via
 # GET /api/live/debug/last-error (sem auth). Remover depois de achar a causa
@@ -608,6 +648,19 @@ async def track_heartbeat(
         # exatamente esse silêncio que escondeu a migration 002 não rodada.
         logger.warning("Erro no track: corpo inválido")
         return None
+
+    # RESOLVE SLUG -> UUID: o tracker embute FUNNEL_ID como o slug curto
+    # (ex: "2b23f46d"), mas lead_profiles/quiz_answers.funnel_id sao colunas
+    # UUID. Sem isso o insert de lead_profile estoura "invalid input syntax
+    # for type uuid (22P02)" e a aba Quiz & Ads fica zerada mesmo com
+    # milhares de respostas gravadas em quiz_answers. Resolve uma vez aqui
+    # pra todos os caminhos (quiz_answer + heartbeat) usarem o UUID real.
+    try:
+        resolved_fid = _resolve_funnel_uuid(supabase, beat.funnel_id)
+        if resolved_fid != beat.funnel_id:
+            beat.funnel_id = resolved_fid
+    except Exception:
+        pass
 
     # Quiz answer: processa e retorna (não faz heartbeat de página)
     if beat.event_type == "quiz_answer":
