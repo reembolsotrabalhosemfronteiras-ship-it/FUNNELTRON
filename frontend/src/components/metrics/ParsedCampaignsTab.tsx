@@ -285,7 +285,7 @@ export function ParsedCampaignsTab({ funnelId }: { funnelId: string }) {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodInput>("30d");
   const [search, setSearch] = useState("");
-  const [groupMode, setGroupMode] = useState<GroupMode>("campaign");
+  const [groupMode, setGroupMode] = useState<GroupMode>("creative");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [drill, setDrill] = useState<{ code: string; label: string } | null>(null);
 

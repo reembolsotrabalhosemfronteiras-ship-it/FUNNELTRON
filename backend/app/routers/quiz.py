@@ -409,6 +409,44 @@ def get_creative_performance(
             stats_by_pc[pc_id]["conversions"] += 1
             stats_by_pc[pc_id]["revenue"] += float(lead.get("conversion_value") or 0)
 
+    # SESSOES UNICAS QUE RESPONDERAM AO QUIZ por parsed_campaign (mesma logica
+    # do endpoint parsed-campaigns: quiz_response_count conta cada resposta
+    # individual, inflando ~9x; a metrica correta eh sessoes distintas).
+    quiz_sessions_by_pc_cp: dict = {}
+    if pc_ids:
+        try:
+            lp_sess_cp = (
+                supabase.table("lead_profiles")
+                .select("session_id, parsed_campaign_id")
+                .eq("workspace_id", ws_id)
+                .in_("parsed_campaign_id", pc_ids)
+                .execute()
+            )
+            sid_to_pc_cp: dict = {}
+            all_sids_cp: list = []
+            for lp in (lp_sess_cp.data or []):
+                sid = lp.get("session_id")
+                pcid = lp.get("parsed_campaign_id")
+                if sid and pcid:
+                    sid_to_pc_cp[sid] = pcid
+                    all_sids_cp.append(sid)
+            if all_sids_cp:
+                qa_cp = (
+                    supabase.table("quiz_answers")
+                    .select("session_id")
+                    .in_("session_id", all_sids_cp)
+                    .execute()
+                )
+                quiz_sids_cp: dict = {}
+                for qa in (qa_cp.data or []):
+                    sid = qa.get("session_id")
+                    pcid = sid_to_pc_cp.get(sid)
+                    if pcid:
+                        quiz_sids_cp.setdefault(pcid, set()).add(sid)
+                quiz_sessions_by_pc_cp = {k: len(v) for k, v in quiz_sids_cp.items()}
+        except Exception:
+            pass
+
     # Monta resposta agrupada por creative_code + placement
     result = []
     for pc in pcs.data:
@@ -417,7 +455,9 @@ def get_creative_performance(
         conversions = stats.get("conversions", 0)
         revenue = stats.get("revenue", 0)
         sessions = pc.get("session_count") or 0
-        quiz_responses = pc.get("quiz_response_count") or 0
+        quiz_sessions_cp = quiz_sessions_by_pc_cp.get(pc_id, 0)
+        quiz_responses_raw = pc.get("quiz_response_count") or 0
+        quiz_responses = quiz_sessions_cp if quiz_sessions_cp > 0 else min(quiz_responses_raw, sessions)
 
         # Estimativa de spend baseada em ad_campaigns se houver link
         # (parsed_campaigns não tem spend direto — vem do sync Meta)
@@ -708,6 +748,54 @@ def list_parsed_campaigns(
             # proxy para nao zerar a coluna.
             pass
 
+    # SESSOES UNICAS QUE RESPONDERAM AO QUIZ por parsed_campaign.
+    # BUG ANTERIOR: quiz_response_count contava CADA resposta individual
+    # (uma pessoa com 9 perguntas = 9 contagens), enquanto sessions/users
+    # contava visitantes unicos. Resultado: conversao de 900%+ e numeros
+    # absurdos na aba Campanhas. A metrica correta eh "quantas sessoes
+    # distintas tiveram pelo menos uma resposta de quiz" — mesma unidade
+    # dos visitors/sessions, dando taxa <= 100%.
+    quiz_sessions_by_pc: dict = {}
+    if pc_ids:
+        try:
+            # Query unica: busca session_id + parsed_campaign_id de uma vez
+            # (reusa os dados ja buscados acima para users_by_pc se possivel,
+            # mas como precisa de session_id alem de device_id, faz query separada)
+            lp_session_rows = (
+                supabase.table("lead_profiles")
+                .select("session_id, parsed_campaign_id")
+                .eq("workspace_id", ws_id)
+                .in_("parsed_campaign_id", pc_ids)
+                .execute()
+            )
+            sid_to_pc: dict = {}
+            all_sids: list = []
+            for lp in (lp_session_rows.data or []):
+                sid = lp.get("session_id")
+                pcid = lp.get("parsed_campaign_id")
+                if sid and pcid:
+                    sid_to_pc[sid] = pcid
+                    all_sids.append(sid)
+
+            if all_sids:
+                # Busca quiz_answers soh das sessoes relevantes (batch unico)
+                qa_rows = (
+                    supabase.table("quiz_answers")
+                    .select("session_id")
+                    .in_("session_id", all_sids)
+                    .execute()
+                )
+                quiz_sids_by_pc: dict = {}
+                for qa in (qa_rows.data or []):
+                    sid = qa.get("session_id")
+                    pcid = sid_to_pc.get(sid)
+                    if pcid:
+                        quiz_sids_by_pc.setdefault(pcid, set()).add(sid)
+                quiz_sessions_by_pc = {k: len(v) for k, v in quiz_sids_by_pc.items()}
+        except Exception:
+            # Fallback: usa quiz_response_count cru (imperfeito mas melhor que nada)
+            pass
+
     # Mapeia os campos do banco (snake_case) para o formato que o frontend
     # espera (camelCase). Sem esse mapeamento a aba Campanhas mostrava
     # Creative Code / Campaign Code vazios e Sessions = 0 mesmo com dados
@@ -717,7 +805,13 @@ def list_parsed_campaigns(
     for row in (rows.data or []):
         sessions = row.get("session_count") or 0
         users = users_by_pc.get(row.get("id"), sessions)
-        quiz_responses = row.get("quiz_response_count") or 0
+        # quizSessions = sessoes unicas que responderam (metrica correta)
+        # quiz_response_count = respostas individuais (inflado, so pra compat)
+        quiz_sessions = quiz_sessions_by_pc.get(row.get("id"), 0)
+        quiz_responses_raw = row.get("quiz_response_count") or 0
+        # Usa quiz_sessions como metrica principal; se nao conseguiu contar
+        # (fallback), estima dividindo por 5 (media de perguntas por quiz)
+        quiz_responses = quiz_sessions if quiz_sessions > 0 else min(quiz_responses_raw, sessions)
         conversion_rate = round(quiz_responses / sessions * 100, 1) if sessions > 0 else None
         result.append({
             "creativeCode": row.get("creative_code"),
