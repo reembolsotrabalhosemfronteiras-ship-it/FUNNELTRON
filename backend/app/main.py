@@ -200,6 +200,42 @@ def parsed_campaigns_alias(
             .execute()
         )
 
+        # USUARIOS UNICOS por campanha: conta device_id distintos em
+        # lead_profiles vinculados a cada parsed_campaign_id. O frontend pediu
+        # "Usuarios" em vez de "Sessoes" na aba Campanhas — sessao != usuario
+        # (uma pessoa pode gerar varias sessoes). Busca unica por workspace
+        # (nao N+1) e agrupa em memoria por parsed_campaign_id.
+        pc_ids = [r["id"] for r in (rows.data or []) if r.get("id")]
+        users_by_pc: dict = {}
+        if pc_ids:
+            try:
+                lp_rows = (
+                    supabase.table("lead_profiles")
+                    .select("parsed_campaign_id, device_id")
+                    .eq("workspace_id", ws_id)
+                    .in_("parsed_campaign_id", pc_ids)
+                    .execute()
+                )
+                buckets: dict = {}
+                for lp in (lp_rows.data or []):
+                    pcid = lp.get("parsed_campaign_id")
+                    did = lp.get("device_id")
+                    if not pcid:
+                        continue
+                    if pcid not in buckets:
+                        buckets[pcid] = set()
+                    if did:
+                        buckets[pcid].add(did)
+                users_by_pc = {k: len(v) for k, v in buckets.items()}
+            except Exception as users_exc:
+                # Se a contagem de usuarios falhar (ex: timeout 504 do
+                # Supabase), cai graciosamente em session_count como proxy —
+                # melhor mostrar um numero aproximado do que quebrar a aba.
+                _alias_logger.warning(
+                    "Falha ao contar usuarios unicos por campanha (caindo em session_count): %s",
+                    str(users_exc),
+                )
+
         # Mapeia os campos do banco (snake_case) para o formato que o frontend
         # espera (camelCase). Sem esse mapeamento a aba Campanhas mostrava
         # Creative Code / Campaign Code vazios e Sessions = 0 mesmo com dados
@@ -208,6 +244,9 @@ def parsed_campaigns_alias(
         result = []
         for row in (rows.data or []):
             sessions = row.get("session_count") or 0
+            # Usuarios unicos reais quando disponivel; senao session_count
+            # como fallback (proxy) para nao deixar a coluna zerada.
+            users = users_by_pc.get(row.get("id"), sessions)
             quiz_responses = row.get("quiz_response_count") or 0
             conversion_rate = round(quiz_responses / sessions * 100, 1) if sessions > 0 else None
             result.append({
@@ -217,6 +256,7 @@ def parsed_campaigns_alias(
                 "rawCampaign": row.get("raw_campaign"),
                 "placement": row.get("placement"),
                 "sessions": sessions,
+                "users": users,
                 "quizResponses": quiz_responses,
                 "conversionRate": conversion_rate,
                 "lastSeen": row.get("last_seen_at"),

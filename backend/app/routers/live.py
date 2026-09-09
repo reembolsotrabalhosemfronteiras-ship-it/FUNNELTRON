@@ -125,12 +125,37 @@ def _salvar_quiz_answer(supabase: Client, beat: LiveBeatRequest) -> None:
         "utm_term": utm_term,
         "timestamp": beat.timestamp if hasattr(beat, 'timestamp') and beat.timestamp else "now()",
     }
-    try:
-        supabase.table("quiz_answers").insert(quiz_row).execute()
-    except Exception as exc:
+    # RETRY TRANSIENTE: o Supabase esporadicamente retorna 504 Gateway Timeout
+    # nos writes (confirmado via /api/live/debug/last-error). Sem retry, UM
+    # timeout descarta a resposta de quiz inteira e a aba Quiz & Ads parece
+    # "nao trackear". Retenta com backoff curto antes de registrar o erro.
+    import time as _time_q
+
+    def _is_transient_q(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        return any(
+            t in msg
+            for t in ("504", "gateway timeout", "503", "502", "timed out", "timeout", "connection")
+        )
+
+    quiz_saved = False
+    last_quiz_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            supabase.table("quiz_answers").insert(quiz_row).execute()
+            quiz_saved = True
+            break
+        except Exception as exc:
+            last_quiz_exc = exc
+            if _is_transient_q(exc) and attempt < 2:
+                _time_q.sleep(0.4 * (attempt + 1))
+                continue
+            break
+
+    if not quiz_saved and last_quiz_exc is not None:
         # DIAGNÓSTICO TEMPORÁRIO: expõe a exceção real via /api/live/debug/last-error
         from datetime import datetime, timezone
-        _last_insert_error["error"] = f"{type(exc).__name__}: {exc}"
+        _last_insert_error["error"] = f"{type(last_quiz_exc).__name__}: {last_quiz_exc}"
         _last_insert_error["at"] = datetime.now(timezone.utc).isoformat()
         _last_insert_error["where"] = "quiz_answers"
         logger.exception("Erro ao salvar quiz_answer (session_id=%s)", beat.session_id)
@@ -409,9 +434,45 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
                 insert_data["parsed_campaign_id"] = parsed_campaign_id
 
             # Tenta insert com todos os campos; se falhar por coluna ausente
-            # (migration 012 não aplicada), remove campos problemáticos e tenta novamente
+            # (migration 012 não aplicada), remove campos problemáticos e tenta novamente.
+            # RETRY TRANSIENTE: o Supabase esporadicamente retorna 504 Gateway
+            # Timeout nos writes (confirmado via /api/live/debug/last-error:
+            # "APIError code 504 ... where: lead_profile"). Sem retry, UM
+            # timeout mata o write inteiro e quebra toda a cadeia de atribuicao
+            # (lead_profile -> parsed_campaign_id -> quiz_answers), fazendo a
+            # aba Quiz & Ads parecer "nao trackear". Retenta com backoff curto
+            # antes de desistir.
+            import time as _time
+
+            def _is_transient(exc: Exception) -> bool:
+                msg = str(exc).lower()
+                return (
+                    "504" in msg
+                    or "gateway timeout" in msg
+                    or "503" in msg
+                    or "502" in msg
+                    or "timed out" in msg
+                    or "timeout" in msg
+                    or "connection" in msg
+                )
+
+            def _attempt_insert(data: dict) -> None:
+                last_exc: Exception | None = None
+                for attempt in range(3):
+                    try:
+                        supabase.table("lead_profiles").insert(data).execute()
+                        return
+                    except Exception as exc:
+                        last_exc = exc
+                        if _is_transient(exc) and attempt < 2:
+                            _time.sleep(0.4 * (attempt + 1))
+                            continue
+                        raise
+                if last_exc is not None:
+                    raise last_exc
+
             try:
-                supabase.table("lead_profiles").insert(insert_data).execute()
+                _attempt_insert(insert_data)
             except Exception as insert_exc:
                 error_msg = str(insert_exc)
                 if "contact_email" in error_msg or "contact_name" in error_msg:
@@ -423,7 +484,7 @@ def _atualizar_lead_profile(supabase: Client, beat: LiveBeatRequest, utm: dict, 
                         beat.session_id,
                     )
                     try:
-                        supabase.table("lead_profiles").insert(insert_data).execute()
+                        _attempt_insert(insert_data)
                     except Exception:
                         raise
                 else:

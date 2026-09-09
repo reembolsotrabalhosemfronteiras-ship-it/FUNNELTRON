@@ -248,12 +248,19 @@ interface GroupBucket {
   label: string;
   subLabel: string | null;
   rows: ParsedCampaign[];
-  sessions: number;
+  /** Visitantes unicos reais (device_id distinto). Soma dos c.users do grupo. */
+  users: number;
   quizResponses: number;
 }
 
-function conversion(sessions: number, quizResponses: number): number | null {
-  return sessions > 0 ? (quizResponses / sessions) * 100 : null;
+/** Visitantes unicos de uma campanha: prefere c.users (reais), cai em
+ *  c.sessions como proxy quando o backend nao conseguiu contar (timeout). */
+function userCount(c: ParsedCampaign): number {
+  return c.users ?? c.sessions ?? 0;
+}
+
+function conversion(users: number, quizResponses: number): number | null {
+  return users > 0 ? (quizResponses / users) * 100 : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -328,22 +335,22 @@ export function ParsedCampaignsTab({ funnelId }: { funnelId: string }) {
           label,
           subLabel,
           rows: [],
-          sessions: 0,
+          users: 0,
           quizResponses: 0,
         };
         map.set(key, bucket);
       }
       bucket.rows.push(c);
-      bucket.sessions += c.sessions ?? 0;
+      bucket.users += userCount(c);
       bucket.quizResponses += c.quizResponses ?? 0;
     }
-    // Ordena grupos por sessions decrescente
-    return Array.from(map.values()).sort((a, b) => b.sessions - a.sessions);
+    // Ordena grupos por usuarios unicos decrescente
+    return Array.from(map.values()).sort((a, b) => b.users - a.users);
   }, [filtered, groupMode]);
 
   // Maximos globais para as barras serem comparaveis entre grupos
-  const maxSessions = useMemo(
-    () => Math.max(1, ...groups.map((g) => g.sessions)),
+  const maxUsers = useMemo(
+    () => Math.max(1, ...groups.map((g) => g.users)),
     [groups]
   );
   const maxQuiz = useMemo(
@@ -352,8 +359,8 @@ export function ParsedCampaignsTab({ funnelId }: { funnelId: string }) {
   );
 
   // Totais gerais
-  const totalSessions = useMemo(
-    () => filtered.reduce((s, c) => s + (c.sessions ?? 0), 0),
+  const totalUsers = useMemo(
+    () => filtered.reduce((s, c) => s + userCount(c), 0),
     [filtered]
   );
   const totalQuiz = useMemo(
@@ -445,11 +452,11 @@ export function ParsedCampaignsTab({ funnelId }: { funnelId: string }) {
 
       {/* KPIs resumidos */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <KpiTile label="Sessoes" value={fmt(totalSessions)} accent="text-sky-600 dark:text-sky-400" />
+        <KpiTile label="Usuarios" value={fmt(totalUsers)} accent="text-sky-600 dark:text-sky-400" />
         <KpiTile label="Respostas Quiz" value={fmt(totalQuiz)} accent="text-emerald-600 dark:text-emerald-400" />
         <KpiTile
           label="Conversao"
-          value={conversion(totalSessions, totalQuiz) === null ? "—" : `${conversion(totalSessions, totalQuiz)!.toFixed(1)}%`}
+          value={conversion(totalUsers, totalQuiz) === null ? "—" : `${conversion(totalUsers, totalQuiz)!.toFixed(1)}%`}
           accent="text-violet-600 dark:text-violet-400"
         />
         <KpiTile label={groupMode === "campaign" ? "Campanhas" : "Criativos"} value={fmt(groups.length)} accent="text-amber-600 dark:text-amber-400" />
@@ -470,7 +477,7 @@ export function ParsedCampaignsTab({ funnelId }: { funnelId: string }) {
         <div className="space-y-2">
           {groups.map((g) => {
             const isOpen = expanded.has(g.key);
-            const rate = conversion(g.sessions, g.quizResponses);
+            const rate = conversion(g.users, g.quizResponses);
             // ordena linhas internas por sessions desc
             const innerRows = [...g.rows].sort((a, b) => (b.sessions ?? 0) - (a.sessions ?? 0));
             return (
@@ -497,10 +504,10 @@ export function ParsedCampaignsTab({ funnelId }: { funnelId: string }) {
                     </div>
                     <div className="hidden w-40 shrink-0 sm:block">
                       <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
-                        <span>Sessoes</span>
-                        <span className="tabular-nums">{fmt(g.sessions)}</span>
+                        <span>Usuarios</span>
+                        <span className="tabular-nums">{fmt(g.users)}</span>
                       </div>
-                      <MetricBar value={g.sessions} max={maxSessions} color="#0ea5e9" />
+                      <MetricBar value={g.users} max={maxUsers} color="#0ea5e9" />
                     </div>
                     <div className="hidden w-32 shrink-0 sm:block">
                       <div className="mb-1 flex items-center justify-between text-[10px] text-muted-foreground">
@@ -530,7 +537,7 @@ export function ParsedCampaignsTab({ funnelId }: { funnelId: string }) {
                               {groupMode === "campaign" ? "Criativo" : "Campanha"}
                             </th>
                             <th className="px-4 py-2">Placement</th>
-                            <th className="px-4 py-2 text-right">Sessoes</th>
+                            <th className="px-4 py-2 text-right">Usuarios</th>
                             <th className="px-4 py-2 text-right">Quiz</th>
                             <th className="px-4 py-2 text-right">Conv.</th>
                             <th className="px-4 py-2 text-right">Ultima</th>
@@ -538,7 +545,7 @@ export function ParsedCampaignsTab({ funnelId }: { funnelId: string }) {
                         </thead>
                         <tbody>
                           {innerRows.map((c, i) => {
-                            const r = conversion(c.sessions, c.quizResponses);
+                            const r = conversion(userCount(c), c.quizResponses);
                             return (
                               <tr
                                 key={`${c.campaignCode}-${c.creativeCode}-${i}`}
@@ -553,7 +560,7 @@ export function ParsedCampaignsTab({ funnelId }: { funnelId: string }) {
                                   </Badge>
                                 </td>
                                 <td className="px-4 py-2 text-right tabular-nums">
-                                  {fmt(c.sessions)}
+                                  {fmt(userCount(c))}
                                 </td>
                                 <td className="px-4 py-2 text-right tabular-nums">
                                   {fmt(c.quizResponses)}

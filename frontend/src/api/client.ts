@@ -2367,6 +2367,9 @@ export interface ParsedCampaign {
   rawCampaign?: string | null;
   placement: string;
   sessions: number;
+  /** Visitantes unicos reais (device_id distinto) vinculados a esta campanha.
+   *  O backend cai em session_count como proxy se a contagem falhar (timeout). */
+  users?: number;
   quizResponses: number;
   lastSeen: string;
 }

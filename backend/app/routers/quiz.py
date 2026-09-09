@@ -655,6 +655,35 @@ def list_parsed_campaigns(
         .execute()
     )
 
+    # USUARIOS UNICOS por campanha: conta device_id distintos em lead_profiles
+    # vinculados a cada parsed_campaign_id. O frontend pediu "Usuarios" em vez
+    # de "Sessoes" — sessao != usuario. Busca unica por workspace (nao N+1).
+    pc_ids = [r["id"] for r in (rows.data or []) if r.get("id")]
+    users_by_pc: dict = {}
+    if pc_ids:
+        try:
+            lp_rows = (
+                supabase.table("lead_profiles")
+                .select("parsed_campaign_id, device_id")
+                .eq("workspace_id", ws_id)
+                .in_("parsed_campaign_id", pc_ids)
+                .execute()
+            )
+            buckets: dict = {}
+            for lp in (lp_rows.data or []):
+                pcid = lp.get("parsed_campaign_id")
+                did = lp.get("device_id")
+                if not pcid:
+                    continue
+                buckets.setdefault(pcid, set())
+                if did:
+                    buckets[pcid].add(did)
+            users_by_pc = {k: len(v) for k, v in buckets.items()}
+        except Exception:
+            # Falha na contagem (ex: timeout 504) -> cai em session_count como
+            # proxy para nao zerar a coluna.
+            pass
+
     # Mapeia os campos do banco (snake_case) para o formato que o frontend
     # espera (camelCase). Sem esse mapeamento a aba Campanhas mostrava
     # Creative Code / Campaign Code vazios e Sessions = 0 mesmo com dados
@@ -663,6 +692,7 @@ def list_parsed_campaigns(
     result = []
     for row in (rows.data or []):
         sessions = row.get("session_count") or 0
+        users = users_by_pc.get(row.get("id"), sessions)
         quiz_responses = row.get("quiz_response_count") or 0
         conversion_rate = round(quiz_responses / sessions * 100, 1) if sessions > 0 else None
         result.append({
@@ -672,6 +702,7 @@ def list_parsed_campaigns(
             "rawCampaign": row.get("raw_campaign"),
             "placement": row.get("placement"),
             "sessions": sessions,
+            "users": users,
             "quizResponses": quiz_responses,
             "conversionRate": conversion_rate,
             "lastSeen": row.get("last_seen_at"),
