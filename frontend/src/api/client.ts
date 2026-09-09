@@ -1583,7 +1583,7 @@ export async function getAudienceBreakdown(
   ], 400);
 }
 
-/** Respostas do quiz por pergunta (sem campanha). */
+/** Respostas do quiz agrupadas por pagina do funil. */
 export interface QuizAnswerOption {
   value: string;
   count: number;
@@ -1598,8 +1598,17 @@ export interface QuizQuestionResult {
   answers: QuizAnswerOption[];
 }
 
-export interface QuizResponsesData {
+export interface QuizPageResult {
+  stepId: string;
+  pageLabel: string;
+  pageNumber: number;
+  orderIndex: number;
+  totalSessions: number;
   questions: QuizQuestionResult[];
+}
+
+export interface QuizResponsesData {
+  pages: QuizPageResult[];
   totalSessions: number;
   totalResponses: number;
 }
@@ -1612,44 +1621,70 @@ export async function getQuizResponses(
     return apiGet(`/api/quiz/responses?funnel_id=${funnelId}&${periodQuery(period)}`).then(okJson);
   }
   return delay({
-    questions: [
+    pages: [
       {
-        questionId: "q1",
-        questionLabel: "Pergunta 1",
-        totalResponses: 1240,
-        uniqueSessions: 1240,
-        answers: [
-          { value: "Sim, tenho interesse", count: 780, percentage: 62.9 },
-          { value: "Talvez", count: 310, percentage: 25.0 },
-          { value: "Não", count: 150, percentage: 12.1 },
+        stepId: "step-1",
+        pageLabel: "Pergunta 1",
+        pageNumber: 1,
+        orderIndex: 6,
+        totalSessions: 1240,
+        questions: [
+          {
+            questionId: "objetivo",
+            questionLabel: "objetivo",
+            totalResponses: 1240,
+            uniqueSessions: 1240,
+            answers: [
+              { value: "Emagrecer", count: 780, percentage: 62.9 },
+              { value: "Ganhar massa", count: 310, percentage: 25.0 },
+              { value: "Saude geral", count: 150, percentage: 12.1 },
+            ],
+          },
         ],
       },
       {
-        questionId: "q2",
-        questionLabel: "Pergunta 2",
-        totalResponses: 1180,
-        uniqueSessions: 1180,
-        answers: [
-          { value: "R$ 50-100", count: 520, percentage: 44.1 },
-          { value: "R$ 100-200", count: 380, percentage: 32.2 },
-          { value: "R$ 200+", count: 280, percentage: 23.7 },
+        stepId: "step-2",
+        pageLabel: "Pergunta 2",
+        pageNumber: 2,
+        orderIndex: 7,
+        totalSessions: 1180,
+        questions: [
+          {
+            questionId: "orcamento",
+            questionLabel: "orcamento",
+            totalResponses: 1180,
+            uniqueSessions: 1180,
+            answers: [
+              { value: "R$ 50-100", count: 520, percentage: 44.1 },
+              { value: "R$ 100-200", count: 380, percentage: 32.2 },
+              { value: "R$ 200+", count: 280, percentage: 23.7 },
+            ],
+          },
         ],
       },
       {
-        questionId: "q3",
-        questionLabel: "Pergunta 3",
-        totalResponses: 1100,
-        uniqueSessions: 1100,
-        answers: [
-          { value: "Instagram", count: 450, percentage: 40.9 },
-          { value: "Facebook", count: 320, percentage: 29.1 },
-          { value: "TikTok", count: 210, percentage: 19.1 },
-          { value: "YouTube", count: 120, percentage: 10.9 },
+        stepId: "step-3",
+        pageLabel: "Tarefa 1",
+        pageNumber: 3,
+        orderIndex: 1,
+        totalSessions: 980,
+        questions: [
+          {
+            questionId: "s-q1",
+            questionLabel: "Pergunta 1",
+            totalResponses: 980,
+            uniqueSessions: 980,
+            answers: [
+              { value: "Sim, eu me comprometo", count: 720, percentage: 73.5 },
+              { value: "Talvez", count: 180, percentage: 18.4 },
+              { value: "Nao tenho certeza", count: 80, percentage: 8.2 },
+            ],
+          },
         ],
       },
     ],
     totalSessions: 1240,
-    totalResponses: 3520,
+    totalResponses: 3400,
   }, 400);
 }
 

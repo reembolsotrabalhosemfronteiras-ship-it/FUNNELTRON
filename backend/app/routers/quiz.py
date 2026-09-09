@@ -638,7 +638,7 @@ def get_quiz_by_campaign(
 
 
 # ---------------------------------------------------------------------------
-# GET /api/quiz/responses — respostas do quiz por pergunta (sem campanha)
+# GET /api/quiz/responses — respostas do quiz agrupadas por pagina do funil
 # ---------------------------------------------------------------------------
 @router.get("/responses")
 def get_quiz_responses(
@@ -646,10 +646,11 @@ def get_quiz_responses(
     period: str = Query("30d"),
     current_user=Depends(get_current_user),
 ):
-    """Respostas do quiz agrupadas por pergunta e opção, com porcentagens.
+    """Respostas do quiz agrupadas por pagina (step) do funil.
 
-    Foco puro nas respostas: cada pergunta listada com suas opções de resposta,
-    contagem e porcentagem. Sem dados de campanha/ad performance.
+    Cada pagina do funil eh listada com seu label real (ex: "Pergunta 1",
+    "Tarefa 2"), e dentro de cada pagina as perguntas com suas opcoes de
+    resposta, contagem e porcentagem. Sem dados de campanha/ad performance.
     """
     supabase = get_supabase_admin()
     interval_days = int(_period_to_interval(period).split()[0])
@@ -657,10 +658,22 @@ def get_quiz_responses(
 
     resolved_funnel_id = _resolve_funnel_uuid(supabase, funnel_id)
 
-    # Busca todas as respostas do quiz no período
+    # 1) Busca os steps do funil (paginas) com label e ordem
+    steps_rows = (
+        supabase.table("funnel_steps")
+        .select("id, label, order_index")
+        .eq("funnel_id", resolved_funnel_id)
+        .order("order_index")
+        .execute()
+    )
+    step_map: dict = {}  # step_id -> {label, order_index}
+    for s in (steps_rows.data or []):
+        step_map[s["id"]] = {"label": s["label"], "order_index": s["order_index"]}
+
+    # 2) Busca todas as respostas do quiz no periodo (inclui step_id)
     rows = (
         supabase.table("quiz_answers")
-        .select("question_id, answer_value, session_id, timestamp")
+        .select("question_id, answer_value, answer_id, session_id, step_id, timestamp")
         .eq("funnel_id", resolved_funnel_id)
         .gte("timestamp", from_ts)
         .order("timestamp")
@@ -668,61 +681,100 @@ def get_quiz_responses(
     )
 
     if not rows.data:
-        return {"questions": [], "totalSessions": 0, "totalResponses": 0}
+        return {"pages": [], "totalSessions": 0, "totalResponses": 0}
 
-    # Agrupa por question_id → answer_value
-    questions: dict = {}
+    # 3) Agrupa: step_id -> question_id -> answer_value
+    #    Estrutura: pages[step_id][question_id] = {answers: {val: count}, sessions: set, total: int}
+    pages: dict = {}
     all_sessions: set = set()
 
     for row in rows.data:
+        step_id = row.get("step_id") or "__no_step__"
         qid = row["question_id"]
-        aval = row.get("answer_value") or "unknown"
+        aval = (row.get("answer_value") or "unknown").strip()
         sid = row["session_id"]
         all_sessions.add(sid)
 
-        if qid not in questions:
-            questions[qid] = {"answers": {}, "sessions": set(), "total": 0}
+        if step_id not in pages:
+            pages[step_id] = {}
 
-        questions[qid]["total"] += 1
-        questions[qid]["sessions"].add(sid)
+        if qid not in pages[step_id]:
+            pages[step_id][qid] = {"answers": {}, "sessions": set(), "total": 0}
 
-        if aval not in questions[qid]["answers"]:
-            questions[qid]["answers"][aval] = 0
-        questions[qid]["answers"][aval] += 1
+        pages[step_id][qid]["total"] += 1
+        pages[step_id][qid]["sessions"].add(sid)
 
-    # Monta resposta ordenada por question_id (ordem natural das perguntas)
-    result_questions = []
-    for qid in sorted(questions.keys()):
-        data = questions[qid]
-        total = data["total"]
-        unique_sessions = len(data["sessions"])
+        if aval not in pages[step_id][qid]["answers"]:
+            pages[step_id][qid]["answers"][aval] = 0
+        pages[step_id][qid]["answers"][aval] += 1
 
-        # Ordena respostas por contagem decrescente
-        answers_list = []
-        for aval, count in sorted(data["answers"].items(), key=lambda x: x[1], reverse=True):
-            pct = round(count / total * 100, 1) if total > 0 else 0
-            answers_list.append({
-                "value": aval,
-                "count": count,
-                "percentage": pct,
+    # 4) Monta resposta: lista de paginas ordenadas por order_index
+    result_pages = []
+    # Ordena step_ids: primeiro os que tem step_map (por order_index), depois os sem step
+    sorted_step_ids = sorted(
+        pages.keys(),
+        key=lambda sid: step_map.get(sid, {}).get("order_index", 9999),
+    )
+
+    page_number = 0
+    for step_id in sorted_step_ids:
+        questions_data = pages[step_id]
+        if not questions_data:
+            continue
+
+        page_number += 1
+        step_info = step_map.get(step_id, {})
+        page_label = step_info.get("label") or f"Pagina {page_number}"
+        order_index = step_info.get("order_index", page_number)
+
+        # Monta perguntas desta pagina
+        page_questions = []
+        page_sessions: set = set()
+
+        for qid in sorted(questions_data.keys()):
+            data = questions_data[qid]
+            total = data["total"]
+            unique_sessions = len(data["sessions"])
+            page_sessions.update(data["sessions"])
+
+            # Ordena respostas por contagem decrescente
+            answers_list = []
+            for aval, count in sorted(data["answers"].items(), key=lambda x: x[1], reverse=True):
+                pct = round(count / total * 100, 1) if total > 0 else 0
+                answers_list.append({
+                    "value": aval,
+                    "count": count,
+                    "percentage": pct,
+                })
+
+            # Label legivel da pergunta: usa o question_id como fallback
+            q_label = qid.replace("_", " ").replace("-", " ").strip()
+            if qid.startswith("s-q") and qid[3:].isdigit():
+                q_label = f"Pergunta {qid[3:]}"
+            elif qid.startswith("q_"):
+                q_label = qid[2:].replace("_", " ").title()
+            elif qid.startswith("quiz_"):
+                q_label = qid[5:].replace("_", " ").title()
+
+            page_questions.append({
+                "questionId": qid,
+                "questionLabel": q_label,
+                "totalResponses": total,
+                "uniqueSessions": unique_sessions,
+                "answers": answers_list,
             })
 
-        # Label legível da pergunta
-        label = qid.replace("_", " ").replace("-", " ").title()
-        # Se o question_id é numérico (q1, q2, etc.), mantém como está
-        if qid.startswith("q") and qid[1:].isdigit():
-            label = f"Pergunta {qid[1:]}"
-
-        result_questions.append({
-            "questionId": qid,
-            "questionLabel": label,
-            "totalResponses": total,
-            "uniqueSessions": unique_sessions,
-            "answers": answers_list,
+        result_pages.append({
+            "stepId": step_id,
+            "pageLabel": page_label,
+            "pageNumber": page_number,
+            "orderIndex": order_index,
+            "totalSessions": len(page_sessions),
+            "questions": page_questions,
         })
 
     return {
-        "questions": result_questions,
+        "pages": result_pages,
         "totalSessions": len(all_sessions),
         "totalResponses": len(rows.data),
     }
