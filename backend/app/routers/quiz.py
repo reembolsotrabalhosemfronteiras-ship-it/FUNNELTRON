@@ -1,8 +1,10 @@
 """Router de análise de Quiz & Ads — endpoints para a aba QuizAdsTab do frontend."""
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from supabase import Client
 
@@ -26,6 +28,93 @@ def _period_to_interval(period: str) -> str:
     """Converte shorthand de período (7d, 30d, 90d) para intervalo SQL."""
     mapping = {"7d": "7 days", "30d": "30 days", "90d": "90 days", "180d": "180 days"}
     return mapping.get(period, "30 days")
+
+
+# ---------------------------------------------------------------------------
+# Analise automatica do HTML do funil: extrai botoes por screen
+# ---------------------------------------------------------------------------
+def _extract_screens_from_html(html: str) -> dict:
+    """Extrai os botoes de cada <div class="screen" id="s-xxx"> do HTML.
+
+    Retorna: {screen_id: [button_text_1, button_text_2, ...]}
+    """
+    screens: dict = {}
+    # Match each screen div and its content until the next screen or end
+    pattern = r'<div[^>]*class="screen[^"]*"[^>]*id="([^"]*)"[^>]*>(.*?)(?=<div[^>]*class="screen|$)'
+    for match in re.finditer(pattern, html, re.DOTALL):
+        screen_id = match.group(1)
+        content = match.group(2)
+        # Extract button/link texts
+        btn_pattern = r'<(?:button|a)[^>]*>(.*?)</(?:button|a)>'
+        buttons = []
+        for btn_match in re.finditer(btn_pattern, content, re.DOTALL):
+            text = re.sub(r'<[^>]+>', '', btn_match.group(1))
+            text = re.sub(r'\s+', ' ', text).strip()
+            if text and len(text) < 200:
+                buttons.append(text)
+        if buttons:
+            screens[screen_id] = buttons
+    return screens
+
+
+def _build_answer_to_screen_map(screens: dict) -> dict:
+    """Constroi mapa answer_value -> screen_id para mapeamento automatico.
+
+    Quando um answer_value aparece em multiplos screens, usa o primeiro
+    (mais especifico). Screens com mais botoes tem prioridade menor
+    (paginas de navegacao vs paginas de quiz).
+    """
+    answer_map: dict = {}
+    # Ordena screens por numero de botoes (ascendente) — screens com
+    # poucos botoes sao mais especificos (Home = 1 botao, Pergunta = 4)
+    sorted_screens = sorted(screens.items(), key=lambda x: len(x[1]))
+    for screen_id, buttons in sorted_screens:
+        for btn_text in buttons:
+            if btn_text not in answer_map:
+                answer_map[btn_text] = screen_id
+    return answer_map
+
+
+def _screen_id_to_label(screen_id: str, step_map: dict) -> str:
+    """Converte screen_id (ex: s-q1) para label legivel usando step_map.
+
+    Tenta casar o screen_id com os labels dos steps. Se nao casar,
+    gera um label limpo a partir do screen_id.
+    """
+    # Mapeamento direto screen_id -> label baseado no padrao
+    label_map = {
+        "s-land": "Home",
+        "s-t1": "Tarefa 1",
+        "s-t2": "Tarefa 2",
+        "s-t3": "Tarefa 3",
+        "s-q1": "Pergunta 1",
+        "s-q2": "Pergunta 2",
+        "s-q3": "Pergunta 3",
+        "s-q4": "Pergunta 4",
+        "s-q5": "Pergunta 5",
+        "s-q6": "Pergunta 6",
+        "s-q7": "Pergunta 7",
+        "s-q8": "Pergunta 8",
+        "s-q9": "Pergunta 9",
+        "s-q10": "Pergunta 10",
+        "s-q11": "Pergunta 11",
+        "s-q12": "Pergunta 12",
+        "s-vt1": "Verificacao 1",
+        "s-vt2": "Verificacao 2",
+        "s-pix": "Metodo de Pagamento",
+        "s-pix-load": "Carregando Pagamento",
+        "s-vsl": "Apresentacao",
+        "s-final": "Saque Final",
+    }
+    if screen_id in label_map:
+        return label_map[screen_id]
+    # Fallback: limpa o screen_id
+    clean = screen_id.replace("s-", "").replace("-", " ").strip()
+    if clean.startswith("q") and clean[1:].isdigit():
+        return f"Pergunta {clean[1:]}"
+    if clean.startswith("t") and clean[1:].isdigit():
+        return f"Tarefa {clean[1:]}"
+    return clean.title() if clean else screen_id
 
 
 def _get_ws_id(supabase: Client, funnel_id: str) -> str:
@@ -646,11 +735,12 @@ def get_quiz_responses(
     period: str = Query("30d"),
     current_user=Depends(get_current_user),
 ):
-    """Respostas do quiz agrupadas por pagina (step) do funil.
+    """Respostas do quiz agrupadas por pagina (screen) do funil.
 
-    Cada pagina do funil eh listada com seu label real (ex: "Pergunta 1",
-    "Tarefa 2"), e dentro de cada pagina as perguntas com suas opcoes de
-    resposta, contagem e porcentagem. Sem dados de campanha/ad performance.
+    Analisa automaticamente o HTML do funil para extrair os botoes de cada
+    screen (<div class="screen" id="s-xxx">), e usa o answer_value para
+    mapear cada resposta a pagina correta — ignorando o step_id do tracker
+    que pode estar errado em SPAs.
     """
     supabase = get_supabase_admin()
     interval_days = int(_period_to_interval(period).split()[0])
@@ -658,19 +748,42 @@ def get_quiz_responses(
 
     resolved_funnel_id = _resolve_funnel_uuid(supabase, funnel_id)
 
-    # 1) Busca os steps do funil (paginas) com label e ordem
+    # 1) Busca os steps do funil para pegar a URL da landing page
     steps_rows = (
         supabase.table("funnel_steps")
-        .select("id, label, order_index")
+        .select("id, label, url, order_index")
         .eq("funnel_id", resolved_funnel_id)
         .order("order_index")
         .execute()
     )
-    step_map: dict = {}  # step_id -> {label, order_index}
-    for s in (steps_rows.data or []):
-        step_map[s["id"]] = {"label": s["label"], "order_index": s["order_index"]}
 
-    # 2) Busca todas as respostas do quiz no periodo (inclui step_id)
+    if not steps_rows.data:
+        return {"pages": [], "totalSessions": 0, "totalResponses": 0}
+
+    # Pega a URL do primeiro step (landing page) para buscar o HTML
+    landing_url = None
+    step_labels: dict = {}  # order_index -> label
+    for s in steps_rows.data:
+        step_labels[s["order_index"]] = s["label"]
+        if not landing_url and s.get("url"):
+            landing_url = s["url"]
+
+    if not landing_url:
+        return {"pages": [], "totalSessions": 0, "totalResponses": 0}
+
+    # 2) Busca o HTML do funil e extrai os screens
+    try:
+        resp = httpx.get(landing_url, timeout=10, follow_redirects=True)
+        html = resp.text
+    except Exception as e:
+        logger.warning("Falha ao buscar HTML do funil %s: %s", landing_url, e)
+        # Fallback: usa o step_id do tracker se nao conseguir buscar HTML
+        html = ""
+
+    screens = _extract_screens_from_html(html) if html else {}
+    answer_to_screen = _build_answer_to_screen_map(screens) if screens else {}
+
+    # 3) Busca todas as respostas do quiz no periodo
     rows = (
         supabase.table("quiz_answers")
         .select("question_id, answer_value, answer_id, session_id, step_id, timestamp")
@@ -683,138 +796,86 @@ def get_quiz_responses(
     if not rows.data:
         return {"pages": [], "totalSessions": 0, "totalResponses": 0}
 
-    # 3) Agrupa: step_id -> question_id -> answer_value
-    #    Estrutura: pages[step_id][question_id] = {answers: {val: count}, sessions: set, total: int}
+    # 4) Agrupa por screen_id (via answer_value mapping) ou step_id (fallback)
+    #    Estrutura: pages[screen_key] = {answers: {val: count}, sessions: set, total: int}
     pages: dict = {}
     all_sessions: set = set()
 
+    # Ordem dos screens baseada na ordem natural do HTML
+    screen_order = list(screens.keys()) if screens else []
+
     for row in rows.data:
-        step_id = row.get("step_id") or "__no_step__"
-        qid = row["question_id"]
         aval = (row.get("answer_value") or "unknown").strip()
         sid = row["session_id"]
         all_sessions.add(sid)
 
-        if step_id not in pages:
-            pages[step_id] = {}
+        # Tenta mapear pelo answer_value -> screen_id (analise HTML)
+        if answer_to_screen and aval in answer_to_screen:
+            page_key = answer_to_screen[aval]
+        else:
+            # Fallback: usa o step_id do tracker
+            page_key = row.get("step_id") or "__no_step__"
 
-        if qid not in pages[step_id]:
-            pages[step_id][qid] = {"answers": {}, "sessions": set(), "total": 0}
+        if page_key not in pages:
+            pages[page_key] = {"answers": {}, "sessions": set(), "total": 0}
 
-        pages[step_id][qid]["total"] += 1
-        pages[step_id][qid]["sessions"].add(sid)
+        pages[page_key]["total"] += 1
+        pages[page_key]["sessions"].add(sid)
 
-        if aval not in pages[step_id][qid]["answers"]:
-            pages[step_id][qid]["answers"][aval] = 0
-        pages[step_id][qid]["answers"][aval] += 1
+        if aval not in pages[page_key]["answers"]:
+            pages[page_key]["answers"][aval] = 0
+        pages[page_key]["answers"][aval] += 1
 
-    # 4) Monta resposta: lista de paginas ordenadas por order_index
-    #    Cada pagina mostra as perguntas com suas respostas. Quando ha
-    #    multiplos question_ids com as mesmas respostas na mesma pagina
-    #    (ex: quiz_v5hgkz, quiz_0653z2 todos com "OPCAO A ..."), sao
-    #    consolidados num unico bloco. Quando ha um unico question_id,
-    #    as respostas aparecem direto sob o titulo da pagina.
+    # 5) Monta resposta ordenada
     result_pages = []
-    sorted_step_ids = sorted(
-        pages.keys(),
-        key=lambda sid: step_map.get(sid, {}).get("order_index", 9999),
-    )
+
+    # Ordena: primeiro os screens conhecidos (na ordem do HTML), depois os desconhecidos
+    def sort_key(page_key):
+        if page_key in screen_order:
+            return (0, screen_order.index(page_key))
+        return (1, page_key)
+
+    sorted_keys = sorted(pages.keys(), key=sort_key)
 
     page_number = 0
-    for step_id in sorted_step_ids:
-        questions_data = pages[step_id]
-        if not questions_data:
+    for page_key in sorted_keys:
+        data = pages[page_key]
+        if not data["answers"]:
             continue
 
         page_number += 1
-        step_info = step_map.get(step_id, {})
-        page_label = step_info.get("label") or f"Pagina {page_number}"
-        order_index = step_info.get("order_index", page_number)
 
-        page_sessions: set = set()
-        total_responses = 0
-
-        # Verifica se todos os question_ids desta pagina tem as mesmas
-        # respostas (caso de IDs aleatorios por sessao para a mesma pergunta)
-        all_answer_sets = []
-        for qid, data in questions_data.items():
-            total_responses += data["total"]
-            page_sessions.update(data["sessions"])
-            all_answer_sets.append(frozenset(data["answers"].keys()))
-
-        # Se todas as perguntas tem exatamente as mesmas opcoes de resposta,
-        # consolida num unico bloco (IDs aleatorios para a mesma pergunta)
-        consolidate = len(all_answer_sets) > 1 and all(
-            s == all_answer_sets[0] for s in all_answer_sets
-        )
-
-        if consolidate or len(questions_data) == 1:
-            # Consolida todas as respostas num unico bloco
-            consolidated_answers: dict = {}
-            for qid, data in questions_data.items():
-                for aval, count in data["answers"].items():
-                    consolidated_answers[aval] = consolidated_answers.get(aval, 0) + count
-
-            answers_list = []
-            for aval, count in sorted(consolidated_answers.items(), key=lambda x: x[1], reverse=True):
-                pct = round(count / total_responses * 100, 1) if total_responses > 0 else 0
-                answers_list.append({
-                    "value": aval,
-                    "count": count,
-                    "percentage": pct,
-                })
-
-            result_pages.append({
-                "stepId": step_id,
-                "pageLabel": page_label,
-                "pageNumber": page_number,
-                "orderIndex": order_index,
-                "totalSessions": len(page_sessions),
-                "totalResponses": total_responses,
-                "questions": [{
-                    "questionLabel": page_label,
-                    "answers": answers_list,
-                }],
-            })
+        # Label da pagina
+        if page_key in screens or page_key.startswith("s-"):
+            page_label = _screen_id_to_label(page_key, {})
+        elif page_key == "__no_step__":
+            page_label = "Sem pagina"
         else:
-            # Multiplas perguntas distintas na mesma pagina
-            page_questions = []
-            for qid in sorted(questions_data.keys()):
-                data = questions_data[qid]
-                answers_list = []
-                for aval, count in sorted(data["answers"].items(), key=lambda x: x[1], reverse=True):
-                    pct = round(count / data["total"] * 100, 1) if data["total"] > 0 else 0
-                    answers_list.append({
-                        "value": aval,
-                        "count": count,
-                        "percentage": pct,
-                    })
+            # Tenta resolver via step_map dos funnel_steps
+            page_label = f"Pagina {page_number}"
 
-                # Label: usa o question_id limpo como fallback
-                q_label = qid.replace("_", " ").replace("-", " ").strip()
-                if qid.startswith("s-q") and qid[3:].isdigit():
-                    q_label = f"Pergunta {qid[3:]}"
-                elif qid.startswith("s-t") and qid[3:].isdigit():
-                    q_label = f"Tarefa {qid[3:]}"
-                elif qid.startswith("s-pix"):
-                    q_label = "Metodo de Pagamento"
-                elif qid.startswith("s-vt"):
-                    q_label = "Verificacao"
-
-                page_questions.append({
-                    "questionLabel": q_label,
-                    "answers": answers_list,
-                })
-
-            result_pages.append({
-                "stepId": step_id,
-                "pageLabel": page_label,
-                "pageNumber": page_number,
-                "orderIndex": order_index,
-                "totalSessions": len(page_sessions),
-                "totalResponses": total_responses,
-                "questions": page_questions,
+        # Ordena respostas por contagem decrescente
+        answers_list = []
+        for aval, count in sorted(data["answers"].items(), key=lambda x: x[1], reverse=True):
+            pct = round(count / data["total"] * 100, 1) if data["total"] > 0 else 0
+            answers_list.append({
+                "value": aval,
+                "count": count,
+                "percentage": pct,
             })
+
+        result_pages.append({
+            "stepId": page_key,
+            "pageLabel": page_label,
+            "pageNumber": page_number,
+            "orderIndex": screen_order.index(page_key) if page_key in screen_order else 9999,
+            "totalSessions": len(data["sessions"]),
+            "totalResponses": data["total"],
+            "questions": [{
+                "questionLabel": page_label,
+                "answers": answers_list,
+            }],
+        })
 
     return {
         "pages": result_pages,
