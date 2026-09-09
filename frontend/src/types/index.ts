@@ -229,19 +229,19 @@ export interface AudienceBreakdown {
 }
 
 export interface AdPerformanceRow {
-  adId: string;
-  adName: string;
-  campaignId: string;
-  campaignName: string;
-  channel: "google_search" | "google_display" | "meta_ads" | "tiktok" | "email" | "other";
-  impressions: number;
-  clicks: number;
-  ctr: number;
-  quizStarted: number;
-  quizCompleted: number;
-  purchases: number;
+  creativeCode: string;
+  campaignCode: string;
+  placement: string;
+  sessions: number;
+  quizResponses: number;
+  quizRate: number;
+  conversions: number;
+  convRate: number;
+  revenue: number;
+  spend: number;
   cpa: number | null;
   roas: number | null;
+  lastSeenAt: string | null;
 }
 
 /** Campanha detectada automaticamente via parsing de UTM. */

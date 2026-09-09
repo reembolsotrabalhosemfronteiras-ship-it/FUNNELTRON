@@ -50,17 +50,17 @@ import {
   syncUtmfy,
 } from "@/api/client";
 
-const CHANNEL_CONFIG: Record<
-  AdPerformanceRow["channel"],
-  { label: string; color: string; icon: React.ReactNode }
-> = {
-  google_search: { label: "Google Search", color: "#4285f4", icon: <GridFour size={12} /> },
-  google_display: { label: "Google Display", color: "#34a853", icon: <ChartBar size={12} /> },
-  meta_ads: { label: "Meta Ads", color: "#1877f2", icon: <Heart size={12} /> },
-  tiktok: { label: "TikTok", color: "#000000", icon: <ChartBar size={12} /> },
-  email: { label: "Email", color: "#ea4335", icon: <DeviceMobile size={12} /> },
-  other: { label: "Outro", color: "#6b7280", icon: <GridFour size={12} /> },
-};
+/** Cor por placement (Instagram_Reels, Facebook_Feed, etc.). */
+function placementColor(placement: string): string {
+  const p = (placement || "").toLowerCase();
+  if (p.includes("reels")) return "#e1306c";
+  if (p.includes("story") || p.includes("stories")) return "#f77737";
+  if (p.includes("feed")) return "#1877f2";
+  if (p.includes("search")) return "#4285f4";
+  if (p.includes("display")) return "#34a853";
+  if (p.includes("tiktok")) return "#000000";
+  return "#6b7280";
+}
 
 const QUESTION_TYPE_LABELS: Record<QuizHeatmapRow["questionType"], string> = {
   single: "Única escolha",
@@ -151,10 +151,10 @@ export function QuizAdsTab({ funnelId }: { funnelId: string }) {
     const avgCompletion = heatmap.length
       ? heatmap.reduce((s, r) => s + (r.byCampaign[Object.keys(r.byCampaign)[0]]?.percentage ?? 0), 0) / heatmap.length
       : 0;
-    const totalPurchases = adPerformance.reduce((s, r) => s + r.purchases, 0);
-    const totalSpend = adPerformance.reduce((s, r) => s + (r.cpa ?? 0) * r.purchases, 0);
-    const cpa = totalPurchases > 0 ? totalSpend / totalPurchases : 0;
-    const totalRevenue = adPerformance.reduce((s, r) => s + (r.roas ?? 0) * (r.cpa ?? 0) * r.purchases, 0);
+    const totalConversions = adPerformance.reduce((s, r) => s + (r.conversions ?? 0), 0);
+    const totalSpend = adPerformance.reduce((s, r) => s + (r.spend ?? 0), 0);
+    const cpa = totalConversions > 0 ? totalSpend / totalConversions : 0;
+    const totalRevenue = adPerformance.reduce((s, r) => s + (r.revenue ?? 0), 0);
     const roas = totalSpend > 0 ? totalRevenue / totalSpend : 0;
 
     return [
@@ -362,7 +362,7 @@ export function QuizAdsTab({ funnelId }: { funnelId: string }) {
                         border: "1px solid var(--border)",
                         borderRadius: "var(--radius)",
                         padding: "16px",
-                        borderTop: `3px solid ${CHANNEL_CONFIG[d.medium as keyof typeof CHANNEL_CONFIG]?.color || "var(--primary)"}`,
+                        borderTop: `3px solid var(--primary)`,
                       }}
                     >
                       <div className="flex items-center justify-between mb-3">
@@ -453,7 +453,7 @@ export function QuizAdsTab({ funnelId }: { funnelId: string }) {
                       border: "1px solid var(--border)",
                       borderRadius: "var(--radius)",
                       padding: "16px",
-                      borderTop: `3px solid ${CHANNEL_CONFIG[a.adId as keyof typeof CHANNEL_CONFIG]?.color || "var(--primary)"}`,
+                      borderTop: `3px solid var(--primary)`,
                     }}
                   >
                     <div className="flex items-center justify-between mb-3">
@@ -516,10 +516,10 @@ export function QuizAdsTab({ funnelId }: { funnelId: string }) {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ChartBar size={18} className="text-primary" />
-              Performance Detalhada por Ad ID
+              Performance Detalhada por Criativo
             </CardTitle>
             <CardDescription>
-              Impressões, cliques, CTR, iniciaram quiz, concluíram, compras, CPA e ROAS
+              Sessões, respostas de quiz, taxa de quiz, conversões, receita, spend, CPA e ROAS
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -530,51 +530,54 @@ export function QuizAdsTab({ funnelId }: { funnelId: string }) {
                 <table className="table" style={{ minWidth: 900 }}>
                   <thead>
                     <tr>
-                      <th>Ad ID</th>
+                      <th>Criativo</th>
                       <th>Campanha</th>
-                      <th>Canal</th>
-                      <th style={{ textAlign: "right" }}>Impressões</th>
-                      <th style={{ textAlign: "right" }}>Cliques</th>
-                      <th style={{ textAlign: "right" }}>CTR</th>
-                      <th style={{ textAlign: "right" }}>Iniciaram</th>
-                      <th style={{ textAlign: "right" }}>Concluíram</th>
-                      <th style={{ textAlign: "right" }}>Compras</th>
+                      <th>Placement</th>
+                      <th style={{ textAlign: "right" }}>Sessões</th>
+                      <th style={{ textAlign: "right" }}>Quiz</th>
+                      <th style={{ textAlign: "right" }}>Taxa Quiz</th>
+                      <th style={{ textAlign: "right" }}>Conversões</th>
+                      <th style={{ textAlign: "right" }}>Receita</th>
+                      <th style={{ textAlign: "right" }}>Spend</th>
                       <th style={{ textAlign: "right" }}>CPA</th>
                       <th style={{ textAlign: "right" }}>ROAS</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {adPerformance.map((row) => {
-                      const channelCfg = CHANNEL_CONFIG[row.channel] ?? CHANNEL_CONFIG.other;
+                    {adPerformance.map((row, idx) => {
+                      const pColor = placementColor(row.placement);
                       return (
-                        <tr key={row.adId}>
+                        <tr key={`${row.creativeCode}-${row.campaignCode}-${idx}`}>
                           <td>
-                            <code className="text-[12px] font-mono">{row.adId}</code>
+                            <code className="text-[12px] font-mono">{row.creativeCode || "—"}</code>
                           </td>
-                          <td className="font-medium">{row.campaignName}</td>
+                          <td className="font-medium text-[12px] truncate max-w-[160px]">{row.campaignCode || "—"}</td>
                           <td>
                             <Badge
                               variant="info"
-                              className="flex items-center gap-1.5"
+                              className="text-[10px]"
                               style={{
-                                backgroundColor: `${channelCfg.color}15`,
-                                color: channelCfg.color,
-                                borderColor: `${channelCfg.color}30`,
+                                backgroundColor: `${pColor}15`,
+                                color: pColor,
+                                borderColor: `${pColor}30`,
                               }}
                             >
-                              {channelCfg.icon}
-                              {channelCfg.label}
+                              {row.placement || "—"}
                             </Badge>
                           </td>
-                          <td className="text-right tabular-nums">{row.impressions.toLocaleString("pt-BR")}</td>
-                          <td className="text-right tabular-nums">{row.clicks.toLocaleString("pt-BR")}</td>
+                          <td className="text-right tabular-nums">{(row.sessions ?? 0).toLocaleString("pt-BR")}</td>
+                          <td className="text-right tabular-nums">{(row.quizResponses ?? 0).toLocaleString("pt-BR")}</td>
                           <td className="text-right tabular-nums font-medium" style={{ color: "var(--primary)" }}>
-                            {row.ctr.toFixed(2)}%
+                            {(row.quizRate ?? 0).toFixed(1)}%
                           </td>
-                          <td className="text-right tabular-nums">{row.quizStarted.toLocaleString("pt-BR")}</td>
-                          <td className="text-right tabular-nums">{row.quizCompleted.toLocaleString("pt-BR")}</td>
                           <td className="text-right tabular-nums font-bold" style={{ color: "var(--success)" }}>
-                            {row.purchases.toLocaleString("pt-BR")}
+                            {(row.conversions ?? 0).toLocaleString("pt-BR")}
+                          </td>
+                          <td className="text-right tabular-nums">
+                            R$ {(row.revenue ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="text-right tabular-nums text-muted-foreground">
+                            R$ {(row.spend ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td className="text-right tabular-nums">
                             {row.cpa != null ? `R$ ${row.cpa.toFixed(2)}` : "—"}

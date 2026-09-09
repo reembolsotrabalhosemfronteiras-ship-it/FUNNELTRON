@@ -1327,19 +1327,19 @@ export interface AudienceBreakdown {
 }
 
 export interface AdPerformanceRow {
-  adId: string;
-  adName: string;
-  campaignId: string;
-  campaignName: string;
-  channel: "google_search" | "google_display" | "meta_ads" | "tiktok" | "email" | "other";
-  impressions: number;
-  clicks: number;
-  ctr: number;
-  quizStarted: number;
-  quizCompleted: number;
-  purchases: number;
+  creativeCode: string;
+  campaignCode: string;
+  placement: string;
+  sessions: number;
+  quizResponses: number;
+  quizRate: number;
+  conversions: number;
+  convRate: number;
+  revenue: number;
+  spend: number;
   cpa: number | null;
   roas: number | null;
+  lastSeenAt: string | null;
 }
 
 /** Heatmap de respostas por pergunta × campanha. */
@@ -1596,94 +1596,49 @@ export async function getAdPerformance(
   }
   return delay([
     {
-      adId: "ad_7x9k2m1p",
-      adName: "Summer Sale - Search",
-      campaignId: "summer_sale",
-      campaignName: "Summer Sale 2024",
-      channel: "google_search",
-      impressions: 2100000,
-      clicks: 42300,
-      ctr: 2.01,
-      quizStarted: 12400,
-      quizCompleted: 8500,
-      purchases: 3500,
+      creativeCode: "0005",
+      campaignCode: "#bm.16.ca.01",
+      placement: "Instagram_Reels",
+      sessions: 12400,
+      quizResponses: 8500,
+      quizRate: 68.5,
+      conversions: 3500,
+      convRate: 28.2,
+      revenue: 171500,
+      spend: 34300,
       cpa: 9.80,
-      roas: 5.2,
+      roas: 5.0,
+      lastSeenAt: new Date().toISOString(),
     },
     {
-      adId: "ad_3q8z4n7v",
-      adName: "BF Promo - Meta",
-      campaignId: "bf_promo",
-      campaignName: "Black Friday Promo",
-      channel: "meta_ads",
-      impressions: 3400000,
-      clicks: 68100,
-      ctr: 2.00,
-      quizStarted: 8900,
-      quizCompleted: 5400,
-      purchases: 2000,
+      creativeCode: "0009",
+      campaignCode: "#bm.16.ca.03",
+      placement: "Facebook_Feed",
+      sessions: 8900,
+      quizResponses: 5400,
+      quizRate: 60.7,
+      conversions: 2000,
+      convRate: 22.5,
+      revenue: 62400,
+      spend: 31200,
       cpa: 15.60,
-      roas: 3.8,
+      roas: 2.0,
+      lastSeenAt: new Date().toISOString(),
     },
     {
-      adId: "ad_5w1r6t9y",
-      adName: "Evergreen - TikTok",
-      campaignId: "evergreen",
-      campaignName: "Evergreen TikTok",
-      channel: "tiktok",
-      impressions: 1800000,
-      clicks: 27400,
-      ctr: 1.52,
-      quizStarted: 6200,
-      quizCompleted: 3300,
-      purchases: 1100,
+      creativeCode: "0012",
+      campaignCode: "#bm.16.ca.05",
+      placement: "Instagram_Stories",
+      sessions: 6200,
+      quizResponses: 3300,
+      quizRate: 53.2,
+      conversions: 1100,
+      convRate: 17.7,
+      revenue: 20790,
+      spend: 20790,
       cpa: 18.90,
-      roas: 2.9,
-    },
-    {
-      adId: "ad_2u4i8o0p",
-      adName: "Loyalty - Email",
-      campaignId: "loyalty",
-      campaignName: "Newsletter Fidelidade",
-      channel: "email",
-      impressions: 156000,
-      clicks: 12800,
-      ctr: 8.21,
-      quizStarted: 3100,
-      quizCompleted: 2600,
-      purchases: 1600,
-      cpa: 4.20,
-      roas: 8.4,
-    },
-    {
-      adId: "ad_9m1n3b5v",
-      adName: "Retargeting - Meta",
-      campaignId: "retargeting",
-      campaignName: "Retargeting Meta Ads",
-      channel: "meta_ads",
-      impressions: 890000,
-      clicks: 18200,
-      ctr: 2.04,
-      quizStarted: 4700,
-      quizCompleted: 3800,
-      purchases: 2200,
-      cpa: 11.30,
-      roas: 4.6,
-    },
-    {
-      adId: "ad_6c8x2z4q",
-      adName: "Lookalike - Display",
-      campaignId: "lookalike",
-      campaignName: "Lookalike Google Display",
-      channel: "google_display",
-      impressions: 4200000,
-      clicks: 31500,
-      ctr: 0.75,
-      quizStarted: 5100,
-      quizCompleted: 2900,
-      purchases: 980,
-      cpa: 22.40,
-      roas: 2.1,
+      roas: 1.0,
+      lastSeenAt: new Date().toISOString(),
     },
   ], 400);
 }
