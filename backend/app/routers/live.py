@@ -36,6 +36,30 @@ _GEO_KEYS = ("geo_city", "geo_uf", "geo_lat", "geo_lon")
 # zerada mesmo com milhares de respostas em quiz_answers. Cache em memoria
 # evita uma query por heartbeat.
 _funnel_uuid_cache: dict[str, str] = {}
+# Cache da lista completa de ids de funil. Usado para resolver PREFIXO de uuid
+# em memoria, porque o PostgREST NÃO aceita ilike em coluna uuid
+# ("operator does not exist: uuid ~~* unknown", code 42883) — confirmado por
+# teste direto contra a API. A tabela funnels eh pequena, entao buscar todos
+# os ids uma vez e casar o prefixo em Python eh barato e robusto.
+_funnel_ids_cache: list[str] | None = None
+_funnel_ids_cache_at: float = 0.0
+
+
+def _get_funnel_ids(supabase: Client) -> list[str]:
+    """Retorna todos os ids de funil, com cache de 60s."""
+    global _funnel_ids_cache, _funnel_ids_cache_at
+    import time as _t
+    now = _t.time()
+    if _funnel_ids_cache is not None and (now - _funnel_ids_cache_at) < 60:
+        return _funnel_ids_cache
+    try:
+        rows = supabase.table("funnels").select("id").limit(1000).execute()
+        ids = [r["id"] for r in (rows.data or []) if r.get("id")]
+        _funnel_ids_cache = ids
+        _funnel_ids_cache_at = now
+        return ids
+    except Exception:
+        return _funnel_ids_cache or []
 
 
 def _resolve_funnel_uuid(supabase: Client, funnel_id: str) -> str:
@@ -66,23 +90,19 @@ def _resolve_funnel_uuid(supabase: Client, funnel_id: str) -> str:
             return resolved
         # 3) PREFIXO de UUID (ex: "2b23f46d" -> "2b23f46d-bc94-4f32-...").
         # Evidencia real do banco: o tracker embute os 8 primeiros hex do
-        # UUID do funil, nao o slug nem o UUID completo. Sem este ramo o
-        # insert de lead_profile estoura "invalid input syntax for type uuid
-        # (22P02)" e a aba Quiz & Ads fica zerada. So aceita prefixo
-        # puramente hexadecimal de 8+ chars para evitar matches acidentais.
+        # UUID do funil, nao o slug nem o UUID completo. O PostgREST NAO
+        # aceita ilike em coluna uuid ("operator does not exist: uuid ~~*
+        # unknown", 42883 — confirmado por teste direto), entao casamos o
+        # prefixo em memoria contra a lista cacheada de ids. So aceita
+        # prefixo puramente hexadecimal de 8+ chars pra evitar match
+        # acidental com slugs.
         import re as _re
         if _re.fullmatch(r"[0-9a-fA-F]{8,}", funnel_id):
-            by_prefix = (
-                supabase.table("funnels")
-                .select("id")
-                .ilike("id", funnel_id + "%")
-                .limit(1)
-                .execute()
-            )
-            if by_prefix.data:
-                resolved = by_prefix.data[0]["id"]
-                _funnel_uuid_cache[funnel_id] = resolved
-                return resolved
+            prefix = funnel_id.lower()
+            for fid in _get_funnel_ids(supabase):
+                if fid.lower().startswith(prefix):
+                    _funnel_uuid_cache[funnel_id] = fid
+                    return fid
     except Exception:
         # Falha de resolucao nao deve quebrar o track; cai no valor original.
         pass
