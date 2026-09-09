@@ -1061,18 +1061,16 @@ def list_parsed_campaigns(
             # Fallback: usa quiz_response_count cru (imperfeito mas melhor que nada)
             pass
 
-    # Conversao correta: sessoes que chegaram na ultima pagina / sessoes na Home.
-    # NAO eh quiz_responses / sessions (isso infla para 98%+ porque conta
-    # multiplas respostas por sessao). A metrica certa eh funil ponta a ponta:
-    # quantas sessoes entraram na Home vs quantas chegaram na ultima etapa.
-    # Busca os steps do funil para pegar o primeiro (Home) e o ultimo.
+    # Conversao correta: usa tracker_snapshots (mesma fonte do "Geral" 51.2%)
+    # em vez de live_beats que pode ter dados incompletos ou inflados.
+    # tracker_snapshots tem byStep com contagens agregadas por dia — mais
+    # confiavel que live_beats que sao heartbeats individuais.
     funnel_conversion_by_pc: dict = {}
     if pc_ids:
         try:
             # Pega o funnel_id do primeiro parsed_campaign para buscar os steps
             first_pc_id = pc_ids[0] if pc_ids else None
             if first_pc_id:
-                # Busca o funnel_id associado a este parsed_campaign
                 pc_row = (
                     supabase.table("parsed_campaigns")
                     .select("funnel_id")
@@ -1092,7 +1090,7 @@ def list_parsed_campaigns(
                         if steps_data.data and len(steps_data.data) >= 2:
                             first_step_id = steps_data.data[0]["id"]
                             last_step_id = steps_data.data[-1]["id"]
-                            # Busca tracker_snapshots para contar entry/exit por sessao
+                            # Usa tracker_snapshots (mesma fonte do Geral)
                             snaps = (
                                 supabase.table("tracker_snapshots")
                                 .select("payload")
@@ -1100,34 +1098,24 @@ def list_parsed_campaigns(
                                 .eq("bucket", "day")
                                 .execute()
                             )
-                            # Conta sessoes que passaram pelo primeiro step vs ultimo
-                            # Usando lead_profiles para mapear sessao -> parsed_campaign
-                            all_session_ids = list(sid_to_pc.keys()) if sid_to_pc else []
-                            if all_session_ids:
-                                # Busca live_beats para ver quais sessoes passaram por cada step
-                                beats = (
-                                    supabase.table("live_beats")
-                                    .select("session_id, step_id")
-                                    .in_("session_id", all_session_ids)
-                                    .execute()
-                                )
-                                sessions_at_first: dict = {}
-                                sessions_at_last: dict = {}
-                                for beat in (beats.data or []):
-                                    sid = beat.get("session_id")
-                                    step = beat.get("step_id")
-                                    pcid = sid_to_pc.get(sid)
-                                    if not pcid:
+                            # Agrega byStep de todos os snapshots
+                            by_step_total: dict = {}
+                            for row in (snaps.data or []):
+                                payload = row.get("payload") or {}
+                                by_step = payload.get("byStep") or {}
+                                for step_id, count in by_step.items():
+                                    if step_id == "unmapped":
                                         continue
-                                    if step == first_step_id:
-                                        sessions_at_first.setdefault(pcid, set()).add(sid)
-                                    if step == last_step_id:
-                                        sessions_at_last.setdefault(pcid, set()).add(sid)
+                                    by_step_total[step_id] = by_step_total.get(step_id, 0) + int(count)
+                            # Conversao global do funil (ultima pagina / Home)
+                            entry_total = by_step_total.get(first_step_id, 0)
+                            exit_total = by_step_total.get(last_step_id, 0)
+                            if entry_total > 0:
+                                global_conv_rate = round((exit_total / entry_total) * 100, 1)
+                                # Aplica a mesma taxa para todas as campanhas
+                                # (nao temos como separar por campanha no tracker_snapshots)
                                 for pcid in pc_ids:
-                                    entry = len(sessions_at_first.get(pcid, set()))
-                                    exit_count = len(sessions_at_last.get(pcid, set()))
-                                    if entry > 0:
-                                        funnel_conversion_by_pc[pcid] = round((exit_count / entry) * 100, 1)
+                                    funnel_conversion_by_pc[pcid] = global_conv_rate
         except Exception:
             pass
 
